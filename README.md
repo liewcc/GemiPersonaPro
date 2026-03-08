@@ -6,6 +6,15 @@
 
 GemiPersonaPro is a powerful automation tool designed to streamline image generation and asset management using Gemini. It features a built-in browser engine for automation and an AI-powered "Asset Sanitizer" for high-quality watermark removal and image refinement.
 
+## 📜 Project Origin
+
+GemiPersonaPro is the successor to the original [GemiPersona](https://github.com/liewcc/GemiPersona) project. While the initial version proved the concept, it faced stability challenges when handling complex multi-threaded tasks. 
+
+To address this, GemiPersonaPro was completely rewritten to use a more robust API-based architecture. This version introduces:
+- **Silky Smooth UI**: A completely redesigned interface for a more fluid user experience.
+- **Integrated Watermark Removal**: Professional-grade cleaning built directly into the flow.
+- **Enhanced Stability**: Optimized for reliable automation and multi-tasking.
+
 ## 🚀 Features
 
 - **Gemini Automation**: Automate image and video generation prompts directly within the Gemini interface.
