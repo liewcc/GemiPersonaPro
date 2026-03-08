@@ -59,6 +59,18 @@ While the browser is hidden, use the **Dashboard** to stay informed:
 - **Gallery**: View the latest downloaded and AI-cleaned images as they arrive.
 - **Service Status**: Ensure all services remain healthy.
 
+### 💡 Pro-Tip: Background Efficiency
+You don't need to keep the UI or the terminal window open while automation is running!
+- **Close Anytime**: Once you've started the "Looping Process," you can safely close your browser tab and even the DOS/terminal window. The background engine will continue working until the task is complete.
+- **Progress Checks**: Simply run `run.bat` again whenever you want to check the progress or view the latest images in the Dashboard.
+- **Manual Stop**: If you need to stop the engine entirely, go to the **Gemini Setup** side panel and click **"Stop Engine"**.
+
+### 🧠 Intelligent Memory Management
+GemiPersonaPro is designed to be lightweight on your system:
+- **Auto-Timeout**: The engine will automatically shut down after a period of inactivity (defined by the `timeout` in System Config).
+- **Automation Safety**: If a loop is running, the engine waits for it to finish before starting the timeout countdown.
+- **Resource Release**: When the engine stops, the **LaMa AI model** is automatically unloaded, fully releasing your system's RAM/VRAM.
+
 ---
 
 *Happy Automating!*
