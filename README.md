@@ -8,6 +8,7 @@
 - [📖 Documentation](#-documentation)
   - [⏱️ Quick Start Guide](./guides/quick_start.md)
   - [👥 Multi-Account Management](./guides/multi_account.md)
+  - [✨ AI Sanitizer Guide](./guides/ai_sanitizer.md)
 - [🛠️ Quick Setup](#️-quick-setup)
 - [📂 Project Structure](#-project-structure)
 
