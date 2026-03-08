@@ -25,7 +25,7 @@ To address this, GemiPersonaPro was completely rewritten to use a more robust AP
 ## 📖 Documentation
 
 > [!TIP]
-> **New User?** Follow our [🚀 Quick Start Guide](./guides/quick_start.md) to get running in minutes!
+> **New User?** Follow our [🚀 Quick Start Guide](./guides/quick_start.md) or learn about [👥 Multi-Account Management](./guides/multi_account.md).
 
 ## 🛠️ Quick Setup
 
