@@ -10,6 +10,7 @@
   - [👥 Multi-Account Management](./guides/multi_account.md)
   - [🧠 AI Watermark Technology](./guides/watermark_removal.md)
   - [🛡️ Asset Sanitizer Page](./guides/asset_sanitizer.md)
+  - [🔖 Gems Bookmark Guide](./guides/gems_bookmark.md)
 - [🛠️ Quick Setup](#️-quick-setup)
 - [📂 Project Structure](#-project-structure)
 
