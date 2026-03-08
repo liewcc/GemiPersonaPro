@@ -1,0 +1,20 @@
+# Core Web Framework
+streamlit>=1.40.0
+# AI & Image Processing
+torch
+torchvision
+opencv-python
+numpy
+requests
+pillow
+tqdm
+streamlit-drawable-canvas
+# Browser Control Engine & API Service
+playwright
+pytest-playwright
+nest-asyncio
+fastapi
+uvicorn[standard]
+httpx
+piexif
+psutil

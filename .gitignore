@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environment (Crucial)
+.venv/
+env/
+venv/
+
+# Environment variables
+.env
+
+# Streamlit config and secrets
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Project specific sensitive/large files
+browser_user_data/
+browser_state.json
+engine.log
+browser_session_sandbox/
+browser_screen_capture/
+models/*.pt
+
+# AI specific instructions
+rule.md
