@@ -13,6 +13,11 @@ GemiPersonaPro is a powerful automation tool designed to streamline image genera
 - **Session Management**: Securely handle multiple browser profiles and sessions.
 - **Real-time Dashboard**: Monitor generation progress, quota status, and manage your library.
 
+## 📖 Documentation
+
+> [!TIP]
+> **New User?** Follow our [🚀 Quick Start Guide](./guides/quick_start.md) to get running in minutes!
+
 ## 🛠️ Quick Setup
 
 ### 1. Prerequisites
