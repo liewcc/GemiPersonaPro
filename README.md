@@ -2,6 +2,13 @@
   <img src="sys_img/logo.png" width="250" alt="GemiPersonaPro Logo">
 </p>
 
+**Contents**
+- [📜 Project Origin](#-project-origin)
+- [🚀 Features](#-features)
+- [📖 Documentation](#-documentation)
+- [🛠️ Quick Setup](#️-quick-setup)
+- [📂 Project Structure](#-project-structure)
+
 # GemiPersonaPro
 
 GemiPersonaPro is a powerful automation tool designed to streamline image generation and asset management using Gemini. It features a built-in browser engine for automation and an AI-powered "Asset Sanitizer" for high-quality watermark removal and image refinement.
