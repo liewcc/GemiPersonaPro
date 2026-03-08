@@ -6,6 +6,8 @@
 - [📜 Project Origin](#-project-origin)
 - [🚀 Features](#-features)
 - [📖 Documentation](#-documentation)
+  - [⏱️ Quick Start Guide](./guides/quick_start.md)
+  - [👥 Multi-Account Management](./guides/multi_account.md)
 - [🛠️ Quick Setup](#️-quick-setup)
 - [📂 Project Structure](#-project-structure)
 
