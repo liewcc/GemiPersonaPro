@@ -11,6 +11,7 @@
   - [🧠 AI Watermark Technology](./guides/watermark_removal.md)
   - [🛡️ Asset Sanitizer Page](./guides/asset_sanitizer.md)
   - [🔖 Gems Bookmark Guide](./guides/gems_bookmark.md)
+  - [🧠 Advanced Algorithm Guide](./guides/advanced_algorithm.md)
 - [🛠️ Quick Setup](#️-quick-setup)
 - [📂 Project Structure](#-project-structure)
 
