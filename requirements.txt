@@ -11,10 +11,8 @@ tqdm
 streamlit-drawable-canvas
 # Browser Control Engine & API Service
 playwright
-pytest-playwright
 nest-asyncio
 fastapi
 uvicorn[standard]
 httpx
-piexif
 psutil
