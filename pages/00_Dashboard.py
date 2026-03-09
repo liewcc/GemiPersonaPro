@@ -253,7 +253,7 @@ with st.sidebar:
                   key="dash_gal_check_processed_toggle",
                   on_change=on_dash_gal_check_processed_change)
 
-        if st.button("📂 Download Folder", width="stretch", help="Open the save directory in File Explorer"):
+        if st.button("📂 View Download Folder", width="stretch", help="Open the save directory in File Explorer"):
             if save_dir and os.path.isdir(save_dir):
                 os.startfile(save_dir)
             else:
