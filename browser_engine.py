@@ -94,13 +94,31 @@ class BrowserEngine:
                 print(f"Session save failed: {e}")
 
     async def apply_hardcore_stealth(self, page):
-        """Manual JS injection for anti-detection."""
+        """Manual JS injection for anti-detection and auto-interruption handling."""
         try:
             await page.add_init_script("""
+                // Anti-detection
                 Object.defineProperty(navigator, 'webdriver', {get: () => False});
                 window.chrome = { runtime: {} };
                 Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
                 Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+
+                // Proactive Dialog Dismissal (MutationObserver)
+                const observer = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === 1) { // Element node
+                                // Target the "Agree" button in the MMGen disclaimer dialog
+                                const agreeBtn = node.querySelector('button[data-test-id="upload-image-agree-button"]');
+                                if (agreeBtn) {
+                                    console.log("[GemiPersona] Disclaimer detected. Auto-clicking Agree...");
+                                    agreeBtn.click();
+                                }
+                            }
+                        }
+                    }
+                });
+                observer.observe(document.documentElement, { childList: true, subtree: true });
             """)
         except Exception as e:
             print(f"Stealth injection failed: {e}")
@@ -449,6 +467,9 @@ class BrowserEngine:
                         file_chooser = await fc_info.value
                         await file_chooser.set_files(full_path)
                     
+                    # PROACTIVE: Immediately check for the MMGen disclaimer after upload
+                    await self.dismiss_agreement_popups()
+                    
                     added_count += 1
                     await asyncio.sleep(2.5)
                 except Exception as e:
@@ -685,8 +706,9 @@ class BrowserEngine:
         if not self.is_running or not self._page:
             return
 
-        # Target buttons with specific text patterns common in Gemini popups
+        # Target buttons with specific text patterns and data-test-ids
         popup_selectors = [
+            'button[data-test-id="upload-image-agree-button"]', # Precise MMGen Agree
             "button:has-text('Agree')",
             "button:has-text('I agree')",
             "button:has-text('Got it')",

@@ -9,18 +9,66 @@ from tkinter import filedialog
 from PIL import Image, PngImagePlugin
 import asyncio
 
-# --- Custom Utilities ---
-from style_utils import apply_premium_style, render_dashboard_header
-from config_utils import load_config, save_config
-from api_client import EngineClient
-import shared_state
+# --- Helper Functions & Nav Helpers ---
+import base64
 
-# --- Constants ---
-CONFIG_PATH = "config.json"
+def natural_sort_key(s):
+    """Helper for natural alphanumeric string sorting."""
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
-# --- Page Config ---
-st.set_page_config(page_title="GemiPersona | ASSET SANITIZER", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
-apply_premium_style()
+def sync_san_page(new_page):
+    st.session_state.san_gal_page = new_page
+    st.session_state.san_gal_page_top_widget = new_page
+    st.session_state.san_gal_page_bot_widget = new_page
+    st.session_state.san_gal_page_top = new_page
+    st.session_state.san_gal_page_bot = new_page
+
+def on_san_page_top_change():
+    sync_san_page(st.session_state.san_gal_page_top_widget)
+
+def on_san_page_bot_change():
+    sync_san_page(st.session_state.san_gal_page_bot_widget)
+
+def on_san_page_size_change():
+    st.session_state.san_gal_page_size = st.session_state.san_page_size_slider
+    sync_san_page(1)
+
+def select_path(is_folder=True):
+    """Opens a native Windows file/folder picker."""
+    root = tk.Tk()
+    root.withdraw()
+    root.wm_attributes('-topmost', True)
+    if is_folder:
+        path = filedialog.askdirectory()
+    else:
+        path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp")])
+    root.destroy()
+    return path
+
+def get_consolidated_metadata(img):
+    """Extracts and consolidates metadata, especially for PNGs with redundant XMP keys."""
+    raw_info = img.info.copy()
+    meta = {}
+    for k, v in raw_info.items():
+        if k == "exif": continue
+        val_str = v.decode('utf-8', errors='ignore') if isinstance(v, bytes) else str(v)
+        if k == 'xmp' and 'XML:com.adobe.xmp' in raw_info:
+            continue 
+        meta[k] = val_str
+    return meta
+
+@st.fragment
+def batch_processing_sidebar_fragment():
+    """Sidebar fragment for batch processing, moved to global scope per rule.md for stability."""
+    st.markdown("### Batch Processing")
+    with st.container(border=True):
+        if st.button("🪄 Batch Remove Watermarks", key="san_batch_rm_btn_frag", width="stretch", 
+                     disabled=not st.session_state.sanitizer_is_dir):
+            st.session_state.show_batch_dialog = True
+            st.rerun(scope="fragment")
+    
+    if st.session_state.show_batch_dialog:
+        batch_watermark_removal_dialog(st.session_state.sanitizer_path)
 
 # --- Initialize Session State ---
 if "config" not in st.session_state:
@@ -61,9 +109,52 @@ st.session_state.show_batch_dialog = False
 st.session_state.batch_is_running = False
 st.session_state.batch_stop_requested = False
 
+# --- Force-Sync & Pre-calculate Gallery State ---
 # Force sync widget keys with current shared state
 st.session_state.san_gal_page_top_widget = st.session_state.san_gal_page
 st.session_state.san_gal_page_bot_widget = st.session_state.san_gal_page
+
+san_total_pages = 1
+san_all_files = []
+san_current_folder = ""
+
+if st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path and os.path.isdir(st.session_state.sanitizer_path):
+    san_current_folder = st.session_state.sanitizer_path
+    if st.session_state.san_show_cleaned:
+        san_current_folder = os.path.join(san_current_folder, "processed")
+    
+    try:
+        if os.path.isdir(san_current_folder):
+            raw_files = [f for f in os.listdir(san_current_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            
+            # Apply Sorting
+            sort_by = st.session_state.san_sort_by
+            desc = st.session_state.san_sort_desc
+            if sort_by == "Name":
+                san_all_files = sorted(raw_files, key=natural_sort_key, reverse=desc)
+            elif sort_by == "Create Date":
+                san_all_files = sorted(raw_files, key=lambda x: os.path.getctime(os.path.join(san_current_folder, x)), reverse=desc)
+            else:  # Modified Date (default)
+                san_all_files = sorted(raw_files, key=lambda x: os.path.getmtime(os.path.join(san_current_folder, x)), reverse=desc)
+            
+            p_size = st.session_state.san_gal_page_size
+            san_total_pages = max(1, (len(san_all_files) + p_size - 1) // p_size)
+    except:
+        pass
+
+# Ensure current page is valid after sort/folder changes
+if st.session_state.san_gal_page > san_total_pages:
+    sync_san_page(san_total_pages)
+
+# --- Custom Utilities (Legacy load order protection) ---
+from style_utils import apply_premium_style, render_dashboard_header
+from config_utils import load_config, save_config
+from api_client import EngineClient
+import shared_state
+
+CONFIG_PATH = "config.json"
+st.set_page_config(page_title="GemiPersona | ASSET SANITIZER", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
+apply_premium_style()
 
 # --- CSS FOR CLEAN DASHBOARD LOOK ---
 st.markdown("""
@@ -127,35 +218,6 @@ st.markdown("""
 
     </style>
 """, unsafe_allow_html=True)
-
-# --- Helper Functions ---
-def select_path(is_folder=True):
-    """Opens a native Windows file/folder picker."""
-    root = tk.Tk()
-    root.withdraw()
-    root.wm_attributes('-topmost', True)
-    if is_folder:
-        path = filedialog.askdirectory()
-    else:
-        path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp")])
-    root.destroy()
-    return path
-
-def natural_sort_key(s):
-    """Helper for natural alphanumeric string sorting."""
-    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
-
-def get_consolidated_metadata(img):
-    """Extracts and consolidates metadata, especially for PNGs with redundant XMP keys."""
-    raw_info = img.info.copy()
-    meta = {}
-    for k, v in raw_info.items():
-        if k == "exif": continue
-        val_str = v.decode('utf-8', errors='ignore') if isinstance(v, bytes) else str(v)
-        if k == 'xmp' and 'XML:com.adobe.xmp' in raw_info:
-            continue 
-        meta[k] = val_str
-    return meta
 
 def save_metadata_final(file_path, new_metadata, preserve_dates=True):
     """Saves metadata while preserving original file timestamps."""
@@ -364,7 +426,7 @@ def manual_watermark_removal_dialog(file_path):
         selected_approach = st.radio("Choose approach:", approaches, index=approaches.index(prev_approach), horizontal=True, label_visibility="collapsed")
     
     with row1_cols[1]:
-        if st.button("💾 Save Settings for Batch Processing", help="Save settings for batch processing", use_container_width=True):
+        if st.button("💾 Save Settings for Batch Processing", help="Save settings for batch processing", width="stretch"):
             # Update config with these settings for future use
             updates = {
                 "automation": {
@@ -628,7 +690,7 @@ def batch_watermark_removal_dialog(folder_path):
     col1, col2, col3 = st.columns(3)
     with col1:
         is_disabled = st.session_state.batch_is_running or is_auto_running or total_files == 0
-        if st.button("🚀 Proceed All", use_container_width=True, disabled=is_disabled):
+        if st.button("🚀 Proceed All", width="stretch", disabled=is_disabled):
             st.session_state.batch_last_index = 0
             st.session_state.batch_is_running = True
             st.session_state.batch_stop_requested = False
@@ -636,12 +698,12 @@ def batch_watermark_removal_dialog(folder_path):
     with col2:
         can_continue = st.session_state.batch_last_index > 0 and st.session_state.batch_last_index < total_files
         cont_disabled = st.session_state.batch_is_running or not can_continue or is_auto_running or enable_range
-        if st.button("➡️ Continue", use_container_width=True, disabled=cont_disabled):
+        if st.button("➡️ Continue", width="stretch", disabled=cont_disabled):
             st.session_state.batch_is_running = True
             st.session_state.batch_stop_requested = False
             st.rerun(scope="fragment")
     with col3:
-        if st.button("🛑 Cancel", use_container_width=True, disabled=not st.session_state.batch_is_running or is_auto_running):
+        if st.button("🛑 Cancel", width="stretch", disabled=not st.session_state.batch_is_running or is_auto_running):
             st.session_state.batch_stop_requested = True
             # We don't rerun(scope="fragment") here because the loop will catch it and rerun
 
@@ -657,7 +719,7 @@ def batch_watermark_removal_dialog(folder_path):
     if currentIndex >= total_files:
         st.success(f"✅ Successfully processed all {total_files} images!")
         st.session_state.batch_is_running = False
-        if st.button("Close Window", use_container_width=True, type="primary"):
+        if st.button("Close Window", width="stretch", type="primary"):
             st.session_state.show_batch_dialog = False
             st.session_state.batch_files = [] # Clear for next time
             st.rerun()
@@ -761,7 +823,7 @@ def edit_asset_dialog(file_path):
         img_prompt = baseline.get("parameters", baseline.get("prompt", baseline.get("Prompt", "")))
         up_prompt = st.text_area("Key: prompt", value=img_prompt, height=250, key=f"edit_v{ver}_prompt")
         
-        if st.button("Apply Prompt to Config", key=f"btn_apply_prompt_v{ver}", use_container_width=True):
+        if st.button("Apply Prompt to Config", key=f"btn_apply_prompt_v{ver}", width="stretch"):
             st.session_state.config = save_config({"prompt": up_prompt})
             st.toast("Prompt updated in config.json")
             time.sleep(0.5)
@@ -771,14 +833,14 @@ def edit_asset_dialog(file_path):
         # URL field
         img_url = baseline.get("url", baseline.get("URL", baseline.get("Url", "")))
         up_url = st.text_input("Key: url", value=img_url, key=f"edit_v{ver}_URL")
-        if st.button("Apply URL to Config", key=f"btn_apply_url_v{ver}", use_container_width=True):
+        if st.button("Apply URL to Config", key=f"btn_apply_url_v{ver}", width="stretch"):
             st.session_state.config = save_config({"browser_url": up_url})
             st.toast("Browser URL updated in config.json")
             time.sleep(0.5)
         # Path field
         img_path = baseline.get("upload_path", baseline.get("Upload_Path", ""))
         up_path = st.text_input("Key: upload_path", value=img_path, disabled=False, key=f"edit_v{ver}_path")
-        if st.button("Apply Path to Config", key=f"btn_apply_path_v{ver}", use_container_width=True):
+        if st.button("Apply Path to Config", key=f"btn_apply_path_v{ver}", width="stretch"):
             st.session_state.config = save_config({"save_dir": up_path})
             st.toast("Save directory updated in config.json")
             time.sleep(0.5)
@@ -788,9 +850,9 @@ def edit_asset_dialog(file_path):
     # Bottom Buttons
     btn_col1, btn_col2 = st.columns([1, 1])
     with btn_col1:
-        save_clicked = st.button("💾 Save to File", type="primary", use_container_width=True)
+        save_clicked = st.button("💾 Save to File", type="primary", width="stretch")
     with btn_col2:
-        apply_all_clicked = st.button("🚀 Apply All to Config", use_container_width=True)
+        apply_all_clicked = st.button("🚀 Apply All to Config", width="stretch")
 
     if save_clicked:
         # Construct current_vals from all baseline keys, but override prompt and URL from our specific widgets
@@ -867,23 +929,6 @@ def view_metadata_dialog(file_path):
     except Exception as e:
         st.error(f"Failed to read asset metadata: {e}")
 
-# --- Gallery Nav Helper ---
-import base64
-
-def sync_san_page(new_page):
-    st.session_state.san_gal_page = new_page
-    st.session_state.san_gal_page_top = new_page
-    st.session_state.san_gal_page_bot = new_page
-    # Ensure the number_input widgets are also updated
-    st.session_state.san_gal_page_top_widget = new_page
-    st.session_state.san_gal_page_bot_widget = new_page
-
-def on_san_page_top_change():
-    sync_san_page(st.session_state.san_gal_page_top_widget)
-
-def on_san_page_bot_change():
-    sync_san_page(st.session_state.san_gal_page_bot_widget)
-
 def render_san_gallery_nav(total_pages, key_suffix):
     c1, c2, c3, c4, c5 = st.columns([0.5, 0.5, 2, 0.5, 0.5])
     with c1:
@@ -895,7 +940,9 @@ def render_san_gallery_nav(total_pages, key_suffix):
                   disabled=total_pages <= 1 or st.session_state.san_gal_page <= 1,
                   on_click=sync_san_page, args=(st.session_state.san_gal_page - 1,))
     with c3:
-        st.number_input(f"Page (of {total_pages})", min_value=1, max_value=max(1, total_pages),
+        st.number_input(f"Page (of {total_pages})", 
+                        min_value=1, 
+                        max_value=max(1, total_pages),
                         key=f"san_gal_page_{key_suffix}_widget",
                         on_change=on_san_page_top_change if key_suffix == "top" else on_san_page_bot_change, 
                         label_visibility="collapsed",
@@ -970,36 +1017,11 @@ with st.sidebar:
                 st.rerun()
 
 
-    # --- Album Navigation (matches Dashboard) ---
+    # --- Album Navigation ---
     if st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path and os.path.isdir(st.session_state.sanitizer_path):
         st.markdown("### Album Navigation")
         with st.container(border=True):
-            try:
-                # Path resolution based on toggle
-                current_view_path = st.session_state.sanitizer_path
-                if st.session_state.san_show_cleaned:
-                    current_view_path = os.path.join(st.session_state.sanitizer_path, "processed")
-
-                files = [f for f in os.listdir(current_view_path)
-                         if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-                total_files = len(files)
-                p_size = st.session_state.san_gal_page_size
-                total_pages = max(1, (total_files + p_size - 1) // p_size)
-            except:
-                total_pages = 1
-
-            render_san_gallery_nav(total_pages, "top")
-
-            st.slider("Images per page", 4, 32,
-                      value=st.session_state.san_gal_page_size,
-                      step=4,
-                      key="san_page_size_slider",
-                      on_change=lambda: (
-                          st.session_state.update(san_gal_page_size=st.session_state.san_page_size_slider)
-                          or sync_san_page(1)
-                      ))
-
-            # --- Sorting Controls ---
+            # 1. Sorting Controls (Moved above Navigation to trigger reset BEFORE navigation widgets render)
             sort_options = ["Name", "Create Date", "Modified Date"]
             new_sort = st.selectbox("Sort by", sort_options,
                                     index=sort_options.index(st.session_state.san_sort_by),
@@ -1021,19 +1043,16 @@ with st.sidebar:
                 sync_san_page(1)
                 st.rerun()
 
-        # --- Batch Remove Watermarks Section (Consolidated Fragment) ---
-        @st.fragment
-        def batch_processing_sidebar_fragment():
-            st.markdown("### Batch Processing")
-            with st.container(border=True):
-                if st.button("🪄 Batch Remove Watermarks", key="san_batch_rm_btn_frag", width="stretch", 
-                             disabled=not st.session_state.sanitizer_is_dir):
-                    st.session_state.show_batch_dialog = True
-                    st.rerun(scope="fragment")
-            
-            if st.session_state.show_batch_dialog:
-                batch_watermark_removal_dialog(st.session_state.sanitizer_path)
+            # 2. Navigation
+            render_san_gallery_nav(san_total_pages, "top")
 
+            st.slider("Images per page", 4, 32,
+                      value=st.session_state.san_gal_page_size,
+                      step=4,
+                      key="san_page_size_slider",
+                      on_change=on_san_page_size_change)
+
+        # --- Batch Processing Section ---
         batch_processing_sidebar_fragment()
 
 
@@ -1091,34 +1110,13 @@ if st.session_state.sanitizer_path and os.path.exists(st.session_state.sanitizer
 
     else:
         # ── FOLDER MODE ──────────────────────────────────────────────────
-        folder_path = st.session_state.sanitizer_path
-        if st.session_state.san_show_cleaned:
-            folder_path = os.path.join(folder_path, "processed")
+        folder_path = san_current_folder
 
-        try:
-            raw_files = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-            # Apply sort
-            sort_by = st.session_state.san_sort_by
-            desc = st.session_state.san_sort_desc
-            if sort_by == "Name":
-                all_files = sorted(raw_files, key=natural_sort_key, reverse=desc)
-            elif sort_by == "Create Date":
-                all_files = sorted(raw_files, key=lambda x: os.path.getctime(os.path.join(folder_path, x)), reverse=desc)
-            else:  # Modified Date (default)
-                all_files = sorted(raw_files, key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=desc)
-        except Exception as e:
-            st.error(f"Cannot read folder: {e}")
-            all_files = []
-
-        if not all_files:
+        if not san_all_files:
             st.info("No images found in the selected folder.")
         else:
             p_size = st.session_state.san_gal_page_size
-            total_pages = max(1, (len(all_files) + p_size - 1) // p_size)
-            if st.session_state.san_gal_page > total_pages:
-                sync_san_page(total_pages)
-
-            page_files = all_files[
+            page_files = san_all_files[
                 (st.session_state.san_gal_page - 1) * p_size :
                 st.session_state.san_gal_page * p_size
             ]
