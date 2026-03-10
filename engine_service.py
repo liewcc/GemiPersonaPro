@@ -286,7 +286,7 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         # We mark the user at start_index (the one that was just active)
         if 0 <= start_index < len(users):
             u = users[start_index]
-            u["quota_full"] = datetime.now().strftime("%H:%M:%S")
+            u["quota_full"] = datetime.now().strftime("%d/%m/%Y %H:%M")
             print(f"[ENGINE] Marked {u['username']} as Quota Full.")
             try:
                 with open(lookup_path, "w", encoding="utf-8") as f:
@@ -520,9 +520,20 @@ async def automation_manager(req: AutomationRequest):
         import traceback
         traceback.print_exc()
     finally:
+        # Final cleanup: Write an [Interrupted] record if there's pending time/counts
+        if engine._cycle_start_time is not None:
+            final_dur = time.time() - engine._cycle_start_time
+            if final_dur > 1 or engine._pending_refused > 0 or engine._pending_resets > 0:
+                engine._write_reject_stat(
+                    filename="[Stopped/Interrupted]",
+                    duration_sec=final_dur,
+                    refused_count=engine._pending_refused,
+                    reset_count=engine._pending_resets
+                )
+        
         engine.automation_status["is_running"] = False
         stats = engine.automation_status
-        engine._log_debug(f"API>> Automation Finished. Final Stats: {stats}")
+        engine._log_debug(f"API>> Automation Manager Exited. Final Stats: {stats}")
         print("[AUTO] Automation manager exited.")
 
 @app.post("/browser/automation/start")
@@ -535,19 +546,7 @@ async def start_automation(req: AutomationRequest):
     # Clear the stop signal to allow a clean restart
     engine._stop_automation_event.clear()
     
-    # 0. Clear all quota marks and set initial user
-    lookup_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "user_login_lookup.json"))
-    if os.path.exists(lookup_path):
-        try:
-            with open(lookup_path, "r", encoding="utf-8") as f:
-                users = json.load(f)
-            if users and isinstance(users, list):
-                for u in users:
-                    u["quota_full"] = None
-                with open(lookup_path, "w", encoding="utf-8") as f:
-                    json.dump(users, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            print(f"[AUTO] Failed to clear quotas: {e}")
+    # Quota marks are preserved intentionally; use the "Clear All Quotas" button to reset manually.
 
     # Detect current active user for anchor
     cfg = load_config()
@@ -565,7 +564,19 @@ async def start_automation(req: AutomationRequest):
         "initial_user": initial_user
     })
     engine._automation_needs_new_chat = True # Ensure first round starts with New Chat
-    
+
+    # Reset per-image reject stat log for the new session
+    try:
+        with open(engine._reject_log_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+    except Exception as e:
+        print(f"[AUTO] Warning: could not reset reject_stat_log.json: {e}")
+    # Reset pending counters so no stale data bleeds into the new session
+    engine._pending_refused = 0
+    engine._pending_resets = 0
+    # Initialize cycle timer to capture initial setup time in the first image's duration
+    engine._cycle_start_time = time.time()
+
     asyncio.create_task(automation_manager(req))
     return {"status": "success", "message": "Automation started in background"}
 
