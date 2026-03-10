@@ -49,19 +49,27 @@ config = load_config()
 login_data = load_login_lookup()
 
 # --- Page Entry Detection & Force Reload ---
-# This ensures that whenever the user navigates TO this page, 
-# the latest data is pulled from disk, overriding any stale session state.
 if st.session_state.get("_last_config_page") != "System_Config":
     st.session_state._last_config_page = "System_Config"
     
-    # Force overwrite mapping from config.json
+    # Force fresh reload from disk to ensure we have the latest data
+    config = load_config()
+    login_data = load_login_lookup()
+    
+    # Overwrite session state with latest config values
     st.session_state.cfg_show_console = config.get("show_engine_console", True)
     st.session_state.cfg_headless = config.get("headless", False)
     st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
     
-    # Force reload of login rows
+    # Force reload of login rows and clear any unsaved editor states
     st.session_state.login_rows = list(login_data)
     st.session_state._login_reload = False
+    
+    # Clear Streamlit data_editor widget states to discard unsaved UI edits
+    if "quota_editor" in st.session_state:
+        del st.session_state["quota_editor"]
+    if "login_editor" in st.session_state:
+        del st.session_state["login_editor"]
 
 # Ensure keys exist if it IS the first run of the session
 if "cfg_show_console" not in st.session_state:
