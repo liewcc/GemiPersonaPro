@@ -149,6 +149,174 @@ def heartbeat_worker(client):
             pass
         time.sleep(30)
 
+REJECT_STAT_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "reject_stat_log.json")
+REJECT_STAT_LOG_PATH = os.path.normpath(REJECT_STAT_LOG_PATH)
+
+def _format_dur_str(dur):
+    if dur >= 60:
+        return f"{int(dur // 60)}:{int(dur % 60):02d}"
+    return f"{dur:.1f}s"
+
+@st.dialog("📊 Reject Rate Stats", width="small")
+def show_reject_rate_stats():
+    """Renders the stats with 1s auto-refresh if automation is running."""
+    # Detect running state once to decide whether to enable the interval
+    try:
+        init_stats = asyncio.run(st.session_state.client.get_automation_stats())
+        init_run = init_stats.get("is_running", False)
+    except:
+        init_run = False
+
+    @st.fragment(run_every=(1 if init_run else None))
+    def render_stats_body():
+        # 1. Fetch live data fresh for every refresh
+        try:
+            stats = asyncio.run(st.session_state.client.get_automation_stats())
+            is_running = stats.get("is_running", False)
+        except:
+            stats = {}
+            is_running = False
+
+        # 2. Read log records
+        records = []
+        if os.path.exists(REJECT_STAT_LOG_PATH):
+            try:
+                with open(REJECT_STAT_LOG_PATH, "r", encoding="utf-8") as _f:
+                    records = json.load(_f)
+            except: pass
+
+        # 3. Handle live pending row and summary
+        display_records = records
+        cur_elapsed_sec = 0.0
+        st_str = stats.get("start_time")
+        if st_str:
+            try:
+                from datetime import datetime
+                st_dt = datetime.strptime(st_str, "%Y-%m-%d %H:%M:%S")
+                cur_elapsed_sec = (datetime.now() - st_dt).total_seconds()
+            except: pass
+
+        if is_running:
+            total_api_refused = int(stats.get("refusals") or 0)
+            total_api_resets = int(stats.get("resets") or 0)
+            total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
+            total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
+            total_log_dur = sum(float(r.get("duration_sec", 0)) for r in records)
+            
+            p_refused = max(0, total_api_refused - total_log_refused)
+            p_resets = max(0, total_api_resets - total_log_resets)
+            p_dur = max(0.0, cur_elapsed_sec - total_log_dur)
+            
+            pending_record = {
+                "index": "⌛",
+                "filename": "Processing...",
+                "duration_sec": p_dur,
+                "refused_count": p_refused,
+                "reset_count": p_resets
+            }
+            # Running: Newest first (Descending), with Processing row at the absolute top
+            display_records = [pending_record] + list(reversed(records))
+        else:
+            # Stopped: Oldest first (Ascending) for the final summary view
+            display_records = records
+
+        # 4. Render Layout
+        if not display_records:
+            st.info("No data yet. Start an automation session to collect statistics.")
+            return
+
+        if is_running:
+            st.caption("🔄 Auto-refreshing counts every 1s...")
+            
+            # Compact Running Summary Section
+            summary_html = f"""
+            <div style="display:flex; justify-content:space-between; background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
+                <div><span style="color:#666;">Refused:</span> <b>{int(stats.get("refusals") or 0)}</b></div>
+                <div><span style="color:#666;">Resets:</span> <b>{int(stats.get("resets") or 0)}</b></div>
+                <div><span style="color:#666;">Elapsed:</span> <b>{_format_dur_str(cur_elapsed_sec)}</b></div>
+            </div>
+            """
+            st.markdown(summary_html, unsafe_allow_html=True)
+
+            st.markdown(f"**{len(records)}** image(s) downloaded.")
+            _render_reject_table(display_records)
+        else:
+            st.caption("🏁 Automation stopped. View final stats below.")
+            total_images = len(records)
+            total_dur = sum(r.get("duration_sec", 0) for r in records)
+            avg_dur = total_dur / total_images if total_images else 0
+            total_r = sum(int(r.get("refused_count", 0)) for r in records)
+            total_rs = sum(int(r.get("reset_count", 0)) for r in records)
+
+            # Compact Final Summary Section
+            sum_top_html = f"""
+            <div style="display:flex; justify-content:space-between; background:#f0f4f8; padding:10px; border-radius:6px; margin-bottom:8px; border:1px solid #d0d7de; font-size:0.9em;">
+                <div><span style="color:#555;">Images:</span> <b>{total_images}</b></div>
+                <div><span style="color:#555;">Total Time:</span> <b>{_format_dur_str(total_dur)}</b></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; background:#fff; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
+                <div><span style="color:#666;">Avg/Img:</span> <b>{_format_dur_str(avg_dur)}</b></div>
+                <div><span style="color:#666;">Refused:</span> <b>{total_r}</b></div>
+                <div><span style="color:#666;">Resets:</span> <b>{total_rs}</b></div>
+            </div>
+            """
+            st.markdown("### Summary")
+            st.markdown(sum_top_html, unsafe_allow_html=True)
+
+            st.markdown("---")
+            st.markdown("### Breakdown")
+            _render_reject_table(records)
+
+    render_stats_body()
+
+def _render_reject_table(records):
+    rows_html = ""
+    for r in records:
+        idx = r.get("index", "-")
+        fname = r.get("filename", "—")
+        dur = r.get("duration_sec", 0)
+        ref = int(r.get("refused_count", 0))
+        rst = int(r.get("reset_count", 0))
+        dur_str = _format_dur_str(dur)
+        ref_color = "#d73a49" if ref > 0 else "inherit"
+        rst_color = "#e36209" if rst > 0 else "inherit"
+        rows_html += f"<tr><td style='text-align:center;'>{idx}</td><td style='font-family:monospace;'>{fname}</td><td style='text-align:right;'>{dur_str}</td><td style='text-align:center; color:{ref_color}; font-weight:{'700' if ref > 0 else 'normal'};'>{ref}</td><td style='text-align:center; color:{rst_color}; font-weight:{'700' if rst > 0 else 'normal'};'>{rst}</td></tr>"
+    
+    table_html = f"""
+    <style>
+        .rrs-container {{ 
+            max-height: 420px; 
+            overflow-y: auto; 
+            margin-bottom: 2px; 
+        }}
+        .rrs-table {{ 
+            width:100%; 
+            border-collapse:collapse; 
+            font-size:0.88em; 
+            font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; 
+        }}
+        .rrs-table th {{ 
+            background:#f0f4f8; 
+            padding:8px 12px; 
+            text-align:left; 
+            border-bottom:2px solid #d0d7de; 
+            color:#444; 
+            font-weight:600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }}
+        .rrs-table td {{ padding:7px 12px; border-bottom:1px solid #e8eaed; background: white; }}
+        .rrs-table tr:hover td {{ background:#f9fafb; }}
+    </style>
+    <div class="rrs-container">
+        <table class='rrs-table'>
+          <thead><tr><th style='text-align:center;width:50px'>#</th><th>Filename</th><th style='text-align:right;'>Duration</th><th style='text-align:center;'>Refused</th><th style='text-align:center;'>Resets</th></tr></thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+    </div>"""
+    st.markdown(table_html, unsafe_allow_html=True)
+
 if st.session_state.heartbeat_thread is None:
     st.session_state.heartbeat_thread = threading.Thread(target=heartbeat_worker, args=(st.session_state.client,), daemon=True)
     st.session_state.heartbeat_thread.start()
@@ -253,12 +421,6 @@ with st.sidebar:
                   key="dash_gal_check_processed_toggle",
                   on_change=on_dash_gal_check_processed_change)
 
-        if st.button("📂 View Download Folder", width="stretch", help="Open the save directory in File Explorer"):
-            if save_dir and os.path.isdir(save_dir):
-                os.startfile(save_dir)
-            else:
-                st.warning("Save directory is not configured or does not exist.")
-
     st.markdown("### Gemini Automation")
     with st.container(border=True):
         remove_wm = st.toggle("Remove Watermark", value=st.session_state.auto_remove_wm)
@@ -304,51 +466,49 @@ with st.sidebar:
         # Determine effective state: treat as inactive if stop was already requested
         show_as_inactive = not is_active or st.session_state.auto_stop_requested
 
-        if show_as_inactive:
-            if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=not browser_active or is_busy):
-                current_config = load_config()
-                current_config["selected_files"] = st.session_state.selected_files
-                current_config["remove_watermark"] = st.session_state.auto_remove_wm
-                
-                def trigger_automation():
-                    async def do_start_auto():
-                        add_log("API>> Triggering Automation Start...")
-                        try:
-                            resp = await st.session_state.client.start_automation(
-                                mode=st.session_state.auto_mode,
-                                goal=st.session_state.auto_goal,
-                                config=current_config
-                            )
-                            add_log(f"API>> Start Result: {resp.get('message')}")
-                        except Exception as e:
-                            add_log(f"API ERROR: {e}")
-                    asyncio.run(do_start_auto())
+        def render_looping_button(key_suffix=""):
+            if show_as_inactive:
+                if st.button("▶️ Start Looping Process", key=f"start_loop{key_suffix}", use_container_width=True, type="primary", disabled=not browser_active or is_busy):
+                    current_config = load_config()
+                    current_config["selected_files"] = st.session_state.selected_files
+                    current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                    
+                    def trigger_automation():
+                        async def do_start_auto():
+                            add_log("API>> Triggering Automation Start...")
+                            try:
+                                resp = await st.session_state.client.start_automation(
+                                    mode=st.session_state.auto_mode,
+                                    goal=st.session_state.auto_goal,
+                                    config=current_config
+                                )
+                                add_log(f"API>> Start Result: {resp.get('message')}")
+                            except Exception as e:
+                                add_log(f"API ERROR: {e}")
+                        asyncio.run(do_start_auto())
 
-                t = threading.Thread(target=trigger_automation, daemon=True)
-                add_script_run_ctx(t)
-                t.start()
-                time.sleep(0.5)
-                st.rerun()
-        else:
-            if st.button("⏹️ Stop Looping Process", width="stretch"):
-                async def do_stop_auto():
-                    add_log("Stopping Automation Loop...")
-                    resp = await st.session_state.client.stop_automation()
-                    add_log(f"Auto Stop: {resp.get('message')}")
-                asyncio.run(do_stop_auto())
-                st.session_state.auto_stop_requested = True
-                st.rerun()
+                    t = threading.Thread(target=trigger_automation, daemon=True)
+                    add_script_run_ctx(t)
+                    t.start()
+                    time.sleep(0.5)
+                    st.rerun()
+            else:
+                if st.button("⏹️ Stop Looping Process", key=f"stop_loop{key_suffix}", use_container_width=True):
+                    async def do_stop_auto():
+                        add_log("Stopping Automation Loop...")
+                        resp = await st.session_state.client.stop_automation()
+                        add_log(f"Auto Stop: {resp.get('message')}")
+                    asyncio.run(do_stop_auto())
+                    st.session_state.auto_stop_requested = True
+                    st.rerun()
+
+        render_looping_button("_sidebar")
 
 def get_status_bar_html(label, msg, color):
     return f"""
-        <div style='height: 46px; min-height: 46px; margin-bottom: 20px; overflow: hidden;'>
-            <div style='background: #f9fafb; padding: 10px 18px; border-radius: 10px; border: 1px solid #e5e7eb; 
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-                        font-size: 0.95em; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-                        display: flex; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.03);'>
-                <span style='color: {color}; margin-right: 12px; font-weight: 700; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.6px;'>{label}:</span> 
-                <span style='font-weight: 500;'>{msg}</span>
-            </div>
+        <div style='background: #f9fafb; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; border: 1px solid #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 0.9em; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+            <span style='color: {color}; margin-right: 12px; font-weight: 700; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.6px;'>{label}:</span> 
+            <span style='font-weight: 500;'>{msg}</span>
         </div>
     """
 
@@ -408,8 +568,8 @@ def render_automation_stats():
             st.caption("Automation Standby.")
             return
         st.markdown(f"""
-        <div style='background: {bg_color}; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px;'>
-            {status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b>
+        <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+            <div>{status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b></div>
         </div>
         """, unsafe_allow_html=True)
     except: pass
@@ -442,7 +602,23 @@ def render_live_status_bar():
 
 render_dash_account_status()
 render_live_status_bar()
-render_automation_stats()
+
+# Put the stats bar and buttons in columns
+col_stats, col_view, col_loop_btn, col_btn = st.columns([2.2, 1.1, 1, 0.7])
+with col_stats:
+    render_automation_stats()
+with col_view:
+    if st.button("📂 View Download Folder", use_container_width=True, help="Open the save directory in File Explorer"):
+        save_dir = st.session_state.config.get("save_dir", "")
+        if save_dir and os.path.isdir(save_dir):
+            os.startfile(save_dir)
+        else:
+            st.warning("Folder not set.")
+with col_loop_btn:
+    render_looping_button("_main")
+with col_btn:
+    if st.button("📊 Stats", use_container_width=True, help="View per-image download stats"):
+        show_reject_rate_stats()
 
 def save_with_metadata(p_img, original_img, output_path_or_buf, original_stats=None):
     from PIL import PngImagePlugin

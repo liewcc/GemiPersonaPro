@@ -170,20 +170,19 @@ with st.container(border=True):
             "active": st.column_config.CheckboxColumn(
                 "Active Credential",
                 help="Current active account",
-                width=160,
                 disabled=True
             ),
-            "username": st.column_config.TextColumn("Username", width=200),
-            "note": st.column_config.TextColumn("Note", width=200),
-            "quota_full": st.column_config.TextColumn("Quota Full At", help="Time when quota was hit", width=150, disabled=True),
+            "username": st.column_config.TextColumn("Username"),
+            "note": st.column_config.TextColumn("Note"),
+            "quota_full": st.column_config.TextColumn("Quota Full At", help="Date/time when quota was hit", width="stretch", disabled=True),
         },
         num_rows="dynamic",
-        width="content",
+        width="stretch",
         hide_index=True,
         key="login_editor"
     )
 
-    btn_save, btn_delete, _ = st.columns([1, 1, 2])
+    btn_save, btn_reload, btn_clear = st.columns([1.2, 1.2, 1.6])
 
     with btn_save:
         if st.button("Save Credentials Table", icon="🔒", type="primary", width="stretch"):
@@ -206,7 +205,7 @@ with st.container(border=True):
             st.success("Credentials saved!")
             st.rerun()
 
-    with btn_delete:
+    with btn_reload:
         if st.button("Reload Credentials Table", icon="🔄", type="secondary", width="stretch"):
             st.session_state._login_reload = True
             if "active_account_select" in st.session_state:
@@ -214,13 +213,14 @@ with st.container(border=True):
             st.success("Credentials reloaded!")
             st.rerun()
 
-    if st.button("Clear All Quotas", icon="🧹", help="Manually reset all quota timestamps"):
-        for r in rows:
-            r["quota_full"] = ""
-        save_login_lookup(rows)
-        st.session_state._login_reload = True
-        st.success("All quota timestamps cleared!")
-        st.rerun()
+    with btn_clear:
+        if st.button("Clear Quota Full Recorded Date", icon="🧹", help="Manually reset all quota timestamps", type="secondary", width="stretch"):
+            for r in rows:
+                r["quota_full"] = ""
+            save_login_lookup(rows)
+            st.session_state._login_reload = True
+            st.success("All quota timestamps cleared!")
+            st.rerun()
 
 # --- Technical Details ---
 with st.expander("Technical Details (config.json)"):

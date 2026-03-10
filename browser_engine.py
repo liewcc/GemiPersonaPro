@@ -34,6 +34,11 @@ class BrowserEngine:
             "start_time": None,
             "initial_user": None
         }
+        # Per-image reject rate tracking
+        self._reject_log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "reject_stat_log.json"))
+        self._cycle_start_time = None   # float: time.time() at start of current cycle
+        self._pending_refused = 0       # refused count waiting to be attributed to next successful image
+        self._pending_resets = 0        # reset count waiting to be attributed to next successful image
         self._automation_needs_new_chat = True # Flag to force New Chat on next cycle
         # Registration browser handles (separate from main browser)
         self._reg_playwright = None
@@ -329,6 +334,7 @@ class BrowserEngine:
             response = await self._page.goto(url, wait_until="domcontentloaded", timeout=45000)
             # PROACTIVE: Check for agreement popups immediately after navigation
             await self.dismiss_agreement_popups()
+            await asyncio.sleep(0.5)  # Grace period: let DOM stabilize after popup dismissal
             return response.status if response else 0
         except Exception as e:
             print(f"Navigation warning: {e}")
@@ -344,7 +350,9 @@ class BrowserEngine:
             "div[aria-label='Enter a prompt here']",
             "div.ql-editor[contenteditable='true']",
             "textarea[aria-label='Enter a prompt here']",
-            "[contenteditable='true']"
+            # NOTE: "[contenteditable='true']" removed — too broad, causes Playwright
+            # strict=True violation when multiple contenteditable elements exist (e.g.
+            # after a popup is dismissed and Gemini re-renders its UI).
         ]
         
         target = None
@@ -509,6 +517,26 @@ class BrowserEngine:
         logs = list(self._log_queue)
         self._log_queue.clear()
         return logs
+
+    def _write_reject_stat(self, filename, duration_sec, refused_count, reset_count):
+        """Appends a per-image stat record to reject_stat_log.json."""
+        try:
+            records = []
+            if os.path.exists(self._reject_log_path):
+                with open(self._reject_log_path, "r", encoding="utf-8") as f:
+                    records = json.load(f)
+            records.append({
+                "index": len(records) + 1,
+                "filename": filename,
+                "duration_sec": round(duration_sec, 2),
+                "refused_count": refused_count,
+                "reset_count": reset_count
+            })
+            with open(self._reject_log_path, "w", encoding="utf-8") as f:
+                json.dump(records, f, indent=2, ensure_ascii=False)
+            self._log_debug(f"RejectStat: Wrote record for {filename} (dur={duration_sec:.1f}s, ref={refused_count}, rst={reset_count})")
+        except Exception as e:
+            self._log_debug(f"RejectStat: Failed to write stat for {filename}: {e}")
 
     async def discover_capabilities(self):
         """
@@ -1288,7 +1316,9 @@ class BrowserEngine:
                 else: # images
                     if successes >= goal: break
 
-                # 2. Cycle Strategy
+                # 2. Cycle Strategy — record start time for this cycle
+                if self._cycle_start_time is None:
+                    self._cycle_start_time = time.time()
                 is_initial = (cycles == 0) or getattr(self, "_automation_needs_new_chat", True)
                 
                 try:
@@ -1359,6 +1389,21 @@ class BrowserEngine:
                             cfg["name_start"] = new_start
                             saved_paths = dl_resp.get("saved_paths", [])
                             self._update_config_start(new_start)
+                            
+                            # Write per-image reject stat record
+                            cycle_end = time.time()
+                            cycle_dur = cycle_end - self._cycle_start_time if self._cycle_start_time else 0
+                            for sp in saved_paths:
+                                self._write_reject_stat(
+                                    filename=os.path.basename(sp),
+                                    duration_sec=cycle_dur / max(len(saved_paths), 1),
+                                    refused_count=self._pending_refused,
+                                    reset_count=self._pending_resets
+                                )
+                            # Reset pending counters and advance cycle start time
+                            self._pending_refused = 0
+                            self._pending_resets = 0
+                            self._cycle_start_time = time.time()
                         
                         # Cycle complete
                         return {"status": "success", "saved_paths": saved_paths}
@@ -1366,11 +1411,13 @@ class BrowserEngine:
                     elif status == "refused":
                         self.automation_status["cycles"] += 1
                         self.automation_status["refusals"] += 1
+                        self._pending_refused += 1
                         return {"status": "refused"}
                         
                     elif status == "reset":
                         self.automation_status["resets"] += 1
                         self.automation_status["cycles"] += 1
+                        self._pending_resets += 1
                         self._log_debug(f"Reset detected in Cycle #{self.automation_status['cycles']}. Counting and forcing New Chat.")
                         self._automation_needs_new_chat = True
                         return {"status": "reset"}
@@ -1386,6 +1433,7 @@ class BrowserEngine:
                             self._log_debug(f"Automation loop encountered an issue: {resp.get('message')}")
                             self.automation_status["cycles"] += 1
                             self.automation_status["resets"] += 1
+                            self._pending_resets += 1
                             self._automation_needs_new_chat = True
                             return {"status": status, "message": resp.get("message", "Unknown issue occurred")}
 
@@ -1396,11 +1444,14 @@ class BrowserEngine:
                     import traceback
                     tb = traceback.format_exc()
                     self._log_debug(f"Automation Error in Cycle #{self.automation_status['cycles']+1}:\n{tb}")
-                    self.automation_status["is_running"] = False
                     break
 
+            # NOTE: We NO LONGER clear _cycle_start_time here...
             self.automation_status["is_running"] = False
             self._log_debug(f"Automation Finished. Final Stats: {self.automation_status}")
+            
+            # --- FINAL EXIT RECORDING REMOVED FROM HERE ---
+            # Now handled by engine_service.py's finally block for better session-wide accuracy.
             
             final_status = "finished"
             if self._stop_automation_event.is_set():
