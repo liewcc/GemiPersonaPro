@@ -459,12 +459,28 @@ with st.sidebar:
         is_active = auto_status.get("is_running", False)
         is_busy = st.session_state.get("is_busy", False)
 
-        # If server confirms stopped, clear the client-side stop flag
-        if not is_active:
+        # Persistent state logic to handle account switches (browser offline while automation active)
+        h_data = asyncio.run(st.session_state.client.check_health())
+        browser_active = h_data.get("engine_running", False) if h_data else False
+        
+        if "ui_auto_looping_active" not in st.session_state:
+            st.session_state.ui_auto_looping_active = False
+            
+        if is_active:
+            st.session_state.ui_auto_looping_active = True
+        elif browser_active:
+            # If the engine is idle but browser is online, then the automation is truly stopped/finished.
+            st.session_state.ui_auto_looping_active = False
+            
+        # UI state: active if engine says so, OR if we are in the middle of a switch (offline)
+        ui_is_active = is_active or (st.session_state.ui_auto_looping_active and not browser_active)
+
+        # If system is truly idle, clear stop request
+        if not ui_is_active:
             st.session_state.auto_stop_requested = False
 
         # Determine effective state: treat as inactive if stop was already requested
-        show_as_inactive = not is_active or st.session_state.auto_stop_requested
+        show_as_inactive = not ui_is_active or st.session_state.auto_stop_requested
 
         def render_looping_button(key_suffix=""):
             if show_as_inactive:
@@ -490,6 +506,8 @@ with st.sidebar:
                     t = threading.Thread(target=trigger_automation, daemon=True)
                     add_script_run_ctx(t)
                     t.start()
+                    st.session_state.ui_auto_looping_active = True
+                    st.session_state.auto_stop_requested = False
                     time.sleep(0.5)
                     st.rerun()
             else:
@@ -500,6 +518,7 @@ with st.sidebar:
                         add_log(f"Auto Stop: {resp.get('message')}")
                     asyncio.run(do_stop_auto())
                     st.session_state.auto_stop_requested = True
+                    st.session_state.ui_auto_looping_active = False # Optimistic clear
                     st.rerun()
 
         render_looping_button("_sidebar")
@@ -560,8 +579,13 @@ def render_automation_stats():
         else:
             st.session_state.last_known_auto_active = is_active
         c, s, r, rs = stats.get("cycles", 0), stats.get("successes", 0), stats.get("refusals", 0), stats.get("resets", 0)
-        if is_active:
-            status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
+        if st.session_state.get("ui_auto_looping_active"):
+            # Use real health data to detect switching
+            h_data = asyncio.run(st.session_state.client.check_health())
+            if h_data and not h_data.get("engine_running", False):
+                status_badge, bg_color = "<b style='color: #f39c12;'>● SWITCHING</b>", "#fff7e6"
+            else:
+                status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
         elif c > 0:
             status_badge, bg_color = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>", "#f6f8fa"
         else:
