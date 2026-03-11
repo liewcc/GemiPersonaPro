@@ -423,10 +423,17 @@ with st.sidebar:
 
     st.markdown("### Gemini Automation")
     with st.container(border=True):
-        remove_wm = st.toggle("Remove Watermark", value=st.session_state.auto_remove_wm)
-        auto_enabled = st.toggle("Auto Looping", value=st.session_state.auto_looping)
+        # Determine automation status for disabling logic
+        auto_status_data = asyncio.run(st.session_state.client.get_automation_stats())
+        is_auto_active = auto_status_data.get("is_running", False)
+        
+        # Lock toggles if running or stop requested
+        toggles_disabled = is_auto_active or st.session_state.auto_stop_requested
 
-        if auto_enabled != st.session_state.auto_looping or remove_wm != st.session_state.auto_remove_wm:
+        remove_wm = st.toggle("Remove Watermark", value=st.session_state.auto_remove_wm, disabled=toggles_disabled)
+        auto_enabled = st.toggle("Auto Looping", value=st.session_state.auto_looping, disabled=toggles_disabled)
+
+        if not toggles_disabled and (auto_enabled != st.session_state.auto_looping or remove_wm != st.session_state.auto_remove_wm):
             st.session_state.auto_looping = auto_enabled
             st.session_state.auto_remove_wm = remove_wm
             save_config({
@@ -438,6 +445,12 @@ with st.sidebar:
                 }
             })
 
+        # Inputs are disabled if:
+        # 1. Auto Looping toggle is OFF
+        # 2. Automation is already running
+        # 3. Stop was requested
+        inputs_disabled = not auto_enabled or is_auto_active or st.session_state.auto_stop_requested
+
         a_col1, a_col2 = st.columns([2, 1])
         with a_col1:
             mode_options = {"rounds": "Fixed Rounds", "images": "Target Images"}
@@ -445,12 +458,14 @@ with st.sidebar:
                                 format_func=lambda x: mode_options[x],
                                 index=list(mode_options.keys()).index(st.session_state.auto_mode),
                                 horizontal=True, label_visibility="collapsed",
-                                disabled=not auto_enabled)
+                                disabled=inputs_disabled)
         with a_col2:
             goal_label = "Rounds" if new_mode == "rounds" else "Images"
-            new_goal = st.number_input(goal_label, min_value=1, value=st.session_state.auto_goal, label_visibility="collapsed", disabled=not auto_enabled)
+            new_goal = st.number_input(goal_label, min_value=1, value=st.session_state.auto_goal, 
+                                       label_visibility="collapsed", 
+                                       disabled=inputs_disabled)
         
-        if auto_enabled and (new_mode != st.session_state.auto_mode or new_goal != st.session_state.auto_goal):
+        if not inputs_disabled and (new_mode != st.session_state.auto_mode or new_goal != st.session_state.auto_goal):
             st.session_state.auto_mode = new_mode
             st.session_state.auto_goal = new_goal
             save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
@@ -484,7 +499,13 @@ with st.sidebar:
 
         def render_looping_button(key_suffix=""):
             if show_as_inactive:
-                if st.button("▶️ Start Looping Process", key=f"start_loop{key_suffix}", use_container_width=True, type="primary", disabled=not browser_active or is_busy):
+                # Start button disabled if:
+                # 1. Browser is OFF
+                # 2. Manual edit / busy
+                # 3. Auto Looping toggle is OFF
+                # 4. Stop was recently requested
+                start_disabled = not browser_active or is_busy or not auto_enabled or st.session_state.auto_stop_requested
+                if st.button("▶️ Start Looping Process", key=f"start_loop{key_suffix}", use_container_width=True, type="primary", disabled=start_disabled):
                     current_config = load_config()
                     current_config["selected_files"] = st.session_state.selected_files
                     current_config["remove_watermark"] = st.session_state.auto_remove_wm
@@ -641,7 +662,7 @@ with col_view:
 with col_loop_btn:
     render_looping_button("_main")
 with col_btn:
-    if st.button("📊 Stats", use_container_width=True, help="View per-image download stats"):
+    if st.button("📊 Reject Rate Stats", use_container_width=True, help="View per-image download stats"):
         show_reject_rate_stats()
 
 def save_with_metadata(p_img, original_img, output_path_or_buf, original_stats=None):

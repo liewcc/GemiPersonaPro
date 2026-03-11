@@ -775,7 +775,7 @@ with col1:
                 st.session_state["prompt_input"] = st.text_area(
                     "Prompt Input",
                     key="prompt_input_widget",
-                    height=135,
+                    height=400,
                     label_visibility="collapsed"
                 )
             
@@ -1115,9 +1115,14 @@ with col1:
             # --- Automation Stats Fragment (Permanently Visible) ---
             render_setup_automation_stats()
 
-            at_col1, _ = st.columns([1, 1])
-            with at_col1:
-                auto_enabled = st.toggle("Auto Looping", value=st.session_state.auto_looping, help="Enable automatic repetitive generation")
+            # Disable toggle if automation is running or stopping
+            auto_status_pre = asyncio.run(st.session_state.client.get_automation_stats())
+            is_auto_active_pre = auto_status_pre.get("is_running", False)
+            toggle_disabled = is_auto_active_pre or st.session_state.auto_stop_requested
+            
+            auto_enabled = st.toggle("Auto Looping", value=st.session_state.auto_looping, 
+                                     help="Enable automatic repetitive generation",
+                                     disabled=toggle_disabled)
 
             if auto_enabled != st.session_state.auto_looping:
                 st.session_state.auto_looping = auto_enabled
@@ -1128,75 +1133,89 @@ with col1:
                 # Force immediate rerun so sidebar buttons see the new state instantly
                 st.rerun()
 
-            if auto_enabled:
-                a_col1, a_col2 = st.columns([2, 1])
-                with a_col1:
-                    mode_options = {"rounds": "Fixed Rounds", "images": "Target Images"}
-                    new_mode = st.radio("Stop Condition", options=list(mode_options.keys()), 
-                                        format_func=lambda x: mode_options[x],
-                                        index=list(mode_options.keys()).index(st.session_state.auto_mode),
-                                        horizontal=True, label_visibility="collapsed")
-                with a_col2:
-                    goal_label = "Rounds" if new_mode == "rounds" else "Images"
-                    new_goal = st.number_input(goal_label, min_value=1, value=st.session_state.auto_goal, label_visibility="collapsed")
-                
-                if new_mode != st.session_state.auto_mode or new_goal != st.session_state.auto_goal:
-                    st.session_state.auto_mode = new_mode
-                    st.session_state.auto_goal = new_goal
-                    st.session_state.config = save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
+            # --- Control Button ---
+            # Check status again for button rendering
+            auto_status = asyncio.run(st.session_state.client.get_automation_stats())
+            is_active = auto_status.get("is_running", False)
 
+            # If server confirms stopped, clear the client-side stop flag
+            if not is_active:
+                st.session_state.auto_stop_requested = False
 
-                # --- Control Button ---
-                # Check status again for button rendering
-                auto_status = asyncio.run(st.session_state.client.get_automation_stats())
-                is_active = auto_status.get("is_running", False)
+            # Determine effective state: treat as inactive if stop was already requested
+            show_as_inactive = not is_active or st.session_state.auto_stop_requested
 
-                # If server confirms stopped, clear the client-side stop flag
-                if not is_active:
-                    st.session_state.auto_stop_requested = False
+            # Final disabling logic for inputs
+            # Inputs are disabled if:
+            # 1. Auto Looping toggle is OFF
+            # 2. Automation is already running
+            # 3. Stop was requested (wait for complete stop)
+            inputs_disabled = not auto_enabled or is_active or st.session_state.auto_stop_requested
 
-                # Determine effective state: treat as inactive if stop was already requested
-                show_as_inactive = not is_active or st.session_state.auto_stop_requested
+            a_col1, a_col2 = st.columns([2, 1])
+            with a_col1:
+                mode_options = {"rounds": "Fixed Rounds", "images": "Target Images"}
+                new_mode = st.radio("Stop Condition", options=list(mode_options.keys()), 
+                                    format_func=lambda x: mode_options[x],
+                                    index=list(mode_options.keys()).index(st.session_state.auto_mode),
+                                    horizontal=True, label_visibility="collapsed",
+                                    disabled=inputs_disabled)
+            with a_col2:
+                goal_label = "Rounds" if new_mode == "rounds" else "Images"
+                new_goal = st.number_input(goal_label, min_value=1, value=st.session_state.auto_goal, 
+                                           label_visibility="collapsed",
+                                           disabled=inputs_disabled)
+            
+            if not inputs_disabled and (new_mode != st.session_state.auto_mode or new_goal != st.session_state.auto_goal):
+                st.session_state.auto_mode = new_mode
+                st.session_state.auto_goal = new_goal
+                st.session_state.config = save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
 
-                if not show_as_inactive:
-                    if st.button("⏹️ Stop Looping Process", width="stretch"):
-                        async def do_stop_auto():
-                            add_log("Stopping Automation Loop...")
-                            resp = await st.session_state.client.stop_automation()
-                            add_log(f"Auto Stop: {resp.get('message')}")
-                        asyncio.run(do_stop_auto())
-                        st.session_state.auto_stop_requested = True
-                        st.rerun()
-                else:
-                    if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=not browser_active or is_busy):
-                        # Capture current UI state for automation
-                        current_config = load_config()
-                        current_config["selected_files"] = st.session_state.selected_files
-                        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
-                        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
-                        current_config["selected_model"] = st.session_state.get("model_selectbox")
-                        current_config["remove_watermark"] = st.session_state.auto_remove_wm
-                        
-                        def trigger_automation():
-                            async def do_start_auto():
-                                add_log("API>> Triggering Automation Start...")
-                                try:
-                                    resp = await st.session_state.client.start_automation(
-                                        mode=st.session_state.auto_mode,
-                                        goal=st.session_state.auto_goal,
-                                        config=current_config
-                                    )
-                                    add_log(f"API>> Start Result: {resp.get('message')}")
-                                except Exception as e:
-                                    add_log(f"API ERROR: {e}")
-                            asyncio.run(do_start_auto())
+            if not show_as_inactive:
+                if st.button("⏹️ Stop Looping Process", width="stretch"):
+                    async def do_stop_auto():
+                        add_log("Stopping Automation Loop...")
+                        resp = await st.session_state.client.stop_automation()
+                        add_log(f"Auto Stop: {resp.get('message')}")
+                    asyncio.run(do_stop_auto())
+                    st.session_state.auto_stop_requested = True
+                    st.rerun()
+            else:
+                # Start button disabled if:
+                # 1. Browser is OFF
+                # 2. Manual Submit/Redo is busy
+                # 3. Auto Looping toggle is OFF
+                # 4. Stop was recently requested
+                start_disabled = not browser_active or is_busy or not auto_enabled or st.session_state.auto_stop_requested
+                if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=start_disabled):
+                    # Capture current UI state for automation
+                    current_config = load_config()
+                    current_config["selected_files"] = st.session_state.selected_files
+                    current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
+                    current_config["selected_tool"] = st.session_state.get("tool_selectbox")
+                    current_config["selected_model"] = st.session_state.get("model_selectbox")
+                    current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                    
+                    def trigger_automation():
+                        async def do_start_auto():
+                            add_log("API>> Triggering Automation Start...")
+                            try:
+                                resp = await st.session_state.client.start_automation(
+                                    mode=st.session_state.auto_mode,
+                                    goal=st.session_state.auto_goal,
+                                    config=current_config
+                                )
+                                add_log(f"API>> Start Result: {resp.get('message')}")
+                            except Exception as e:
+                                add_log(f"API ERROR: {e}")
+                        asyncio.run(do_start_auto())
 
-                        t = threading.Thread(target=trigger_automation, daemon=True)
-                        add_script_run_ctx(t)
-                        t.start()
-                        # Small delay to let thread initiate the POST before rerun
-                        time.sleep(0.5)
-                        st.rerun()
+                    t = threading.Thread(target=trigger_automation, daemon=True)
+                    add_script_run_ctx(t)
+                    t.start()
+                    # Small delay to let thread initiate the POST before rerun
+                    time.sleep(0.5)
+                    st.rerun()
 
 with col2:
     with st.container(border=True, height=MAIN_HEIGHT):
