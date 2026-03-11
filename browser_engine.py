@@ -40,6 +40,9 @@ class BrowserEngine:
         self._pending_refused = 0       # refused count waiting to be attributed to next successful image
         self._pending_resets = 0        # reset count waiting to be attributed to next successful image
         self._automation_needs_new_chat = True # Flag to force New Chat on next cycle
+        self._session_lost = False      # Watchdog flag for engine_service to detect logout
+        self._watchdog_task = None      # Handle for the background watchdog task
+        self._watchdog_log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "watchdog.log"))
         # Registration browser handles (separate from main browser)
         self._reg_playwright = None
         self._reg_context = None
@@ -500,7 +503,7 @@ class BrowserEngine:
         log_msg = f"{timestamp} API>> {msg}"
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"{log_msg}\n")
-        print(log_msg)
+        # print(log_msg)  # Silenced: user requested no general printing
         
         # Add to internal queue for API consumption
         if not hasattr(self, '_log_queue'):
@@ -509,6 +512,22 @@ class BrowserEngine:
         # Keep queue somewhat bounded
         if len(self._log_queue) > 500:
              self._log_queue = self._log_queue[-500:]
+
+    def _log_watchdog(self, msg, to_ui=False):
+        """Helper to log anomalies to watchdog.log and optionally to the UI."""
+        timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+        log_entry = f"{timestamp} {msg}\n"
+        try:
+            with open(self._watchdog_log_path, "a", encoding="utf-8") as f:
+                f.write(log_entry)
+        except:
+            pass
+        
+        if to_ui:
+            self._log_debug(f"WATCHDOG>> {msg}")
+            # Ensure the critical record is also printed to console as per "正式log" request
+            timestamp_now = datetime.now().strftime("[%H:%M:%S]")
+            print(f"{timestamp_now} WATCHDOG>> {msg}")
 
     def get_and_clear_logs(self):
         """Returns all queued logs and clears the queue."""
@@ -817,6 +836,71 @@ class BrowserEngine:
             return {"status": "success", "title": title_text or "Unknown"}
         except Exception as e:
             self._log_debug(f"Error extracting gem title: {e}")
+            return {"status": "error", "message": str(e)}
+
+    async def get_gem_info(self) -> dict:
+        """Extracts the Custom Gem Title AND Description from the active Gemini Gem page."""
+        if not self.is_running:
+            raise Exception("Browser Engine not started")
+
+        try:
+            result = await self._page.evaluate('''() => {
+                const clean = (t) => t ? t.trim().replace(/\\n/g, ' ') : "";
+
+                // --- Extract Name (Exact logic from get_gem_title) ---
+                const nameContainer = document.querySelector('.bot-name-container');
+                let name = "";
+                if (nameContainer) {
+                    const temp = nameContainer.cloneNode(true);
+                    const badge = temp.querySelector('bot-experiment-badge, .bot-name-container-animation-box');
+                    if (badge) badge.remove();
+                    name = clean(temp.innerText);
+                }
+                if (!name) {
+                    // Fallback to document title, stripped of generic "Gemini"
+                    const docTitle = document.title;
+                    if (docTitle.includes(" - Gemini") || docTitle === "Gemini") {
+                        name = docTitle.replace(" - Gemini", "").trim();
+                    } else {
+                        name = docTitle;
+                    }
+                }
+
+                // --- Extract Description ---
+                let description = "";
+                // Primary: dedicated description container
+                const descContainer = document.querySelector('.bot-description-container');
+                if (descContainer) {
+                    description = clean(descContainer.innerText);
+                }
+                // Fallback: look for the subtitle/instruction text near the gem header
+                if (!description) {
+                    const subtitle = document.querySelector('.bot-subtitle, .bot-instruction-text, .gem-description');
+                    if (subtitle) {
+                        description = clean(subtitle.innerText);
+                    }
+                }
+                // Fallback: aria-label on the main gem card
+                if (!description) {
+                    const card = document.querySelector('[data-test-id="gem-card"]');
+                    if (card) {
+                        const label = card.getAttribute('aria-label') || "";
+                        if (label && label !== name) {
+                            description = clean(label);
+                        }
+                    }
+                }
+
+                return { name: name || "Unknown Gem", description: description || "" };
+            }''')
+
+            return {
+                "status": "success",
+                "name": result.get("name", "Unknown Gem"),
+                "description": result.get("description", "")
+            }
+        except Exception as e:
+            self._log_debug(f"Error extracting gem info: {e}")
             return {"status": "error", "message": str(e)}
 
     async def submit_response(self, text=None, expect_attachments=False):
@@ -1293,17 +1377,30 @@ class BrowserEngine:
             self.automation_status["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         try:
-            self.automation_status["is_running"] = True
-            self._log_debug(f"--- [AUTO] RUNNING ROUND: {self.automation_status.get('cycles', 0) + 1} ---")
-
+            # Reset session lost flag for this run
+            self._session_lost = False
+            
+            # Start Watchdog Task
             cfg = settings.get("config", {})
             if not cfg:
                 self._log_debug("ERROR: Missing config in settings.")
                 return {"status": "error", "message": "Missing config"}
+                
+            target_user = cfg.get("active_user")
+            if self._watchdog_task is None:
+                self._watchdog_task = asyncio.create_task(self._run_account_watchdog(target_user=target_user))
+
+            self.automation_status["is_running"] = True
+            self._log_debug(f"--- [AUTO] RUNNING ROUND: {self.automation_status.get('cycles', 0) + 1} ---")
             
             while self.automation_status.get("is_running", False):
                 if self._stop_automation_event.is_set():
                     break
+                
+                # Proactive Watchdog Check: if previous iteration (or watchdog) flagged session loss
+                if getattr(self, "_session_lost", False):
+                    self._log_debug("Watchdog: Critical session loss detected. Aborting loop.")
+                    return {"status": "quota", "message": "Session lost or account mismatch."}
 
                 # Refresh cycles and stats from status in each iteration
                 mode = self.automation_status.get("mode", "rounds")
@@ -1400,10 +1497,12 @@ class BrowserEngine:
                                     refused_count=self._pending_refused,
                                     reset_count=self._pending_resets
                                 )
-                            # Reset pending counters and advance cycle start time
+                            # Reset pending counters and mark cycle end cleanly.
+                            # Set to None so the engine_service finally block doesn't
+                            # misinterpret this as an interrupted cycle.
                             self._pending_refused = 0
                             self._pending_resets = 0
-                            self._cycle_start_time = time.time()
+                            self._cycle_start_time = None
                         
                         # Cycle complete
                         return {"status": "success", "saved_paths": saved_paths}
@@ -1464,6 +1563,62 @@ class BrowserEngine:
             self._log_debug(f"CRITICAL CRASH in run_automation_loop:\n{tb}")
             self.automation_status["is_running"] = False
             return {"status": "error", "message": str(e)}
+        finally:
+            # Lifecycle: Ensure watchdog is killed when automation loop ends
+            if self._watchdog_task:
+                # Silently cancel the watchdog - no log needed for routine teardown
+                self._watchdog_task.cancel()
+                try:
+                    await self._watchdog_task
+                except asyncio.CancelledError:
+                    pass
+                self._watchdog_task = None
+
+    async def _run_account_watchdog(self, target_user: str = None):
+        """
+        Independent background task to periodically verify login status.
+        Runs until _stop_automation_event is set.
+        """
+        # Fully silent start - anomalies only are logged
+        try:
+            # Initial cooldown to let first-page navigation settle
+            await asyncio.sleep(5) 
+            
+            while not self._stop_automation_event.is_set():
+                if not self.is_running or not self._page:
+                    break
+                
+                try:
+                    # Non-invasive account check
+                    acc = await self.get_account_info()
+                    
+                    # 1. Detection: Not Logged In
+                    if not acc.get("logged_in"):
+                        self._log_watchdog("CRITICAL - Session lost (Guest detected).", to_ui=True)
+                        self._session_lost = True
+                        self._stop_automation_event.set()
+                        break
+                    
+                    # 2. Detection: Account Mismatch (if target_user provided as email)
+                    current_acc = acc.get("account_id")
+                    if target_user and "@" in target_user and current_acc:
+                        if target_user.lower() != current_acc.lower() and current_acc != "Unknown Account":
+                            self._log_watchdog(f"CRITICAL - Account mismatch! Expected {target_user}, found {current_acc}.", to_ui=True)
+                            self._session_lost = True
+                            self._stop_automation_event.set()
+                            break
+
+                except Exception as e:
+                    self._log_watchdog(f"Anomaly: Check failed ({e}). Retrying in 30s...")
+
+                # Periodic check interval
+                await asyncio.sleep(45)
+                
+        except asyncio.CancelledError:
+            pass # Clean exit
+        except Exception as e:
+            self._log_watchdog(f"Critical Watchdog Internal Error: {e}")
+        # No finally log - fully silent on normal end
 
     def _update_config_start(self, next_start):
         """Helper to persist the next available start number using config_utils."""

@@ -496,9 +496,29 @@ async def automation_manager(req: AutomationRequest):
             # 5. Handle Terminal/Retry States
             if result.get("status") == "quota":
                 if engine._stop_automation_event.is_set():
-                    break
-                print("[AUTO] Quota hit. Attempting profile switch...")
-                switch_res = await perform_switch_logic(reason="quota")
+                    # If stop signal is set, and session was lost, attempt recovery before breaking.
+                    # This allows the watchdog to potentially recover even if automation was told to stop.
+                    if getattr(engine, "_session_lost", False):
+                        print("[AUTO] Watchdog detected session loss. Attempting recovery...")
+                        engine._log_debug("WATCHDOG>> Session loss detected. Triggering recovery...")
+                        switch_res = await perform_switch_logic(reason="session_loss")
+                        if switch_res.get("status") == "success":
+                            engine._log_debug(f"API>> Profile switched to {switch_res.get('user')}. Restarting loop flow...")
+                            await asyncio.sleep(5) 
+                            continue # Try next loop with new user
+                        else:
+                            print(f"[AUTO] Watchdog recovery failed: {switch_res.get('message')}. Stopping automation.")
+                            break
+                    else:
+                        break # Original behavior: if stop signal is set, just break.
+                # Check if loop exited due to watchdog/session loss
+                if getattr(engine, "_session_lost", False):
+                    print("[AUTO] Watchdog detected session loss. Attempting recovery...")
+                    engine._log_debug("WATCHDOG>> Session loss detected. Triggering recovery...")
+                    switch_res = await perform_switch_logic(reason="session_loss")
+                else:
+                    print("[AUTO] Quota hit. Attempting profile switch...")
+                    switch_res = await perform_switch_logic(reason="quota")
                 if switch_res.get("status") == "success":
                     engine._log_debug(f"API>> Profile switched to {switch_res.get('user')}. Restarting loop flow...")
                     await asyncio.sleep(5) 
@@ -658,6 +678,16 @@ async def get_gem_title():
         raise HTTPException(status_code=400, detail="Engine not running")
     try:
         result = await engine.get_gem_title()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/browser/gem_info")
+async def get_gem_info():
+    if not engine.is_running:
+        raise HTTPException(status_code=400, detail="Engine not running")
+    try:
+        result = await engine.get_gem_info()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

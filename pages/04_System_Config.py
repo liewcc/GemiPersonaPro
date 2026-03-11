@@ -79,156 +79,215 @@ if "cfg_headless" not in st.session_state:
 if "cfg_timeout" not in st.session_state:
     st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 
-# Section 1: Engine Settings
-with st.container(border=True):
-    st.toggle(
-        "Show Engine Console Window",
-        key="cfg_show_console",
-        on_change=on_change_console,
-        help="If enabled, the background service will run in a visible console window."
-    )
+WATCHDOG_LOG_PATH = "watchdog.log"
 
-    st.toggle(
-        "Run Browser Headless",
-        key="cfg_headless",
-        on_change=on_change_headless,
-        help="If enabled, the browser will run in the background."
-    )
+def get_watchdog_log():
+    if not os.path.exists(WATCHDOG_LOG_PATH):
+        return None
+    try:
+        with open(WATCHDOG_LOG_PATH, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        return f"Error reading log: {e}"
 
-    st.number_input(
-        "Heartbeat Timeout (seconds)",
-        min_value=0,
-        max_value=86400,
-        key="cfg_timeout",
-        on_change=on_change_timeout,
-        help="0 = Always stays alive."
-    )
+def clear_watchdog_log():
+    try:
+        # Open in write mode to clear contents, preventing conflict if watchdog is just appending
+        with open(WATCHDOG_LOG_PATH, "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception as e:
+        st.error(f"Failed to clear log: {e}")
 
-# Section 2: Quota Detection Settings
-st.subheader("Quota Full Phrases")
-with st.container(border=True):
-    quota_phrases = config.get("quota_full", [])
-    quota_df = pd.DataFrame([{"phrase": p} for p in quota_phrases])
+# Section 1 & Watchdog Log: Split into two columns
+col_engine, col_watchdog = st.columns([1, 1])
 
-    edited_quota_df = st.data_editor(
-        quota_df,
-        column_config={
-            "phrase": st.column_config.TextColumn("Identification Phrase", width="stretch"),
-        },
-        num_rows="dynamic",
-        width="stretch",
-        hide_index=True,
-        key="quota_editor"
-    )
-
-    if st.button("Save Quota Phrases", icon="📝"):
-        new_phrases = edited_quota_df["phrase"].tolist()
-        new_phrases = [p.strip() for p in new_phrases if p.strip()]
-        save_config({"quota_full": new_phrases})
-        st.success("Quota phrases updated!")
-        st.rerun()
-
-# Section 3: Credential Management
-st.subheader("User Login Credentials")
-with st.container(border=True):
-    # login_rows is now handled by the page entry reload logic at the top,
-    # but we keep this check for manual trigger or safety.
-    if "login_rows" not in st.session_state or st.session_state.get("_login_reload"):
-        st.session_state.login_rows = list(login_data)
-        st.session_state._login_reload = False
-
-    rows = st.session_state.login_rows
-    usernames = [r.get("username", "") for r in rows if r.get("username")]
-
-    active_index = 0
-    for i, r in enumerate(rows):
-        if r.get("active"):
-            active_index = i
-            break
-
-    if usernames:
-        selected_active = st.selectbox(
-            "Active Account",
-            options=usernames,
-            index=min(active_index, len(usernames) - 1),
-            help="Select the account to use for the current session",
-            key="active_account_select"
+# --- Section 1: Engine Settings ---
+with col_engine:
+    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ENGINE SETTINGS</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.toggle(
+            "Show Engine Console Window",
+            key="cfg_show_console",
+            on_change=on_change_console,
+            help="If enabled, the background service will run in a visible console window."
         )
-    else:
-        selected_active = None
-        st.info("Add a new credential row below to get started.")
 
-    st.markdown("")
+        st.toggle(
+            "Run Browser Headless",
+            key="cfg_headless",
+            on_change=on_change_headless,
+            help="If enabled, the browser will run in the background."
+        )
 
-    editor_data = [
-        {
-            "active": r.get("active", False), 
-            "username": r.get("username", ""), 
-            "note": r.get("note", ""),
-            "quota_full": r.get("quota_full", "")
-        }
-        for r in rows
-    ]
-    editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "username", "note", "quota_full"])
+        st.number_input(
+            "Heartbeat Timeout (seconds)",
+            min_value=0,
+            max_value=86400,
+            key="cfg_timeout",
+            on_change=on_change_timeout,
+            help="0 = Always stays alive."
+        )
 
-    # 这里的 width 设为 "content" 以确保紧凑且不报错
-    edited_df = st.data_editor(
-        editor_df,
-        column_config={
-            "active": st.column_config.CheckboxColumn(
-                "Active Credential",
-                help="Current active account",
-                disabled=True
-            ),
-            "username": st.column_config.TextColumn("Username"),
-            "note": st.column_config.TextColumn("Note"),
-            "quota_full": st.column_config.TextColumn("Quota Full At", help="Date/time when quota was hit", width="stretch", disabled=True),
-        },
-        num_rows="dynamic",
-        width="stretch",
-        hide_index=True,
-        key="login_editor"
-    )
+# --- Watchdog Log ---
+with col_watchdog:
+    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>WATCHDOG LOG</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        log_content = get_watchdog_log()
+        
+        # Display Reload and Clear Log buttons side-by-side
+        btn_col1, btn_col2 = st.columns([1, 1])
+        with btn_col1:
+            if st.button("Reload Log", key="btn_reload_watchdog", icon="🔄", help="Reload the latest watchdog log", type="secondary", use_container_width=True):
+                st.rerun()
+        with btn_col2:
+            if st.button("Clear Log", key="btn_clear_watchdog", icon="🗑️", help="Clear the watchdog log completely", type="secondary", use_container_width=True):
+                clear_watchdog_log()
+                st.rerun()
 
-    btn_save, btn_reload, btn_clear = st.columns([1.2, 1.2, 1.6])
+        st.markdown("") # Spacer
+        if log_content is None:
+            st.info("Watchdog log not found or no errors detected.")
+        elif not log_content.strip():
+            st.info("Watchdog log is empty.")
+        else:
+            st.text_area("Log Output", value=log_content, height=200, disabled=True, label_visibility="collapsed")
 
-    with btn_save:
-        if st.button("Save Credentials Table", icon="🔒", type="primary", width="stretch"):
-            records = edited_df.to_dict("records")
-            records = [r for r in records if r.get("username") or r.get("note")]
-            
-            # Map existing quota_full if not present in records 
-            # (though it should be there as a column)
-            final = [
-                {"active": (r.get("username") == selected_active),
-                 "username": r.get("username", ""),
-                 "note": r.get("note", ""),
-                 "quota_full": r.get("quota_full", "")}
-                for r in records
-            ]
-            save_login_lookup(final)
-            st.session_state._login_reload = True
-            if "active_account_select" in st.session_state:
-                del st.session_state["active_account_select"]
-            st.success("Credentials saved!")
+
+# Layout for Quota & Credentials -> 1:3 ratio
+col_quota, col_cred = st.columns([1, 3])
+
+# --- Section 2: Quota Detection Settings ---
+with col_quota:
+    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>QUOTA FULL PHRASES</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        quota_phrases = config.get("quota_full", [])
+        quota_df = pd.DataFrame([{"phrase": p} for p in quota_phrases])
+
+        edited_quota_df = st.data_editor(
+            quota_df,
+            column_config={
+                "phrase": st.column_config.TextColumn("Identification Phrase", width="stretch"),
+            },
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            height=415,
+            key="quota_editor"
+        )
+        
+        # Spacer padding to visually align the bottom contour of this container with the taller right container
+        st.markdown("<div style='height: 85px;'></div>", unsafe_allow_html=True)
+
+        if st.button("Save Quota Phrases", icon="📝", use_container_width=True):
+            new_phrases = edited_quota_df["phrase"].tolist()
+            new_phrases = [p.strip() for p in new_phrases if p.strip()]
+            save_config({"quota_full": new_phrases})
+            st.success("Quota phrases updated!")
             st.rerun()
 
-    with btn_reload:
-        if st.button("Reload Credentials Table", icon="🔄", type="secondary", width="stretch"):
-            st.session_state._login_reload = True
-            if "active_account_select" in st.session_state:
-                del st.session_state["active_account_select"]
-            st.success("Credentials reloaded!")
-            st.rerun()
+# --- Section 3: Credential Management ---
+with col_cred:
+    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>USER LOGIN CREDENTIALS</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        # login_rows is now handled by the page entry reload logic at the top,
+        # but we keep this check for manual trigger or safety.
+        if "login_rows" not in st.session_state or st.session_state.get("_login_reload"):
+            st.session_state.login_rows = list(login_data)
+            st.session_state._login_reload = False
 
-    with btn_clear:
-        if st.button("Clear Quota Full Recorded Date", icon="🧹", help="Manually reset all quota timestamps", type="secondary", width="stretch"):
-            for r in rows:
-                r["quota_full"] = ""
-            save_login_lookup(rows)
-            st.session_state._login_reload = True
-            st.success("All quota timestamps cleared!")
-            st.rerun()
+        rows = st.session_state.login_rows
+        usernames = [r.get("username", "") for r in rows if r.get("username")]
+
+        active_index = 0
+        for i, r in enumerate(rows):
+            if r.get("active"):
+                active_index = i
+                break
+
+        if usernames:
+            selected_active = st.selectbox(
+                "Active Account",
+                options=usernames,
+                index=min(active_index, len(usernames) - 1),
+                help="Select the account to use for the current session",
+                key="active_account_select"
+            )
+        else:
+            selected_active = None
+            st.info("Add a new credential row below to get started.")
+
+        st.markdown("")
+
+        editor_data = [
+            {
+                "active": r.get("active", False), 
+                "username": r.get("username", ""), 
+                "note": r.get("note", ""),
+                "quota_full": r.get("quota_full", "")
+            }
+            for r in rows
+        ]
+        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "username", "note", "quota_full"])
+
+        # 这里的 width 设为 "content" 以确保紧凑且不报错
+        edited_df = st.data_editor(
+            editor_df,
+            column_config={
+                "active": st.column_config.CheckboxColumn(
+                    "Active Credential",
+                    help="Current active account",
+                    disabled=True
+                ),
+                "username": st.column_config.TextColumn("Username"),
+                "note": st.column_config.TextColumn("Note"),
+                "quota_full": st.column_config.TextColumn("Quota Full At", help="Date/time when quota was hit", width="stretch", disabled=True),
+            },
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            height=430,
+            key="login_editor"
+        )
+
+        btn_save, btn_reload, btn_clear = st.columns([1.2, 1.2, 1.6])
+
+        with btn_save:
+            if st.button("Save Credentials Table", icon="🔒", type="primary", width="stretch"):
+                records = edited_df.to_dict("records")
+                records = [r for r in records if r.get("username") or r.get("note")]
+                
+                # Map existing quota_full if not present in records 
+                # (though it should be there as a column)
+                final = [
+                    {"active": (r.get("username") == selected_active),
+                     "username": r.get("username", ""),
+                     "note": r.get("note", ""),
+                     "quota_full": r.get("quota_full", "")}
+                    for r in records
+                ]
+                save_login_lookup(final)
+                st.session_state._login_reload = True
+                if "active_account_select" in st.session_state:
+                    del st.session_state["active_account_select"]
+                st.success("Credentials saved!")
+                st.rerun()
+
+        with btn_reload:
+            if st.button("Reload Credentials Table", icon="🔄", type="secondary", width="stretch"):
+                st.session_state._login_reload = True
+                if "active_account_select" in st.session_state:
+                    del st.session_state["active_account_select"]
+                st.success("Credentials reloaded!")
+                st.rerun()
+
+        with btn_clear:
+            if st.button("Clear Quota Full Recorded Date", icon="🧹", help="Manually reset all quota timestamps", type="secondary", width="stretch"):
+                for r in rows:
+                    r["quota_full"] = ""
+                save_login_lookup(rows)
+                st.session_state._login_reload = True
+                st.success("All quota timestamps cleared!")
+                st.rerun()
 
 # --- Technical Details ---
 with st.expander("Technical Details (config.json)"):

@@ -183,6 +183,11 @@ class EngineClient:
             resp = await client.get(f"{self.base_url}/browser/gem_title", timeout=15.0)
             return resp.json()
 
+    async def get_gem_info(self):
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"{self.base_url}/browser/gem_info", timeout=15.0)
+            return resp.json()
+
     async def start_automation(self, mode, goal, config):
         async with httpx.AsyncClient() as client:
             payload = {"mode": mode, "goal": goal, "config": config}
