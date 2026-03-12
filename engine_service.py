@@ -401,6 +401,23 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     except Exception as e:
         print(f"[ENGINE] Error during login check: {e}")
         return {"status": "error", "message": f"Login check failed: {e}"}
+    # --- [NEW] Trigger History Deletion if enabled for this profile ---
+    try:
+        from config_utils import load_login_lookup
+        login_lookup = load_login_lookup()
+        user_settings = next((u for u in login_lookup if u.get("username") == target_user["username"]), {})
+        
+        if user_settings.get("auto_delete"):
+            del_range = user_settings.get("delete_range", "Last hour")
+            engine._log_debug(f"API>> Auto-delete triggered ({del_range})...")
+            del_resp = await engine.delete_activity_history(range_name=del_range)
+            engine._log_debug(f"API>> {del_resp.get('message')}")
+            
+            # Navigate back to the intended Gemini URL after deletion
+            engine._log_debug(f"API>> Returning to Gemini App: {target_url}")
+            await engine.navigate(target_url)
+    except Exception as e:
+        engine._log_debug(f"API>> Error triggering auto-delete: {e}")
     # -----------------------------------
     
     return {

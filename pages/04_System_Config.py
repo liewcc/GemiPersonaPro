@@ -3,35 +3,18 @@ import json
 import os
 import pandas as pd
 from style_utils import apply_premium_style, render_dashboard_header
-from config_utils import load_config as load_cfg_disk, save_config as save_cfg_disk
+from config_utils import load_config as load_cfg_disk, save_config as save_cfg_disk, load_login_lookup, save_login_lookup
 
 # --- Page Config ---
 st.set_page_config(page_title="GemiPersona | System Config", page_icon="⚙️", layout="wide")
 apply_premium_style()
 
-CONFIG_PATH = "config.json"
-LOGIN_LOOKUP_PATH = "user_login_lookup.json"
-
 # --- Data Loading Functions ---
 def load_config():
     return load_cfg_disk()
 
-def load_login_lookup():
-    if os.path.exists(LOGIN_LOOKUP_PATH):
-        try:
-            with open(LOGIN_LOOKUP_PATH, "r") as f:
-                data = json.load(f)
-                return data if isinstance(data, list) else []
-        except:
-            pass
-    return []
-
 def save_config(updates):
     return save_cfg_disk(updates)
-
-def save_login_lookup(data):
-    with open(LOGIN_LOOKUP_PATH, "w") as f:
-        json.dump(data, f, indent=4)
 
 # --- Engine Config Callbacks ---
 def on_change_console():
@@ -137,10 +120,10 @@ with col_watchdog:
         # Display Reload and Clear Log buttons side-by-side
         btn_col1, btn_col2 = st.columns([1, 1])
         with btn_col1:
-            if st.button("Reload Log", key="btn_reload_watchdog", icon="🔄", help="Reload the latest watchdog log", type="secondary", use_container_width=True):
+            if st.button("Reload Log", key="btn_reload_watchdog", icon="🔄", help="Reload the latest watchdog log", type="secondary", width='stretch'):
                 st.rerun()
         with btn_col2:
-            if st.button("Clear Log", key="btn_clear_watchdog", icon="🗑️", help="Clear the watchdog log completely", type="secondary", use_container_width=True):
+            if st.button("Clear Log", key="btn_clear_watchdog", icon="🗑️", help="Clear the watchdog log completely", type="secondary", width='stretch'):
                 clear_watchdog_log()
                 st.rerun()
 
@@ -178,7 +161,7 @@ with col_quota:
         # Spacer padding to visually align the bottom contour of this container with the taller right container
         st.markdown("<div style='height: 85px;'></div>", unsafe_allow_html=True)
 
-        if st.button("Save Quota Phrases", icon="📝", use_container_width=True):
+        if st.button("Save Quota Phrases", icon="📝", width='stretch'):
             new_phrases = edited_quota_df["phrase"].tolist()
             new_phrases = [p.strip() for p in new_phrases if p.strip()]
             save_config({"quota_full": new_phrases})
@@ -222,24 +205,29 @@ with col_cred:
             {
                 "active": r.get("active", False), 
                 "username": r.get("username", ""), 
+                "auto_delete": r.get("auto_delete", False),
+                "delete_range": r.get("delete_range", "Last hour"),
                 "note": r.get("note", ""),
                 "quota_full": r.get("quota_full", "")
             }
             for r in rows
         ]
-        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "username", "note", "quota_full"])
+        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "username", "auto_delete", "delete_range", "note", "quota_full"])
 
         # 这里的 width 设为 "content" 以确保紧凑且不报错
         edited_df = st.data_editor(
             editor_df,
             column_config={
                 "active": st.column_config.CheckboxColumn(
-                    "Active Credential",
+                    "Active",
                     help="Current active account",
-                    disabled=True
+                    disabled=True,
+                    width="small"
                 ),
-                "username": st.column_config.TextColumn("Username"),
-                "note": st.column_config.TextColumn("Note"),
+                "username": st.column_config.TextColumn("Username", width="medium"),
+                "auto_delete": st.column_config.CheckboxColumn("Auto Delete", help="Auto delete history on switch", width="small"),
+                "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], help="Deletion time range", width="small"),
+                "note": st.column_config.TextColumn("Note", width="medium"),
                 "quota_full": st.column_config.TextColumn("Quota Full At", help="Date/time when quota was hit", width="stretch", disabled=True),
             },
             num_rows="dynamic",
@@ -261,6 +249,8 @@ with col_cred:
                 final = [
                     {"active": (r.get("username") == selected_active),
                      "username": r.get("username", ""),
+                     "auto_delete": r.get("auto_delete", False),
+                     "delete_range": r.get("delete_range", "Last hour"),
                      "note": r.get("note", ""),
                      "quota_full": r.get("quota_full", "")}
                     for r in records
