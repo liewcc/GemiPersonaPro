@@ -5,10 +5,9 @@
 **Contents**
 - [📜 Project Origin](#-project-origin)
 - [🚀 Features](#-features)
-- [📊 Monitoring & Stats](./guides/monitoring_stats.md)
 - [📖 Documentation](#-documentation)
-    - [⏱️ Quick Start Guide](./guides/quick_start.md)
   - [⏱️ Quick Start Guide](./guides/quick_start.md)
+  - [📊 Monitoring & Stats](./guides/monitoring_stats.md)
   - [👥 Multi-Account Management](./guides/multi_account.md)
   - [🧠 AI Watermark Technology](./guides/watermark_removal.md)
   - [🛡️ Asset Sanitizer Page](./guides/asset_sanitizer.md)
