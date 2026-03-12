@@ -1,12 +1,16 @@
 import os
 import json
 import copy
+import logging
 
 def get_project_root():
     return os.path.abspath(os.path.dirname(__file__))
 
 def get_config_path():
     return os.path.join(get_project_root(), "config.json")
+
+def get_login_lookup_path():
+    return os.path.join(get_project_root(), "user_login_lookup.json")
 
 DEFAULT_CONFIG = {
     "show_engine_console": True,
@@ -70,3 +74,27 @@ def save_config(updates):
     except Exception as e:
         print(f"[CONFIG] Write Error: {e}")
         return current
+
+def load_login_lookup():
+    """Reads user_login_lookup.json with protection against 0-byte reads."""
+    lookup_path = get_login_lookup_path()
+    if os.path.exists(lookup_path):
+        try:
+            if os.path.getsize(lookup_path) > 0:
+                with open(lookup_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data if isinstance(data, list) else []
+        except Exception as e:
+            print(f"[CONFIG] Lookup Read Error: {e}")
+    return []
+
+def save_login_lookup(data):
+    """Writes user_login_lookup.json atomically."""
+    lookup_path = get_login_lookup_path()
+    try:
+        with open(lookup_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[CONFIG] Lookup Write Error: {e}")
+        return False

@@ -11,6 +11,7 @@ from style_utils import apply_premium_style, render_dashboard_header
 from lama_refiner import LaMaRefiner
 from inverse_alpha_compositing import InverseAlphaCompositing
 import torch
+from datetime import datetime
 
 import json
 import os
@@ -103,6 +104,8 @@ if "is_busy" not in st.session_state:
     st.session_state.is_busy = False
 if "last_status_msg" not in st.session_state:
     st.session_state.last_status_msg = ""
+if "initial_login_checked" not in st.session_state:
+    st.session_state.initial_login_checked = False
 
 # --- Navigation & Widget Key Force Sync ---
 if "dash_gal_page" not in st.session_state: st.session_state.dash_gal_page = 1
@@ -157,117 +160,110 @@ def _format_dur_str(dur):
         return f"{int(dur // 60)}:{int(dur % 60):02d}"
     return f"{dur:.1f}s"
 
+@st.fragment(run_every=1)
+def render_stats_body_fragment():
+    # Detect running state
+    try:
+        init_stats = asyncio.run(st.session_state.client.get_automation_stats())
+        is_running = init_stats.get("is_running", False)
+    except:
+        stats = {}
+        is_running = False
+
+    # 2. Read log records
+    records = []
+    if os.path.exists(REJECT_STAT_LOG_PATH):
+        try:
+            with open(REJECT_STAT_LOG_PATH, "r", encoding="utf-8") as _f:
+                records = json.load(_f)
+        except: pass
+
+    # 3. Handle live pending row and summary
+    display_records = records
+    cur_elapsed_sec = 0.0
+    try:
+        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        st_str = stats.get("start_time")
+        if st_str:
+            st_dt = datetime.strptime(st_str, "%Y-%m-%d %H:%M:%S")
+            cur_elapsed_sec = (datetime.now() - st_dt).total_seconds()
+    except: pass
+
+    if is_running:
+        total_api_refused = int(stats.get("refusals") or 0)
+        total_api_resets = int(stats.get("resets") or 0)
+        total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
+        total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
+        total_log_dur = sum(float(r.get("duration_sec", 0)) for r in records)
+        
+        p_refused = max(0, total_api_refused - total_log_refused)
+        p_resets = max(0, total_api_resets - total_log_resets)
+        p_dur = max(0.0, cur_elapsed_sec - total_log_dur)
+        
+        pending_record = {
+            "index": "⌛",
+            "filename": "Processing...",
+            "duration_sec": p_dur,
+            "refused_count": p_refused,
+            "reset_count": p_resets
+        }
+        # Running: Newest first (Descending), with Processing row at the absolute top
+        display_records = [pending_record] + list(reversed(records))
+    else:
+        # Stopped: Oldest first (Ascending) for the final summary view
+        display_records = records
+
+    # 4. Render Layout
+    if not display_records:
+        st.info("No data yet. Start an automation session to collect statistics.")
+        return
+
+    if is_running:
+        st.caption("🔄 Auto-refreshing counts every 1s...")
+        
+        # Compact Running Summary Section
+        summary_html = f"""
+        <div style="display:flex; justify-content:space-between; background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
+            <div><span style="color:#666;">Refused:</span> <b>{int(stats.get("refusals") or 0)}</b></div>
+            <div><span style="color:#666;">Resets:</span> <b>{int(stats.get("resets") or 0)}</b></div>
+            <div><span style="color:#666;">Elapsed:</span> <b>{_format_dur_str(cur_elapsed_sec)}</b></div>
+        </div>
+        """
+        st.markdown(summary_html, unsafe_allow_html=True)
+
+        st.markdown(f"**{len(records)}** image(s) downloaded.")
+        _render_reject_table(display_records)
+    else:
+        st.caption("🏁 Automation stopped. View final stats below.")
+        total_images = len(records)
+        total_dur = sum(r.get("duration_sec", 0) for r in records)
+        avg_dur = total_dur / total_images if total_images else 0
+        total_r = sum(int(r.get("refused_count", 0)) for r in records)
+        total_rs = sum(int(r.get("reset_count", 0)) for r in records)
+
+        # Compact Final Summary Section
+        sum_top_html = f"""
+        <div style="display:flex; justify-content:space-between; background:#f0f4f8; padding:10px; border-radius:6px; margin-bottom:8px; border:1px solid #d0d7de; font-size:0.9em;">
+            <div><span style="color:#555;">Images:</span> <b>{total_images}</b></div>
+            <div><span style="color:#555;">Total Time:</span> <b>{_format_dur_str(total_dur)}</b></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; background:#fff; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
+            <div><span style="color:#666;">Avg/Img:</span> <b>{_format_dur_str(avg_dur)}</b></div>
+            <div><span style="color:#666;">Refused:</span> <b>{total_r}</b></div>
+            <div><span style="color:#666;">Resets:</span> <b>{total_rs}</b></div>
+        </div>
+        """
+        st.markdown("### Summary")
+        st.markdown(sum_top_html, unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("### Breakdown")
+        _render_reject_table(records)
+
 @st.dialog("📊 Reject Rate Stats", width="small")
 def show_reject_rate_stats():
     """Renders the stats with 1s auto-refresh if automation is running."""
-    # Detect running state once to decide whether to enable the interval
-    try:
-        init_stats = asyncio.run(st.session_state.client.get_automation_stats())
-        init_run = init_stats.get("is_running", False)
-    except:
-        init_run = False
-
-    @st.fragment(run_every=(1 if init_run else None))
-    def render_stats_body():
-        # 1. Fetch live data fresh for every refresh
-        try:
-            stats = asyncio.run(st.session_state.client.get_automation_stats())
-            is_running = stats.get("is_running", False)
-        except:
-            stats = {}
-            is_running = False
-
-        # 2. Read log records
-        records = []
-        if os.path.exists(REJECT_STAT_LOG_PATH):
-            try:
-                with open(REJECT_STAT_LOG_PATH, "r", encoding="utf-8") as _f:
-                    records = json.load(_f)
-            except: pass
-
-        # 3. Handle live pending row and summary
-        display_records = records
-        cur_elapsed_sec = 0.0
-        st_str = stats.get("start_time")
-        if st_str:
-            try:
-                from datetime import datetime
-                st_dt = datetime.strptime(st_str, "%Y-%m-%d %H:%M:%S")
-                cur_elapsed_sec = (datetime.now() - st_dt).total_seconds()
-            except: pass
-
-        if is_running:
-            total_api_refused = int(stats.get("refusals") or 0)
-            total_api_resets = int(stats.get("resets") or 0)
-            total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
-            total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
-            total_log_dur = sum(float(r.get("duration_sec", 0)) for r in records)
-            
-            p_refused = max(0, total_api_refused - total_log_refused)
-            p_resets = max(0, total_api_resets - total_log_resets)
-            p_dur = max(0.0, cur_elapsed_sec - total_log_dur)
-            
-            pending_record = {
-                "index": "⌛",
-                "filename": "Processing...",
-                "duration_sec": p_dur,
-                "refused_count": p_refused,
-                "reset_count": p_resets
-            }
-            # Running: Newest first (Descending), with Processing row at the absolute top
-            display_records = [pending_record] + list(reversed(records))
-        else:
-            # Stopped: Oldest first (Ascending) for the final summary view
-            display_records = records
-
-        # 4. Render Layout
-        if not display_records:
-            st.info("No data yet. Start an automation session to collect statistics.")
-            return
-
-        if is_running:
-            st.caption("🔄 Auto-refreshing counts every 1s...")
-            
-            # Compact Running Summary Section
-            summary_html = f"""
-            <div style="display:flex; justify-content:space-between; background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
-                <div><span style="color:#666;">Refused:</span> <b>{int(stats.get("refusals") or 0)}</b></div>
-                <div><span style="color:#666;">Resets:</span> <b>{int(stats.get("resets") or 0)}</b></div>
-                <div><span style="color:#666;">Elapsed:</span> <b>{_format_dur_str(cur_elapsed_sec)}</b></div>
-            </div>
-            """
-            st.markdown(summary_html, unsafe_allow_html=True)
-
-            st.markdown(f"**{len(records)}** image(s) downloaded.")
-            _render_reject_table(display_records)
-        else:
-            st.caption("🏁 Automation stopped. View final stats below.")
-            total_images = len(records)
-            total_dur = sum(r.get("duration_sec", 0) for r in records)
-            avg_dur = total_dur / total_images if total_images else 0
-            total_r = sum(int(r.get("refused_count", 0)) for r in records)
-            total_rs = sum(int(r.get("reset_count", 0)) for r in records)
-
-            # Compact Final Summary Section
-            sum_top_html = f"""
-            <div style="display:flex; justify-content:space-between; background:#f0f4f8; padding:10px; border-radius:6px; margin-bottom:8px; border:1px solid #d0d7de; font-size:0.9em;">
-                <div><span style="color:#555;">Images:</span> <b>{total_images}</b></div>
-                <div><span style="color:#555;">Total Time:</span> <b>{_format_dur_str(total_dur)}</b></div>
-            </div>
-            <div style="display:flex; justify-content:space-between; background:#fff; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
-                <div><span style="color:#666;">Avg/Img:</span> <b>{_format_dur_str(avg_dur)}</b></div>
-                <div><span style="color:#666;">Refused:</span> <b>{total_r}</b></div>
-                <div><span style="color:#666;">Resets:</span> <b>{total_rs}</b></div>
-            </div>
-            """
-            st.markdown("### Summary")
-            st.markdown(sum_top_html, unsafe_allow_html=True)
-
-            st.markdown("---")
-            st.markdown("### Breakdown")
-            _render_reject_table(records)
-
-    render_stats_body()
+    render_stats_body_fragment()
 
 def _render_reject_table(records):
     rows_html = ""
@@ -328,6 +324,16 @@ health_data = asyncio.run(st.session_state.client.check_health())
 st.session_state.health_data = health_data
 service_active = health_data is not None
 browser_active = health_data.get("engine_running", False) if service_active else False
+
+# Initial Login Check (Auto-run once if browser is already ON)
+if browser_active and not st.session_state.initial_login_checked:
+    try:
+        st.session_state.initial_login_checked = True
+        login_resp = asyncio.run(st.session_state.client.get_account_info())
+        st.session_state.login_status = login_resp
+        add_log(f"Initial login check: {login_resp.get('status')} - {login_resp.get('account_id')}")
+    except Exception as e:
+        add_log(f"Initial setup check failed: {e}")
 
 try:
     auto_stats = asyncio.run(st.session_state.client.get_automation_stats())
@@ -532,7 +538,7 @@ with st.sidebar:
                     time.sleep(0.5)
                     st.rerun()
             else:
-                if st.button("⏹️ Stop Looping Process", key=f"stop_loop{key_suffix}", use_container_width=True):
+                if st.button("⏹️ Stop Looping Process", key=f"stop_loop{key_suffix}", width='stretch'):
                     async def do_stop_auto():
                         add_log("Stopping Automation Loop...")
                         resp = await st.session_state.client.stop_automation()
@@ -653,7 +659,7 @@ col_stats, col_view, col_loop_btn, col_btn = st.columns([2.2, 1.1, 1, 0.7])
 with col_stats:
     render_automation_stats()
 with col_view:
-    if st.button("📂 View Download Folder", use_container_width=True, help="Open the save directory in File Explorer"):
+    if st.button("📂 View Download Folder", width='stretch', help="Open the save directory in File Explorer"):
         save_dir = st.session_state.config.get("save_dir", "")
         if save_dir and os.path.isdir(save_dir):
             os.startfile(save_dir)
@@ -662,7 +668,7 @@ with col_view:
 with col_loop_btn:
     render_looping_button("_main")
 with col_btn:
-    if st.button("📊 Reject Rate Stats", use_container_width=True, help="View per-image download stats"):
+    if st.button("📊 Reject Rate Stats", width='stretch', help="View per-image download stats"):
         show_reject_rate_stats()
 
 def save_with_metadata(p_img, original_img, output_path_or_buf, original_stats=None):
@@ -703,7 +709,7 @@ def get_refiner(): return shared_state.get_shared_refiner()
 @st.dialog("⚠️ Model Busy")
 def show_model_busy_warning_dialog():
     st.warning("Manual edit is currently unavailable. Stop automation first.")
-    if st.button("Understood", width="stretch", type="primary"): st.rerun()
+    if st.button("Understood", width='stretch', type="primary"): st.rerun()
 
 @st.dialog("\u200b", width="large")
 def manual_watermark_removal_dialog(file_path):
@@ -778,7 +784,7 @@ def manual_watermark_removal_dialog(file_path):
                 result_img = st.session_state.manual_removal_preview["img"]
                 st.image(result_img, width="stretch")
                 
-                if st.button("💾 Save", width="stretch", type="primary"):
+                if st.button("💾 Save", width='stretch', type="primary"):
                     save_with_metadata(result_img, original_img, os.path.join(processed_dir, filename), original_stats=os.stat(file_path))
                     st.success("Saved!")
                     st.session_state.manual_removal_preview = {"hash": None, "img": None}

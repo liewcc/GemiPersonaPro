@@ -1348,6 +1348,166 @@ class BrowserEngine:
             await self.navigate("https://gemini.google.com/app")
             return {"status": "success", "message": "Navigated to default app as fallback."}
 
+    async def delete_activity_history(self, range_name: str = "Last hour"):
+        """
+        Navigates to the Gemini Activity page and deletes activity based on the specified range.
+        range_name: 'Last hour', 'Last day', 'Always'
+        """
+        if not self.is_running:
+            raise Exception("Browser Engine not started")
+
+        self._log_debug(f"Initiating history deletion: {range_name}")
+        
+        try:
+            # 1. Direct navigation to the Gemini activity page
+            await self.navigate("https://myactivity.google.com/product/gemini")
+            await asyncio.sleep(2.0)
+            
+            # --- [NEW] Pre-deletion: Handle initial warnings, tours, or banners ---
+            # These can block the 'Delete' button or other interactions
+            pre_dismiss_selectors = [
+                'button:has-text("Dismiss")',
+                'button:has-text("Got it")',
+                'button[aria-label="Dismiss"]',
+                '.xPkBGb:has-text("Dismiss")', # Specific selector for "Safer with Google" banner
+                'div[role="dialog"] button:has-text("OK")'
+            ]
+            
+            # Attempt to clear up to 2 distinct banners/popups
+            for _ in range(2):
+                dismiss_found = False
+                for selector in pre_dismiss_selectors:
+                    btn = self._page.locator(selector).first
+                    if await btn.is_visible():
+                        btn_text = await btn.inner_text() or selector
+                        self._log_debug(f"Pre-deletion: Dismissing blocker ({btn_text})...")
+                        await btn.click()
+                        await asyncio.sleep(1.0)
+                        dismiss_found = True
+                        break # Check for next banner if any
+                if not dismiss_found:
+                    break
+
+            # 2. Find and click the 'Delete' button
+            delete_btn = self._page.locator('button[aria-label="Delete"]').first
+            if not await delete_btn.is_visible():
+                self._log_debug("Delete button not visible. Trying to scroll or force dismiss any overlays...")
+                await self._page.mouse.click(10, 10) # Click corner to lose focus/dismiss lightboxes
+                await self._page.keyboard.press("PageDown")
+                await asyncio.sleep(1.0)
+                if not await delete_btn.is_visible():
+                    self._log_debug("Delete button still not visible on activity page.")
+                    # Final attempt: click by coordinates if possible or log failure
+                    return {"status": "error", "message": "Delete button not visible"}
+            
+            await delete_btn.click()
+            await asyncio.sleep(1.0)
+            
+            # 3. Select the range option
+            # Map user-friendly names to selectors/text
+            range_map = {
+                "Last hour": "Last hour",
+                "Last day": "Last day",
+                "All time": "Always"
+            }
+            target_text = range_map.get(range_name, "Last hour")
+            
+            # Use a more flexible locator to handle 'Always' vs 'All time' variants
+            import re
+            if range_name == "All time":
+                self._log_debug("Searching for 'Always' or 'All time' option...")
+                option = self._page.locator('li[role="menuitem"]').filter(has_text=re.compile(r"^(Always|All time)$", re.I)).first
+            else:
+                option = self._page.locator(f'li[role="menuitem"]:has-text("{target_text}")')
+
+            if not await option.is_visible():
+                return {"status": "error", "message": f"Option '{target_text}' not found"}
+            
+            await option.click()
+            await asyncio.sleep(2.0)
+            
+            # 4. Handle Confirmation or "Got it" dialogs
+            # These can appear for "Always" range or as a one-time warning/info
+            # The USER reported: "Confirm that you would like to delete the following activity -> delete or close"
+            dialog_selectors = [
+                'button:has-text("Delete")',
+                'button:has-text("Got it")',
+                'button:has-text("Confirm")',
+                'button.VfPpkd-LgbsSe:has-text("Delete")',
+                'button.VfPpkd-LgbsSe:has-text("Got it")',
+                'button:has-text("Close")'
+            ]
+            
+            self._log_debug("Checking for post-selection dialogs...")
+            for _ in range(4):
+                dialog_handled = False
+                
+                modal = self._page.locator('div.llhEMd, div.VfPpkd-Sx9N0d').first
+                if await modal.is_visible():
+                    # Case 1: Detect "No activity" text inside modal
+                    no_activity_text = modal.locator('text="You have no selected activity"').first
+                    if await no_activity_text.is_visible():
+                        close_btn = modal.locator('button:has-text("Close"), button:has-text("Got it")').first
+                        if await close_btn.is_visible():
+                            self._log_debug("Gemini Activity: No activity found to delete. Closing...")
+                            await close_btn.click(force=True)
+                            await asyncio.sleep(1.0)
+                            return {"status": "success", "message": "No activity to delete"}
+
+                    # Case 2: Detect "Delete" button inside modal
+                    modal_delete_btn = modal.locator('button:has-text("Delete"), button[jsname="nUV0Pd"]').first
+                    if await modal_delete_btn.is_visible():
+                        self._log_debug("Gemini Activity: Deleting confirmed items...")
+                        await modal_delete_btn.click(force=True)
+                        await asyncio.sleep(2.0)
+                        dialog_handled = True
+                        continue
+
+                    # Generic "Got it" or "OK" inside modal
+                    modal_got_it_btn = modal.locator('button:has-text("Got it"), button:has-text("OK")').first
+                    if await modal_got_it_btn.is_visible():
+                        await modal_got_it_btn.click(force=True)
+                        await asyncio.sleep(1.0)
+                        dialog_handled = True
+                        continue
+
+                # Fallback to general selectors if modal check didn't catch it
+                for selector in dialog_selectors:
+                    btn = self._page.locator(selector).first
+                    if await btn.is_visible():
+                        btn_text = await btn.inner_text() or selector
+                        await btn.click(force=True)
+                        await asyncio.sleep(1.5)
+                        dialog_handled = True
+                        break 
+                
+                if not dialog_handled:
+                    break
+            
+            # 5. Monitor Snackbar Feedback
+            self._log_debug("Monitoring for snackbar feedback...")
+            # Locator for snackbar/alert
+            snackbar = self._page.locator('[role="alert"], [role="status"]').first
+            
+            # Monitoring loop for snackbar messages
+            for _ in range(10): # 10 seconds timeout
+                if await snackbar.is_visible():
+                    msg = await snackbar.inner_text()
+                    if msg:
+                        flat_msg = " ".join(msg.strip().split())
+                        self._log_debug(f"Gemini Activity: {flat_msg}")
+                        
+                        # Stop if we see a completion message
+                        if any(x in flat_msg.lower() for x in ["deleted", "complete", "removed"]):
+                            break
+                await asyncio.sleep(1.0)
+                
+            return {"status": "success", "message": f"History deletion ({range_name}) completed."}
+            
+        except Exception as e:
+            self._log_debug(f"Error during history deletion: {e}")
+            return {"status": "error", "message": str(e)}
+
     async def stop_automation(self):
         """Signals the automation loop to stop and attempts to stop current page activity."""
         self._stop_automation_event.set()
