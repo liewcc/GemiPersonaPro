@@ -5,7 +5,9 @@
 **Contents**
 - [📜 Project Origin](#-project-origin)
 - [🚀 Features](#-features)
+- [📊 Monitoring & Stats](./guides/monitoring_stats.md)
 - [📖 Documentation](#-documentation)
+    - [⏱️ Quick Start Guide](./guides/quick_start.md)
   - [⏱️ Quick Start Guide](./guides/quick_start.md)
   - [👥 Multi-Account Management](./guides/multi_account.md)
   - [🧠 AI Watermark Technology](./guides/watermark_removal.md)
@@ -33,6 +35,7 @@ To address this, GemiPersonaPro was completely rewritten to use a more robust AP
 - **Gemini Automation**: Automate image and video generation prompts directly within the Gemini interface.
 - **Asset Sanitizer**: Professional-grade watermark removal using a hybrid approach (Inverse Alpha + LaMa AI Refinement).
 - **Session Management**: Securely handle multiple browser profiles and sessions.
+- **Efficiency Monitoring**: Track API "Refusals" and browser "Resets" in real-time with a dedicated statistics dashboard.
 - **Real-time Dashboard**: Monitor generation progress, quota status, and manage your library.
 
 ## 📖 Documentation

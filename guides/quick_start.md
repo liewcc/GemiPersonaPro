@@ -56,6 +56,7 @@ When everything is working perfectly in headed mode:
 ## Phase 6: Monitoring Progress
 While the browser is hidden, use the **Dashboard** to stay informed:
 - **Status Bar**: Check the main panel top bar for the current browser status.
+- **Detailed Stats**: Click **"📊 Reject Rate Stats"** to see a per-image breakdown of refusals and performance.
 - **Gallery**: View the latest downloaded and AI-cleaned images as they arrive.
 - **Service Status**: Ensure all services remain healthy.
 

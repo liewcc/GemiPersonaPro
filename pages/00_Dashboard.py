@@ -162,13 +162,14 @@ def _format_dur_str(dur):
 
 @st.fragment(run_every=1)
 def render_stats_body_fragment():
-    # Detect running state
+    # 1. Fetch live stats once
+    stats = {}
+    is_running = False
     try:
-        init_stats = asyncio.run(st.session_state.client.get_automation_stats())
-        is_running = init_stats.get("is_running", False)
+        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        is_running = stats.get("is_running", False)
     except:
-        stats = {}
-        is_running = False
+        pass
 
     # 2. Read log records
     records = []
@@ -181,13 +182,12 @@ def render_stats_body_fragment():
     # 3. Handle live pending row and summary
     display_records = records
     cur_elapsed_sec = 0.0
-    try:
-        stats = asyncio.run(st.session_state.client.get_automation_stats())
-        st_str = stats.get("start_time")
-        if st_str:
+    st_str = stats.get("start_time")
+    if st_str:
+        try:
             st_dt = datetime.strptime(st_str, "%Y-%m-%d %H:%M:%S")
             cur_elapsed_sec = (datetime.now() - st_dt).total_seconds()
-    except: pass
+        except: pass
 
     if is_running:
         total_api_refused = int(stats.get("refusals") or 0)
