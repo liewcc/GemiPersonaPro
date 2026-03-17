@@ -206,3 +206,9 @@ class EngineClient:
                 return resp.json()
         except:
             return {"is_running": False}
+
+    async def clear_engine_logs(self):
+        """Clears the physical engine.log file via API."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{self.base_url}/engine/clear_logs", timeout=10.0)
+            return resp.json()

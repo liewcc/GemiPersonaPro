@@ -1220,4 +1220,25 @@ with col1:
 with col2:
     with st.container(border=True, height=MAIN_HEIGHT):
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>ENGINE LIVE LOGS</p>", unsafe_allow_html=True)
+        
+        # --- Log Management Buttons ---
+        cl_col1, cl_col2 = st.columns(2)
+        with cl_col1:
+            if st.button("🧹 Clear Console", width="stretch", help="Clears logs from the UI only."):
+                st.session_state.logs = []
+                st.rerun()
+        with cl_col2:
+            if st.button("🔥 Clear Engine Log", width="stretch", help="Strictly clears the physical engine.log file via API."):
+                async def do_clear_log():
+                    try:
+                        resp = await st.session_state.client.clear_engine_logs()
+                        if resp.get("status") == "success":
+                            add_log("Engine log file cleared via API.")
+                        else:
+                            add_log(f"Failed to clear log: {resp.get('message')}")
+                    except Exception as e:
+                        add_log(f"Clear Log Error: {e}")
+                asyncio.run(do_clear_log())
+                st.rerun()
+
         render_setup_logs()

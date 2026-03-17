@@ -103,6 +103,14 @@ async def get_engine_logs():
     logs = engine.get_and_clear_logs() if hasattr(engine, 'get_and_clear_logs') else []
     return {"logs": logs}
 
+@app.post("/engine/clear_logs")
+async def clear_engine_logs():
+    """Clear physical engine.log file."""
+    success = engine.clear_physical_logs()
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to clear log file.")
+    return {"status": "success", "message": "Engine log file cleared."}
+
 @app.post("/engine/start")
 async def start_engine(req: PersonaRequest | None = None):
     global HEARTBEAT_TIMEOUT, last_heartbeat

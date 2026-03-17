@@ -501,8 +501,12 @@ class BrowserEngine:
         timestamp = datetime.now().strftime("[%H:%M:%S]")
         # Standardize prefix for the UI backend logs
         log_msg = f"{timestamp} API>> {msg}"
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(f"{log_msg}\n")
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{log_msg}\n")
+        except (PermissionError, IOError):
+            # Silently ignore write errors to log file to prevent automation crashes on Windows
+            pass
         # print(log_msg)  # Silenced: user requested no general printing
         
         # Add to internal queue for API consumption
@@ -512,6 +516,17 @@ class BrowserEngine:
         # Keep queue somewhat bounded
         if len(self._log_queue) > 500:
              self._log_queue = self._log_queue[-500:]
+
+    def clear_physical_logs(self):
+        """Truncates the engine.log file."""
+        LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "engine.log"))
+        try:
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().strftime('%H:%M:%S')}] API>> Engine log cleared by user.\n")
+            return True
+        except Exception as e:
+            print(f"Failed to clear log: {e}")
+            return False
 
     def _log_watchdog(self, msg, to_ui=False):
         """Helper to log anomalies to watchdog.log and optionally to the UI."""
