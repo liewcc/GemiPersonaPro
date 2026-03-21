@@ -4,15 +4,6 @@ import os
 
 if "GEMI_BANNER_PRINTED" not in os.environ:
     os.environ["GEMI_BANNER_PRINTED"] = "1"
-    print(r"""
-+----------------------------------------------------------------+
-|                                                                |
-|               GemiPersona Pro Image Downloader                 |
-|                                                                |
-+----------------------------------------------------------------+
->>> YOU MAY CLOSE THIS COMMAND WINDOW IF LOOPING PROCESS START <<<
-""")
-    print("\n")
 
 import asyncio
 import sys

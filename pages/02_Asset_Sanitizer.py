@@ -160,7 +160,7 @@ apply_premium_style()
 st.markdown("""
     <style>
     /* 1. Hide Streamlit Chrome */
-    [data-testid="stHeader"], [data-testid="stFooter"], header, footer {
+    [data-testid="stFooter"], footer {
         display: none !important;
         height: 0 !important;
     }
@@ -908,8 +908,25 @@ def confirm_delete_dialog(file_path):
     st.warning(f"Are you sure you want to delete this file?\n\n`{os.path.basename(file_path)}`")
     if st.button("Yes, Delete Forever", type="primary", width="stretch"):
         try:
+            # 1. Cascading delete for processed counterpart
+            folder_path = os.path.dirname(file_path)
+            filename = os.path.basename(file_path)
+            
+            # If current file is NOT in 'processed', look for its processed version
+            if os.path.basename(folder_path.rstrip("/\\")).lower() != "processed":
+                processed_file = os.path.join(folder_path, "processed", filename)
+                if os.path.exists(processed_file):
+                    try:
+                        os.remove(processed_file)
+                    except:
+                        pass # Fail silently as requested
+
+            # 2. Main deletion
             os.remove(file_path)
-            st.session_state.sanitizer_path = "" # Clear view
+
+            # 3. Handle reload state
+            if not st.session_state.get("sanitizer_is_dir", False):
+                st.session_state.sanitizer_path = "" # Clear view only in File Mode
             st.toast("File deleted.")
             time.sleep(0.5)
             st.rerun()
