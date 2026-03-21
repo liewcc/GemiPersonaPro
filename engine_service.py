@@ -530,6 +530,9 @@ async def automation_manager(req: AutomationRequest):
                         if switch_res.get("status") == "success":
                             engine._log_debug(f"API>> Profile switched to {switch_res.get('user')}. Restarting loop flow...")
                             await asyncio.sleep(5) 
+                            engine._stop_automation_event.clear()
+                            if hasattr(engine, '_session_lost'): engine._session_lost = False
+                            engine._automation_needs_new_chat = True
                             continue # Try next loop with new user
                         else:
                             print(f"[AUTO] Watchdog recovery failed: {switch_res.get('message')}. Stopping automation.")
@@ -547,6 +550,9 @@ async def automation_manager(req: AutomationRequest):
                 if switch_res.get("status") == "success":
                     engine._log_debug(f"API>> Profile switched to {switch_res.get('user')}. Restarting loop flow...")
                     await asyncio.sleep(5) 
+                    engine._stop_automation_event.clear()
+                    if hasattr(engine, '_session_lost'): engine._session_lost = False
+                    engine._automation_needs_new_chat = True
                     continue # Try next loop with new user
                 elif switch_res.get("status") == "table_full":
                     engine._log_debug("API>> All profiles in table are quota full. Stopping automation.")

@@ -1569,13 +1569,14 @@ class BrowserEngine:
             self._log_debug(f"--- [AUTO] RUNNING ROUND: {self.automation_status.get('cycles', 0) + 1} ---")
             
             while self.automation_status.get("is_running", False):
-                if self._stop_automation_event.is_set():
-                    break
-                
                 # Proactive Watchdog Check: if previous iteration (or watchdog) flagged session loss
                 if getattr(self, "_session_lost", False):
                     self._log_debug("Watchdog: Critical session loss detected. Aborting loop.")
                     return {"status": "quota", "message": "Session lost or account mismatch."}
+
+                if self._stop_automation_event.is_set():
+                    break
+
 
                 # Refresh cycles and stats from status in each iteration
                 mode = self.automation_status.get("mode", "rounds")
@@ -1728,7 +1729,9 @@ class BrowserEngine:
             # Now handled by engine_service.py's finally block for better session-wide accuracy.
             
             final_status = "finished"
-            if self._stop_automation_event.is_set():
+            if getattr(self, "_session_lost", False):
+                final_status = "quota"
+            elif self._stop_automation_event.is_set():
                 final_status = "stopped"
                 
             return {"status": final_status, "stats": self.automation_status}
