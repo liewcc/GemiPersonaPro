@@ -13,6 +13,7 @@
   - [🛡️ Asset Sanitizer Page](./guides/asset_sanitizer.md)
   - [🔖 Gems Bookmark Guide](./guides/gems_bookmark.md)
   - [🧠 Advanced Algorithm Guide](./guides/advanced_algorithm.md)
+  - [🔄 Loop Control Config](./guides/loop_control.md)
 - [🛠️ Quick Setup](#️-quick-setup)
 - [📂 Project Structure](#-project-structure)
 
@@ -35,6 +36,7 @@ To address this, GemiPersonaPro was completely rewritten to use a more robust AP
 - **Asset Sanitizer**: Professional-grade watermark removal using a hybrid approach (Inverse Alpha + LaMa AI Refinement).
 - **Session Management**: Securely handle multiple browser profiles and sessions.
 - **Efficiency Monitoring**: Track API "Refusals" and browser "Resets" in real-time with a dedicated statistics dashboard.
+- **Loop Control**: Advanced automation to handle server overloads and bypass intermittent filters via intelligent retries.
 - **Real-time Dashboard**: Monitor generation progress, quota status, and manage your library.
 
 ## 📖 Documentation

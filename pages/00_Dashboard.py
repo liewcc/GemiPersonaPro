@@ -256,14 +256,112 @@ def render_stats_body_fragment():
         st.markdown("### Summary")
         st.markdown(sum_top_html, unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.markdown("### Breakdown")
         _render_reject_table(records)
 
 @st.dialog("📊 Reject Rate Stats", width="small")
 def show_reject_rate_stats():
     """Renders the stats with 1s auto-refresh if automation is running."""
     render_stats_body_fragment()
+
+
+LOOP_CTRL_DEFAULTS = {
+    "infinite_loop_enabled": False, "infinite_loop_minutes": 60,
+    "time_enabled": False, "time_minutes": 10, "time_action": "next_profile",
+    "refused_enabled": False, "refused_threshold": 5, "refused_action": "next_profile",
+    "reset_enabled": False, "reset_threshold": 3, "reset_action": "next_profile",
+}
+
+@st.dialog("⚙️ Loop Control Config", width="small")
+def show_loop_control_dialog():
+    """Dialog for configuring per-cycle threshold-based account switching."""
+    cfg_now = load_config()
+    lc = {**LOOP_CTRL_DEFAULTS, **cfg_now.get("automation", {}).get("loop_control", {})}
+
+    ACTION_OPTIONS = ["next_profile", "re_login"]
+    ACTION_LABELS  = {"next_profile": "Next Profile", "re_login": "Re-login (same account)"}
+
+    # --- Infinite Table Loop ---
+    st.markdown("**♾️ Infinite Table Loop (with Cooldown)**")
+    inf_c1, inf_c2 = st.columns([1, 1])
+    with inf_c1:
+        inf_en = st.toggle("Enable", value=lc["infinite_loop_enabled"], key="lc_inf_en")
+    with inf_c2:
+        inf_min = st.number_input("Sleep minutes", min_value=1, max_value=1440,
+                                  value=int(lc["infinite_loop_minutes"]), step=1,
+                                  disabled=not inf_en, key="lc_inf_min",
+                                  label_visibility="collapsed")
+    st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
+
+    # --- Time ---
+    st.markdown("**⏱ Time Threshold**")
+    lc_row1_c1, lc_row1_c2 = st.columns([1, 3])
+    with lc_row1_c1:
+        t_en = st.toggle("Enable", value=lc["time_enabled"], key="lc_time_en")
+    with lc_row1_c2:
+        t_min = st.number_input("Minutes per cycle", min_value=1, max_value=600,
+                                value=int(lc["time_minutes"]), step=1,
+                                disabled=not t_en, key="lc_time_min",
+                                label_visibility="collapsed")
+    t_action = st.radio("Time action", options=ACTION_OPTIONS,
+                        format_func=lambda x: ACTION_LABELS[x],
+                        index=ACTION_OPTIONS.index(lc["time_action"]),
+                        horizontal=True, disabled=not t_en,
+                        key="lc_time_action", label_visibility="collapsed")
+    st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
+
+    # --- Refused ---
+    st.markdown("**🚫 Refused Threshold**")
+    lc_row2_c1, lc_row2_c2 = st.columns([1, 3])
+    with lc_row2_c1:
+        r_en = st.toggle("Enable", value=lc["refused_enabled"], key="lc_ref_en")
+    with lc_row2_c2:
+        r_thr = st.number_input("Refused count", min_value=1, max_value=999,
+                                value=int(lc["refused_threshold"]), step=1,
+                                disabled=not r_en, key="lc_ref_thr",
+                                label_visibility="collapsed")
+    r_action = st.radio("Refused action", options=ACTION_OPTIONS,
+                        format_func=lambda x: ACTION_LABELS[x],
+                        index=ACTION_OPTIONS.index(lc["refused_action"]),
+                        horizontal=True, disabled=not r_en,
+                        key="lc_ref_action", label_visibility="collapsed")
+    st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
+
+    # --- Reset ---
+    st.markdown("**🔄 Reset Threshold**")
+    lc_row3_c1, lc_row3_c2 = st.columns([1, 3])
+    with lc_row3_c1:
+        rs_en = st.toggle("Enable", value=lc["reset_enabled"], key="lc_rst_en")
+    with lc_row3_c2:
+        rs_thr = st.number_input("Reset count", min_value=1, max_value=999,
+                                 value=int(lc["reset_threshold"]), step=1,
+                                 disabled=not rs_en, key="lc_rst_thr",
+                                 label_visibility="collapsed")
+    rs_action = st.radio("Reset action", options=ACTION_OPTIONS,
+                         format_func=lambda x: ACTION_LABELS[x],
+                         index=ACTION_OPTIONS.index(lc["reset_action"]),
+                         horizontal=True, disabled=not rs_en,
+                         key="lc_rst_action", label_visibility="collapsed")
+
+    st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
+    if st.button("💾 Save", type="primary", width="stretch", key="lc_save"):
+        new_lc = {
+            "infinite_loop_enabled": inf_en,
+            "infinite_loop_minutes": int(inf_min),
+            "time_enabled":     t_en,
+            "time_minutes":     int(t_min),
+            "time_action":      t_action,
+            "refused_enabled":  r_en,
+            "refused_threshold": int(r_thr),
+            "refused_action":   r_action,
+            "reset_enabled":    rs_en,
+            "reset_threshold":  int(rs_thr),
+            "reset_action":     rs_action,
+        }
+        existing_auto = load_config().get("automation", {})
+        existing_auto["loop_control"] = new_lc
+        save_config({"automation": existing_auto})
+        st.toast("Loop Control config saved.", icon="✅")
+        st.rerun()
 
 def _render_reject_table(records):
     rows_html = ""
@@ -549,6 +647,12 @@ with st.sidebar:
                     st.rerun()
 
         render_looping_button("_sidebar")
+
+        # Loop Control Config button (shown below Start/Stop, always visible)
+        if st.button("⚙️ Loop Control Config", width="stretch",
+                     key="btn_loop_ctrl_cfg",
+                     help="Configure threshold-based auto account switching"):
+            show_loop_control_dialog()
 
 def get_status_bar_html(label, msg, color):
     return f"""
