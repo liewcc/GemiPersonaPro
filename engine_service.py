@@ -308,9 +308,9 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         candidate = users[idx]
         norm_email = normalize(candidate.get("username"))
         
-        # ANCHOR LOGIC: If we are switching due to quota and we've looped back to initial_user, we are done.
+        # ANCHOR LOGIC: If we've looped back to initial_user, we are done with one full traversal.
         # But only if we actually moved (offset > 0).
-        if reason == "quota" and direction != 0 and offset > 0:
+        if direction != 0 and offset > 0:
              if initial_user and normalize(initial_user) == norm_email:
                  print("[ENGINE] Table traversal complete. Back to initial user.")
                  return {"status": "table_full", "message": "All profiles have been processed or hit quota."}
@@ -426,6 +426,24 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
             await engine.navigate(target_url)
     except Exception as e:
         engine._log_debug(f"API>> Error triggering auto-delete: {e}")
+        
+    # --- [NEW] Deep Clean Gemini Context on Re-login ---
+    # If the user switched to the exact same account, it's a re-login. We should clear Local Storage
+    # to completely obliterate the stuck context before the new loop starts.
+    if current_email and normalize(current_email) == normalize(target_user['username']):
+        engine._log_debug(f"API>> Re-login detected for {current_email}. Clearing local state...")
+        try:
+            # Must navigate to Gemini domain first before clearing storage for that origin
+            await engine.navigate("https://gemini.google.com/")
+            await asyncio.sleep(2.0)
+            if hasattr(engine, "_page") and engine._page:
+                await engine._page.evaluate("window.localStorage.clear(); window.sessionStorage.clear();")
+                engine._log_debug("API>> Cleared Gemini local/session storage.")
+            # Restore the target URL
+            await engine.navigate(target_url)
+            await asyncio.sleep(2.0)
+        except Exception as e:
+            engine._log_debug(f"API>> Failed to clear local storage: {e}")
     # -----------------------------------
     
     return {
@@ -456,12 +474,39 @@ async def switch_to_profile(username: str = Query(...), h: bool = Query(None)):
         raise HTTPException(status_code=500, detail=res.get("message"))
     return res
 
+def _check_loop_control_thresholds(loop_ctrl: dict, result: dict):
+    """
+    Checks the three loop-control thresholds against the just-settled cycle stats.
+    Returns (should_switch: bool, action: str)  action = 'next_profile' | 're_login'
+    """
+    if not loop_ctrl:
+        return False, "next_profile"
+
+    dur_min = result.get("cycle_duration_sec", 0) / 60.0
+    refused   = result.get("cycle_refused", 0)
+    resets    = result.get("cycle_resets",  0)
+
+    # Time threshold
+    if loop_ctrl.get("time_enabled") and dur_min >= loop_ctrl.get("time_minutes", 999):
+        return True, loop_ctrl.get("time_action", "next_profile")
+    # Refused threshold
+    if loop_ctrl.get("refused_enabled") and refused >= loop_ctrl.get("refused_threshold", 999):
+        return True, loop_ctrl.get("refused_action", "next_profile")
+    # Reset threshold
+    if loop_ctrl.get("reset_enabled") and resets >= loop_ctrl.get("reset_threshold", 999):
+        return True, loop_ctrl.get("reset_action", "next_profile")
+
+    return False, "next_profile"
+
+
 async def automation_manager(req: AutomationRequest):
     """Background task to manage loops and quota-restarts."""
     try:
         while True:
-            if engine._stop_automation_event.is_set():
-                print("[AUTO] Stop signal detected in manager.")
+            # Modified Check: If stop signal is set, ONLY break if it's NOT a session loss.
+            # If session loss is True, we want to proceed to the recovery logic below.
+            if engine._stop_automation_event.is_set() and not getattr(engine, "_session_lost", False):
+                print("[AUTO] User stop signal detected in manager.")
                 break
                 
             # 1. Reload Config from Disk (Ensures profile switches/URL changes are picked up)
@@ -518,6 +563,49 @@ async def automation_manager(req: AutomationRequest):
                     except Exception as p_err:
                         print(f"[AUTO] Refinement step failed: {p_err}")
 
+            # 4b. Loop-Control Threshold Check (applies to success, refused, reset)
+            if result.get("status") in ["success", "refused", "reset"]:
+                loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
+                lc_trigger, lc_action = False, "next_profile"
+                
+                if loop_ctrl:
+                    v_dur = result.get("lc_cycle_duration_sec", (time.time() - getattr(engine, '_lc_cycle_start_time', time.time())) if getattr(engine, '_lc_cycle_start_time', None) else 0)
+                    v_ref = result.get("lc_cycle_refused", getattr(engine, '_lc_pending_refused', 0))
+                    v_rst = result.get("lc_cycle_resets", getattr(engine, '_lc_pending_resets', 0))
+                    
+                    lc_trigger, lc_action = _check_loop_control_thresholds(
+                        loop_ctrl,
+                        {"cycle_duration_sec": v_dur, "cycle_refused": v_ref, "cycle_resets": v_rst}
+                    )
+
+                if lc_trigger:
+                    engine._log_debug(f"API>> Loop Control triggered (action={lc_action}). Attempting switch...")
+                    current_user = (
+                        engine.automation_status.get("current_account_id")
+                        or req.config.get("active_user")
+                    )
+                    if lc_action == "re_login" and current_user:
+                        lc_switch_res = await perform_switch_logic(target_username=current_user)
+                    else:
+                        lc_switch_res = await perform_switch_logic()  # direction=+1 (next)
+
+                    if lc_switch_res.get("status") == "success":
+                        engine._log_debug(
+                            f"API>> Loop Control: switched to {lc_switch_res.get('user')}. "
+                            f"Resetting loop control pending counters..."
+                        )
+                        await asyncio.sleep(5)
+                        engine._stop_automation_event.clear()
+                        engine._lc_pending_refused = 0
+                        engine._lc_pending_resets  = 0
+                        engine._lc_cycle_start_time = time.time()
+                        engine._automation_needs_new_chat = True
+                        continue
+                    else:
+                        engine._log_debug(
+                            f"API>> Loop Control switch failed: {lc_switch_res.get('message')}. Continuing..."
+                        )
+
             # 5. Handle Terminal/Retry States
             if result.get("status") == "quota":
                 if engine._stop_automation_event.is_set():
@@ -533,6 +621,11 @@ async def automation_manager(req: AutomationRequest):
                             engine._stop_automation_event.clear()
                             if hasattr(engine, '_session_lost'): engine._session_lost = False
                             engine._automation_needs_new_chat = True
+                            # Reset cycle timer & pending counters so the switch window
+                            # is not misrecorded as a [Stopped/Interrupted] entry.
+                            engine._cycle_start_time = time.time()
+                            engine._pending_refused = 0
+                            engine._pending_resets = 0
                             continue # Try next loop with new user
                         else:
                             print(f"[AUTO] Watchdog recovery failed: {switch_res.get('message')}. Stopping automation.")
@@ -553,10 +646,49 @@ async def automation_manager(req: AutomationRequest):
                     engine._stop_automation_event.clear()
                     if hasattr(engine, '_session_lost'): engine._session_lost = False
                     engine._automation_needs_new_chat = True
+                    # DO NOT reset global pending counters here! They should map to the final saved image.
+                    engine._lc_pending_refused = 0
+                    engine._lc_pending_resets = 0
+                    engine._lc_pending_refused = 0
+                    engine._lc_pending_resets = 0
+                    engine._lc_cycle_start_time = time.time()
                     continue # Try next loop with new user
                 elif switch_res.get("status") == "table_full":
-                    engine._log_debug("API>> All profiles in table are quota full. Stopping automation.")
-                    break
+                    loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
+                    inf_en = loop_ctrl.get("infinite_loop_enabled", False)
+                    if not inf_en:
+                        engine._log_debug("API>> All profiles processed or hit quota. Table complete. Stopping automation.")
+                        break
+                    else:
+                        sleep_min = loop_ctrl.get("infinite_loop_minutes", 60)
+                        engine._log_debug(f"API>> All profiles processed. Infinite loop enabled: sleeping for {sleep_min} min...")
+                        print(f"[AUTO] Cycle finish. Sleeping for {sleep_min} minutes before next run.")
+                        
+                        sleep_sec = int(sleep_min * 60)
+                        interrupted = False
+                        for _ in range(sleep_sec):
+                            if engine._stop_automation_event.is_set():
+                                interrupted = True
+                                break
+                            await asyncio.sleep(1)
+                            
+                        if interrupted:
+                            engine._log_debug("API>> Sleep interrupted by user stop.")
+                            break
+                            
+                        # Awake from sleep. Reset anchor point for the next full loop.
+                        engine._log_debug("API>> Awakening from sleep. Restarting infinite loop cycle...")
+                        # 重新设置起跑线锚点
+                        new_anchor = load_config().get("active_user")
+                        engine.automation_status["initial_user"] = new_anchor
+                        if hasattr(engine, '_session_lost'): engine._session_lost = False
+                        engine._stop_automation_event.clear()
+                        # Short circuit variables for loop control
+                        engine._lc_cycle_start_time = time.time()
+                        engine._lc_pending_refused = 0
+                        engine._lc_pending_resets = 0
+                        # Try again with current anchor
+                        continue
                 else:
                     print(f"[AUTO] Profile switch failed: {switch_res.get('message')}")
                     break
@@ -572,6 +704,7 @@ async def automation_manager(req: AutomationRequest):
         traceback.print_exc()
     finally:
         # Final cleanup: Write an [Interrupted] record if there's pending time/counts
+        # This only triggers when the automation manager COMPLETELY exits.
         if engine._cycle_start_time is not None:
             final_dur = time.time() - engine._cycle_start_time
             if final_dur > 1 or engine._pending_refused > 0 or engine._pending_resets > 0:
@@ -622,11 +755,13 @@ async def start_automation(req: AutomationRequest):
             json.dump([], f)
     except Exception as e:
         print(f"[AUTO] Warning: could not reset reject_stat_log.json: {e}")
-    # Reset pending counters so no stale data bleeds into the new session
     engine._pending_refused = 0
     engine._pending_resets = 0
+    engine._lc_pending_refused = 0
+    engine._lc_pending_resets = 0
     # Initialize cycle timer to capture initial setup time in the first image's duration
     engine._cycle_start_time = time.time()
+    engine._lc_cycle_start_time = time.time()
 
     asyncio.create_task(automation_manager(req))
     return {"status": "success", "message": "Automation started in background"}

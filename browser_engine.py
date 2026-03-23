@@ -1590,8 +1590,10 @@ class BrowserEngine:
                     if successes >= goal: break
 
                 # 2. Cycle Strategy — record start time for this cycle
-                if self._cycle_start_time is None:
+                if getattr(self, '_cycle_start_time', None) is None:
                     self._cycle_start_time = time.time()
+                if getattr(self, '_lc_cycle_start_time', None) is None:
+                    self._lc_cycle_start_time = time.time()
                 is_initial = (cycles == 0) or getattr(self, "_automation_needs_new_chat", True)
                 
                 try:
@@ -1639,7 +1641,9 @@ class BrowserEngine:
                     
                     if status == "success":
                         self.automation_status["cycles"] += 1
-                        self.automation_status["successes"] += 1
+                        # NOTE: successes is NOT incremented here yet.
+                        # It is only counted AFTER download_images confirms files are on disk.
+                        # This prevents the count from inflating when a Reset occurs mid-download.
                         
                         naming = {
                             "prefix": cfg.get("name_prefix", ""), 
@@ -1663,6 +1667,9 @@ class BrowserEngine:
                             saved_paths = dl_resp.get("saved_paths", [])
                             self._update_config_start(new_start)
                             
+                            # Confirm files landed on disk before counting as a true success.
+                            self.automation_status["successes"] += 1
+                            
                             # Write per-image reject stat record
                             cycle_end = time.time()
                             cycle_dur = cycle_end - self._cycle_start_time if self._cycle_start_time else 0
@@ -1673,26 +1680,63 @@ class BrowserEngine:
                                     refused_count=self._pending_refused,
                                     reset_count=self._pending_resets
                                 )
-                            # Reset pending counters and mark cycle end cleanly.
-                            # Set to None so the engine_service finally block doesn't
-                            # misinterpret this as an interrupted cycle.
+                            # Snapshot pending counters BEFORE zeroing
+                            cycle_refused_snap = getattr(self, '_pending_refused', 0)
+                            cycle_resets_snap  = getattr(self, '_pending_resets', 0)
+                            lc_cycle_refused_snap = getattr(self, '_lc_pending_refused', 0)
+                            lc_cycle_resets_snap = getattr(self, '_lc_pending_resets', 0)
+                            
+                            lc_cycle_end = time.time()
+                            lc_cycle_dur = lc_cycle_end - self._lc_cycle_start_time if getattr(self, '_lc_cycle_start_time', None) else 0
+
+                            # Reset global pending counters and mark cycle end cleanly.
                             self._pending_refused = 0
                             self._pending_resets = 0
                             self._cycle_start_time = None
+                            
+                            # Reset loop control pending counters.
+                            self._lc_pending_refused = 0
+                            self._lc_pending_resets = 0
+                            self._lc_cycle_start_time = None
+                        else:
+                            # Download failed (e.g. Reset mid-download). Do NOT count as success.
+                            self._log_debug("Download failed after image detected. Success NOT counted. Forcing New Chat.")
+                            self.automation_status["resets"] += 1
+                            self._pending_resets = getattr(self, '_pending_resets', 0) + 1
+                            self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
+                            self._automation_needs_new_chat = True
+                            
+                            cycle_refused_snap = 0
+                            cycle_resets_snap  = 0
+                            lc_cycle_refused_snap = 0
+                            lc_cycle_resets_snap = 0
+                            cycle_dur          = 0
+                            lc_cycle_dur       = 0
                         
-                        # Cycle complete
-                        return {"status": "success", "saved_paths": saved_paths}
+                        # Cycle complete — expose cycle stats for loop-control threshold check
+                        return {
+                            "status": "success",
+                            "saved_paths": saved_paths,
+                            "cycle_duration_sec": cycle_dur,
+                            "cycle_refused": cycle_refused_snap,
+                            "cycle_resets":  cycle_resets_snap,
+                            "lc_cycle_duration_sec": lc_cycle_dur,
+                            "lc_cycle_refused": lc_cycle_refused_snap,
+                            "lc_cycle_resets": lc_cycle_resets_snap,
+                        }
                         
                     elif status == "refused":
                         self.automation_status["cycles"] += 1
                         self.automation_status["refusals"] += 1
-                        self._pending_refused += 1
+                        self._pending_refused = getattr(self, '_pending_refused', 0) + 1
+                        self._lc_pending_refused = getattr(self, '_lc_pending_refused', 0) + 1
                         return {"status": "refused"}
                         
                     elif status == "reset":
                         self.automation_status["resets"] += 1
                         self.automation_status["cycles"] += 1
-                        self._pending_resets += 1
+                        self._pending_resets = getattr(self, '_pending_resets', 0) + 1
+                        self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
                         self._log_debug(f"Reset detected in Cycle #{self.automation_status['cycles']}. Counting and forcing New Chat.")
                         self._automation_needs_new_chat = True
                         return {"status": "reset"}
