@@ -563,8 +563,8 @@ async def automation_manager(req: AutomationRequest):
                     except Exception as p_err:
                         print(f"[AUTO] Refinement step failed: {p_err}")
 
-            # 4b. Loop-Control Threshold Check (applies to success, refused, reset)
-            if result.get("status") in ["success", "refused", "reset"]:
+            # 4b. Loop-Control Threshold Check (applies to success, refused, reset, error, timeout)
+            if result.get("status") in ["success", "refused", "reset", "error", "timeout"]:
                 loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
                 lc_trigger, lc_action = False, "next_profile"
                 
