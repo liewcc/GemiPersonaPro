@@ -1,4 +1,4 @@
-# 🔄 Loop Control Config (循环控制配置)
+# 🔄 Loop Control Config
 
 The **Loop Control Config** is an advanced automation feature in GemiPersonaPro designed to maximize image generation success rates by intelligently handling server-side restrictions and overloads.
 
