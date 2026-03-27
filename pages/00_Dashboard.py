@@ -492,8 +492,6 @@ def render_gallery_nav(total_pages, key_suffix):
 
 # --- UI Layout ---
 with st.sidebar:
-    st.markdown("### Album Navigation")
-
     with st.container(border=True):
         save_dir = config.get("save_dir", "")
         target_dir = save_dir
@@ -525,7 +523,6 @@ with st.sidebar:
                   key="dash_gal_check_processed_toggle",
                   on_change=on_dash_gal_check_processed_change)
 
-    st.markdown("### Gemini Automation")
     with st.container(border=True):
         # Determine automation status for disabling logic
         auto_status_data = asyncio.run(st.session_state.client.get_automation_stats())
@@ -653,6 +650,39 @@ with st.sidebar:
                      key="btn_loop_ctrl_cfg",
                      help="Configure threshold-based auto account switching"):
             show_loop_control_dialog()
+
+        @st.fragment(run_every="2s")
+        def render_notifier_button():
+            import psutil
+            is_notif_running = False
+            for p in psutil.process_iter(['name', 'cmdline']):
+                try:
+                    cmdline = p.info.get('cmdline')
+                    if cmdline and 'image_notifier.py' in ' '.join(cmdline):
+                        is_notif_running = True
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
+            
+            if is_notif_running:
+                if st.button("🔔 Stop Notifier", width="stretch", key="btn_stop_notifier"):
+                    for p in psutil.process_iter(['name', 'cmdline']):
+                        try:
+                            cmdline = p.info.get('cmdline')
+                            if cmdline and 'image_notifier.py' in ' '.join(cmdline):
+                                p.terminate()
+                        except:
+                            pass
+                    st.rerun()
+            else:
+                if st.button("🔕 Start Notifier", width="stretch", key="btn_start_notifier"):
+                    vbs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "start_notifier.vbs")
+                    if os.path.exists(vbs):
+                        os.startfile(vbs)
+                    time.sleep(1)
+                    st.rerun()
+
+        render_notifier_button()
 
 def get_status_bar_html(label, msg, color):
     return f"""

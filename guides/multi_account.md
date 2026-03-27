@@ -21,6 +21,11 @@ To enable automation to "know" your accounts, you must list them in the system c
 3. Add your account usernames (the part before `@gmail.com` is usually enough) into the table.
 4. Click **"Save Credentials Tables"**.
 
+### Bypassing Accounts
+If you want to temporarily skip an account during automation (e.g., to preserve its daily image generation quota), you can check the **"Bypass"** checkbox next to that account in the User Login Credentials table.
+- When the system auto-switches due to a quota limit or a loop control threshold, it will **automatically skip** any account marked as "Bypass" and proceed to the next available one.
+- This allows you to selectively manage which accounts are actively used in the rotation without having to delete them from your configuration.
+
 ---
 
 ## 3. Switching Profiles
