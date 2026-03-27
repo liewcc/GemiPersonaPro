@@ -45,4 +45,12 @@ When automation stops, the dialog displays a final summary:
 - **Avg/Img**: Average time taken to acquire one final image (including all retries).
 
 ---
+
+## 5. Background Image Notifier
+GemiPersonaPro natively supports a silent **Background Image Notifier** (`image_notifier.py` / `start_notifier.vbs`) that runs as an **independent program** in your Windows System Tray.
+- **Independent Operation**: Because it runs entirely independent from the Streamlit UI, **it will continue to operate even after you close the Streamlit browser window**. This is designed so you can step away from the setup page and still receive updates.
+- **Function**: It monitors your configured save directory and pops up a native Windows UI notification (including your currently active profile state) whenever new images are successfully downloaded.
+- **How to Control**: You can toggle the notifier on/off directly from the **Dashboard UI**, using the **Start/Stop Notifier** button on the bottom left. Alternatively, to stop it completely when the UI is closed, look for its blue `GemiPersona Notifier` icon in your Windows right-bottom SystemTray, right-click, and select **"Quit"**.
+
+---
 *Stay informed, optimize your prompts.*
