@@ -264,8 +264,13 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         )
         if start_index == -1:
             return {"status": "error", "message": f"User '{target_username}' not found in lookup"}
-        # Treat start_index as the target itself (offset=0)
-        direction = 0
+        # If the direct target (e.g. re-login) is bypassed, fall back to sequential next
+        if users[start_index].get("bypass", False):
+            print(f"[ENGINE] Direct target '{target_username}' is bypassed. Falling back to sequential next.")
+            direction = 1  # Fall back to sequential next
+        else:
+            # Treat start_index as the target itself (offset=0)
+            direction = 0
 
     # 3b. Sequential: find current user's index
     else:
@@ -326,6 +331,11 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
                             cand_profile = p_dir
                             break
         except: continue
+
+        # Skip accounts flagged as Bypass
+        if candidate.get("bypass", False):
+            print(f"[ENGINE] Skipping '{candidate.get('username')}' (Bypass enabled).")
+            continue
 
         if cand_profile:
             prof_dir = get_abs_path(os.path.join("browser_user_data", cand_profile))

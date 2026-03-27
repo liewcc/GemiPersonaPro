@@ -203,7 +203,8 @@ with col_cred:
 
         editor_data = [
             {
-                "active": r.get("active", False), 
+                "active": r.get("active", False),
+                "bypass": r.get("bypass", False),
                 "username": r.get("username", ""), 
                 "auto_delete": r.get("auto_delete", False),
                 "delete_range": r.get("delete_range", "Last hour"),
@@ -212,7 +213,7 @@ with col_cred:
             }
             for r in rows
         ]
-        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "username", "auto_delete", "delete_range", "note", "quota_full"])
+        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "note", "quota_full"])
 
         # 这里的 width 设为 "content" 以确保紧凑且不报错
         edited_df = st.data_editor(
@@ -222,6 +223,11 @@ with col_cred:
                     "Active",
                     help="Current active account",
                     disabled=True,
+                    width="small"
+                ),
+                "bypass": st.column_config.CheckboxColumn(
+                    "Bypass",
+                    help="Skip this account during automated looping",
                     width="small"
                 ),
                 "username": st.column_config.TextColumn("Username", width="medium"),
@@ -248,6 +254,7 @@ with col_cred:
                 # (though it should be there as a column)
                 final = [
                     {"active": (r.get("username") == selected_active),
+                     "bypass": r.get("bypass", False),
                      "username": r.get("username", ""),
                      "auto_delete": r.get("auto_delete", False),
                      "delete_range": r.get("delete_range", "Last hour"),

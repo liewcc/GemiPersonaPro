@@ -16,3 +16,4 @@ fastapi
 uvicorn[standard]
 httpx
 psutil
+pystray
