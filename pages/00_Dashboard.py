@@ -65,7 +65,7 @@ def save_config(updates):
     return cfg
 
 # --- Page Config ---
-st.set_page_config(page_title="GemiPersona | DASHBOARD", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="GemiPersona | DASHBOARD", page_icon="sys_img/logo.png", layout="wide", initial_sidebar_state="expanded")
 apply_premium_style()
 
 # --- Hide Custom Dash Styling ---

@@ -1,34 +1,32 @@
 import os
 import time
-import ctypes
 import threading
 import json
 import urllib.request
 import pystray
-from PIL import Image, ImageDraw
+from PIL import Image
+from win11toast import toast
 import config_utils
 
 app_running = True
 current_dir_display = ""
 tray_icon = None
 
-def create_image(width, height, color1, color2):
-    # Create a nice placeholder icon image
-    image = Image.new('RGB', (width, height), color1)
-    dc = ImageDraw.Draw(image)
-    dc.rectangle((width // 2, 0, width, height // 2), fill=color2)
-    dc.rectangle((0, height // 2, width // 2, height), fill=color2)
-    return image
+# Resolve icon paths relative to this script's location
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_TRAY_ICON_PATH = os.path.join(_SCRIPT_DIR, 'sys_img', 'icon_no_BG.png')
+_TOAST_ICON_PATH = os.path.join(_SCRIPT_DIR, 'sys_img', 'icon.png')
 
-def is_looping_active():
-    # Sync HTTP request to local engine
+def get_automation_stats():
+    """Fetch full automation stats from the engine service."""
     try:
         req = urllib.request.Request("http://127.0.0.1:8000/browser/automation/stats")
         with urllib.request.urlopen(req, timeout=1.5) as response:
-            data = json.loads(response.read().decode())
-            return data.get('is_running', False)
+            return json.loads(response.read().decode())
     except Exception:
-        return False
+        return {}
+
+
 
 def monitor_directory():
     global app_running, current_dir_display
@@ -49,9 +47,7 @@ def monitor_directory():
     except Exception:
         pass
         
-    MB_YESNO = 0x04
-    MB_TOPMOST = 0x40000
-    style = MB_YESNO | MB_TOPMOST
+
     
     while app_running:
         try:
@@ -82,14 +78,31 @@ def monitor_directory():
                 if len(image_files) > 10:
                     file_list += f"\n... and {len(image_files) - 10} more."
                     
-                l_state = "Running" if is_looping_active() else "Stopped / Offline"
+                stats = get_automation_stats()
+                l_state = "Running" if stats.get('is_running', False) else "Stopped"
                 active_account = config.get('active_user', 'N/A') or 'N/A'
-                msg = f"New image(s) downloaded!\n\nLooping System: {l_state}\nActive Account: {active_account}\nDirectory: {current_dir}\nIncludes:\n{file_list}\n\n[Yes] = Open folder\n[No] = Close message"
+                s_cycles = stats.get('cycles', 0)
+                s_images = stats.get('successes', 0)
+                s_refused = stats.get('refusals', 0)
+                s_resets = stats.get('resets', 0)
+                msg = (f"Account: {active_account} [{l_state}]\n"
+                       f"Cycle: {s_cycles}  Image: {s_images}  Refused: {s_refused}  Reset: {s_resets}\n"
+                       f"Path: {current_dir}")
                 
-                # WinAPI native blocking message box
-                result = ctypes.windll.user32.MessageBoxW(0, msg, 'GemiPersona Notification', style)
-                if result == 6: # IDYES
-                    os.startfile(current_dir)
+                path_uri = f'file:///{current_dir.replace("\\", "/")}'
+                buttons = [
+                    {'activationType': 'protocol', 'arguments': path_uri, 'content': 'Open Folder'},
+                    {'activationType': 'background', 'arguments': 'dismiss', 'content': 'Dismiss'}
+                ]
+                
+                # Native win11 toast notification
+                toast(
+                    "GemiPersona - Download Complete",
+                    msg,
+                    icon=_TOAST_ICON_PATH,
+                    buttons=buttons,
+                    audio={'silent': False} 
+                )
                 
                 # Immediately refresh current_files AFTER the popup is closed
                 # This intentionally skips any images that dropped in while the popup was open
@@ -105,20 +118,26 @@ def _show_status_thread():
     global app_running
     if not current_dir_display or current_dir_display == "Not set or not found":
         msg = "GemiPersona Initializing or Directory Not Set...\n\nPlease ensure your configuration is saved."
-        ctypes.windll.user32.MessageBoxW(0, msg, 'GemiPersona Status', 0x40000) # MB_OK
+        toast("GemiPersona Status", msg, icon=_TOAST_ICON_PATH, audio={'silent': True})
     else:
-        l_state = "Running" if is_looping_active() else "Stopped / Offline"
+        stats = get_automation_stats()
+        l_state = "Running" if stats.get('is_running', False) else "Stopped"
         active_account = config_utils.load_config().get('active_user', 'N/A') or 'N/A'
-        msg = f"GemiPersona Monitoring Active\n\nLooping System: {l_state}\nActive Account: {active_account}\nMonitoring Directory:\n{current_dir_display}\n\n[Yes] = Open folder\n[No] = Close message"
+        s_cycles = stats.get('cycles', 0)
+        s_images = stats.get('successes', 0)
+        s_refused = stats.get('refusals', 0)
+        s_resets = stats.get('resets', 0)
+        msg = (f"Account: {active_account} [{l_state}]\n"
+               f"Cycle: {s_cycles}  Image: {s_images}  Refused: {s_refused}  Reset: {s_resets}\n"
+               f"Path: {current_dir_display}")
         
-        # MB_YESNO | MB_TOPMOST
-        style = 0x04 | 0x40000
-        result = ctypes.windll.user32.MessageBoxW(0, msg, 'GemiPersona Status', style)
-        if result == 6: # IDYES
-            try:
-                os.startfile(current_dir_display)
-            except Exception:
-                pass
+        path_uri = f'file:///{current_dir_display.replace("\\", "/")}'
+        buttons = [
+            {'activationType': 'protocol', 'arguments': path_uri, 'content': 'Open Folder'},
+            {'activationType': 'background', 'arguments': 'dismiss', 'content': 'Dismiss'}
+        ]
+        
+        toast("GemiPersona Status", msg, icon=_TOAST_ICON_PATH, buttons=buttons, audio={'silent': True})
 
 def show_status(icon, item):
     # Launch in a new thread so it doesn't block the pystray system tray event loop
@@ -135,8 +154,8 @@ def main():
     monitor_thread = threading.Thread(target=monitor_directory, daemon=True)
     monitor_thread.start()
     
-    # 2. Start sys-tray app
-    icon_img = create_image(64, 64, '#333333', '#1e90ff') # Dark / Blue icon
+    # 2. Start sys-tray app with real GemiPersona icon
+    icon_img = Image.open(_TRAY_ICON_PATH)
     menu = pystray.Menu(
         pystray.MenuItem("Show Status", show_status, default=True),
         pystray.MenuItem("Quit", quit_app)

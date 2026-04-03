@@ -153,7 +153,7 @@ from api_client import EngineClient
 import shared_state
 
 CONFIG_PATH = "config.json"
-st.set_page_config(page_title="GemiPersona | ASSET SANITIZER", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="GemiPersona | ASSET SANITIZER", page_icon="sys_img/logo.png", layout="wide", initial_sidebar_state="expanded")
 apply_premium_style()
 
 # --- CSS FOR CLEAN DASHBOARD LOOK ---
