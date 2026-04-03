@@ -58,7 +58,7 @@ def select_multiple_files():
     return list(paths)
 
 # --- Page Config ---
-st.set_page_config(page_title="GemiPersona | HOME", page_icon="🌐", layout="wide")
+st.set_page_config(page_title="GemiPersona | HOME", page_icon="sys_img/logo.png", layout="wide")
 apply_premium_style()
 
 def apply_layout_fix():

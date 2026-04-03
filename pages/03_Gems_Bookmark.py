@@ -44,7 +44,7 @@ async def check_busy(client):
     return False, ""
 
 def main():
-    st.set_page_config(page_title="Gems Bookmark", page_icon="🔖", layout="wide")
+    st.set_page_config(page_title="GemiPersona | GEMS BOOKMARK", page_icon="sys_img/logo.png", layout="wide")
     apply_premium_style()
 
     # --- SESSION STATE INITIALIZATION ---

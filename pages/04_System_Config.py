@@ -6,7 +6,7 @@ from style_utils import apply_premium_style, render_dashboard_header
 from config_utils import load_config as load_cfg_disk, save_config as save_cfg_disk, load_login_lookup, save_login_lookup
 
 # --- Page Config ---
-st.set_page_config(page_title="GemiPersona | System Config", page_icon="⚙️", layout="wide")
+st.set_page_config(page_title="GemiPersona | SYSTEM CONFIG", page_icon="sys_img/logo.png", layout="wide")
 apply_premium_style()
 
 # --- Data Loading Functions ---
