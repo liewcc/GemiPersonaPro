@@ -237,7 +237,7 @@ class BrowserEngine:
         target_viewport = {'width': 2560, 'height': 1440} if headless else None
         
         launch_args = [
-            "--start-maximized",
+            "--start-minimized",
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox"
         ]
@@ -305,7 +305,7 @@ class BrowserEngine:
             user_data_dir=user_data_dir,
             headless=False,
             ignore_default_args=["--enable-automation", "--use-mock-keychain"],
-            args=["--start-maximized", "--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            args=["--start-minimized", "--disable-blink-features=AutomationControlled", "--no-sandbox"],
             ignore_https_errors=True,
         )
         print("[REG] Registration browser started. user_data_dir:", user_data_dir)
