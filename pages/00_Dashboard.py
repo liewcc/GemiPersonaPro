@@ -130,6 +130,8 @@ if "last_known_auto_active" not in st.session_state:
     st.session_state.last_known_auto_active = False
 if "auto_stop_requested" not in st.session_state:
     st.session_state.auto_stop_requested = False
+if "needs_full_rerun" not in st.session_state:
+    st.session_state.needs_full_rerun = False
 if "selected_files" not in st.session_state:
     st.session_state.selected_files = config.get("selected_files", [])
 if "name_start" not in st.session_state: 
@@ -433,6 +435,11 @@ if browser_active and not st.session_state.initial_login_checked:
     except Exception as e:
         add_log(f"Initial setup check failed: {e}")
 
+# Handle needs_full_rerun flag set by fragments (avoids calling st.rerun inside a fragment)
+if st.session_state.needs_full_rerun:
+    st.session_state.needs_full_rerun = False
+    st.rerun()
+
 try:
     auto_stats = asyncio.run(st.session_state.client.get_automation_stats())
     is_auto_running = auto_stats.get("is_running", False)
@@ -489,6 +496,111 @@ def render_gallery_nav(total_pages, key_suffix):
         st.button("▶|", key=f"gal_last_{key_suffix}", width="stretch", 
                   disabled=total_pages <= 1 or st.session_state.dash_gal_page >= total_pages,
                   on_click=sync_all_pagination_states, args=(total_pages,))
+
+# --- Notifier Button Fragment (Global-Level per Fragment Stability Protocol) ---
+@st.fragment(run_every="2s")
+def render_notifier_button():
+    import psutil
+    is_notif_running = False
+    for p in psutil.process_iter(['name', 'cmdline']):
+        try:
+            cmdline = p.info.get('cmdline')
+            if cmdline and 'image_notifier.py' in ' '.join(cmdline):
+                is_notif_running = True
+                break
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+    
+    if is_notif_running:
+        if st.button("🔔 Stop Notifier", width="stretch", key="btn_stop_notifier"):
+            for p in psutil.process_iter(['name', 'cmdline']):
+                try:
+                    cmdline = p.info.get('cmdline')
+                    if cmdline and 'image_notifier.py' in ' '.join(cmdline):
+                        p.terminate()
+                except:
+                    pass
+            st.rerun()
+    else:
+        if st.button("🔕 Start Notifier", width="stretch", key="btn_start_notifier"):
+            vbs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "start_notifier.vbs")
+            if os.path.exists(vbs):
+                os.startfile(vbs)
+            time.sleep(1)
+            st.rerun()
+
+# --- Looping Control Button Fragment (Global-Level per Fragment Stability Protocol) ---
+# Defined at module level so st.rerun() inside is fragment-scoped (not full-app),
+# preventing Fragment ID invalidation races with other run_every fragments.
+@st.fragment(run_every="3s")
+def render_looping_button(location="sidebar"):
+    # Recompute all needed state inside the fragment to be self-contained
+    try:
+        _auto_status = asyncio.run(st.session_state.client.get_automation_stats())
+        _is_active = _auto_status.get("is_running", False)
+    except:
+        _is_active = False
+    try:
+        _h = asyncio.run(st.session_state.client.check_health())
+        _browser_active = _h.get("engine_running", False) if _h else False
+    except:
+        _browser_active = False
+
+    _is_busy = st.session_state.get("is_busy", False)
+    _auto_enabled = st.session_state.get("auto_looping", False)
+    _stop_req = st.session_state.get("auto_stop_requested", False)
+
+    if "ui_auto_looping_active" not in st.session_state:
+        st.session_state.ui_auto_looping_active = False
+    if _is_active:
+        st.session_state.ui_auto_looping_active = True
+    elif _browser_active:
+        st.session_state.ui_auto_looping_active = False
+
+    _ui_is_active = _is_active or (st.session_state.ui_auto_looping_active and not _browser_active)
+    if not _ui_is_active:
+        st.session_state.auto_stop_requested = False
+        _stop_req = False
+
+    _show_as_inactive = not _ui_is_active or _stop_req
+
+    if _show_as_inactive:
+        _start_disabled = not _browser_active or _is_busy or not _auto_enabled or _stop_req
+        if st.button("▶️ Start Looping Process", key=f"start_loop_{location}", width="stretch", type="primary", disabled=_start_disabled):
+            current_config = load_config()
+            current_config["selected_files"] = st.session_state.selected_files
+            current_config["remove_watermark"] = st.session_state.auto_remove_wm
+
+            def trigger_automation():
+                async def do_start_auto():
+                    add_log("API>> Triggering Automation Start...")
+                    try:
+                        resp = await st.session_state.client.start_automation(
+                            mode=st.session_state.auto_mode,
+                            goal=st.session_state.auto_goal,
+                            config=current_config
+                        )
+                        add_log(f"API>> Start Result: {resp.get('message')}")
+                    except Exception as e:
+                        add_log(f"API ERROR: {e}")
+                asyncio.run(do_start_auto())
+
+            t = threading.Thread(target=trigger_automation, daemon=True)
+            add_script_run_ctx(t)
+            t.start()
+            st.session_state.ui_auto_looping_active = True
+            st.session_state.auto_stop_requested = False
+            st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
+    else:
+        if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
+            async def do_stop_auto():
+                add_log("Stopping Automation Loop...")
+                resp = await st.session_state.client.stop_automation()
+                add_log(f"Auto Stop: {resp.get('message')}")
+            asyncio.run(do_stop_auto())
+            st.session_state.auto_stop_requested = True
+            st.session_state.ui_auto_looping_active = False
+            st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
 
 # --- UI Layout ---
 with st.sidebar:
@@ -571,116 +683,15 @@ with st.sidebar:
             st.session_state.auto_goal = new_goal
             save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
 
-        auto_status = asyncio.run(st.session_state.client.get_automation_stats())
-        is_active = auto_status.get("is_running", False)
-        is_busy = st.session_state.get("is_busy", False)
-
-        # Persistent state logic to handle account switches (browser offline while automation active)
-        h_data = asyncio.run(st.session_state.client.check_health())
-        browser_active = h_data.get("engine_running", False) if h_data else False
-        
-        if "ui_auto_looping_active" not in st.session_state:
-            st.session_state.ui_auto_looping_active = False
-            
-        if is_active:
-            st.session_state.ui_auto_looping_active = True
-        elif browser_active:
-            # If the engine is idle but browser is online, then the automation is truly stopped/finished.
-            st.session_state.ui_auto_looping_active = False
-            
-        # UI state: active if engine says so, OR if we are in the middle of a switch (offline)
-        ui_is_active = is_active or (st.session_state.ui_auto_looping_active and not browser_active)
-
-        # If system is truly idle, clear stop request
-        if not ui_is_active:
-            st.session_state.auto_stop_requested = False
-
-        # Determine effective state: treat as inactive if stop was already requested
-        show_as_inactive = not ui_is_active or st.session_state.auto_stop_requested
-
-        def render_looping_button(key_suffix=""):
-            if show_as_inactive:
-                # Start button disabled if:
-                # 1. Browser is OFF
-                # 2. Manual edit / busy
-                # 3. Auto Looping toggle is OFF
-                # 4. Stop was recently requested
-                start_disabled = not browser_active or is_busy or not auto_enabled or st.session_state.auto_stop_requested
-                if st.button("▶️ Start Looping Process", key=f"start_loop{key_suffix}", use_container_width=True, type="primary", disabled=start_disabled):
-                    current_config = load_config()
-                    current_config["selected_files"] = st.session_state.selected_files
-                    current_config["remove_watermark"] = st.session_state.auto_remove_wm
-                    
-                    def trigger_automation():
-                        async def do_start_auto():
-                            add_log("API>> Triggering Automation Start...")
-                            try:
-                                resp = await st.session_state.client.start_automation(
-                                    mode=st.session_state.auto_mode,
-                                    goal=st.session_state.auto_goal,
-                                    config=current_config
-                                )
-                                add_log(f"API>> Start Result: {resp.get('message')}")
-                            except Exception as e:
-                                add_log(f"API ERROR: {e}")
-                        asyncio.run(do_start_auto())
-
-                    t = threading.Thread(target=trigger_automation, daemon=True)
-                    add_script_run_ctx(t)
-                    t.start()
-                    st.session_state.ui_auto_looping_active = True
-                    st.session_state.auto_stop_requested = False
-                    time.sleep(0.5)
-                    st.rerun()
-            else:
-                if st.button("⏹️ Stop Looping Process", key=f"stop_loop{key_suffix}", width='stretch'):
-                    async def do_stop_auto():
-                        add_log("Stopping Automation Loop...")
-                        resp = await st.session_state.client.stop_automation()
-                        add_log(f"Auto Stop: {resp.get('message')}")
-                    asyncio.run(do_stop_auto())
-                    st.session_state.auto_stop_requested = True
-                    st.session_state.ui_auto_looping_active = False # Optimistic clear
-                    st.rerun()
-
-        render_looping_button("_sidebar")
+        # Loop control button is now a module-level @st.fragment (render_looping_button).
+        # It is self-contained and recomputes its own state internally.
+        render_looping_button("sidebar")
 
         # Loop Control Config button (shown below Start/Stop, always visible)
         if st.button("⚙️ Loop Control Config", width="stretch",
                      key="btn_loop_ctrl_cfg",
                      help="Configure threshold-based auto account switching"):
             show_loop_control_dialog()
-
-        @st.fragment(run_every="2s")
-        def render_notifier_button():
-            import psutil
-            is_notif_running = False
-            for p in psutil.process_iter(['name', 'cmdline']):
-                try:
-                    cmdline = p.info.get('cmdline')
-                    if cmdline and 'image_notifier.py' in ' '.join(cmdline):
-                        is_notif_running = True
-                        break
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    pass
-            
-            if is_notif_running:
-                if st.button("🔔 Stop Notifier", width="stretch", key="btn_stop_notifier"):
-                    for p in psutil.process_iter(['name', 'cmdline']):
-                        try:
-                            cmdline = p.info.get('cmdline')
-                            if cmdline and 'image_notifier.py' in ' '.join(cmdline):
-                                p.terminate()
-                        except:
-                            pass
-                    st.rerun()
-            else:
-                if st.button("🔕 Start Notifier", width="stretch", key="btn_start_notifier"):
-                    vbs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "start_notifier.vbs")
-                    if os.path.exists(vbs):
-                        os.startfile(vbs)
-                    time.sleep(1)
-                    st.rerun()
 
         render_notifier_button()
 
@@ -758,9 +769,12 @@ def render_automation_stats():
         </div>
         """, unsafe_allow_html=True)
     except: pass
-    # Fire the rerun AFTER try/except so RerunException is not swallowed.
+    # Signal a full-app rerun via session_state flag instead of calling st.rerun(scope="app")
+    # directly inside the fragment. Calling st.rerun(scope="app") from within a fragment
+    # triggers a global rerun while the fragment is still alive, invalidating its own ID
+    # and causing "fragment id does not exist anymore" errors on the next run_every tick.
     if _trigger_rerun:
-        st.rerun(scope="app")
+        st.session_state.needs_full_rerun = True
 
 @st.fragment(run_every="2s")
 def render_live_status_bar():
@@ -800,7 +814,7 @@ with col_view:
         else:
             st.warning("Folder not set.")
 with col_loop_btn:
-    render_looping_button("_main")
+    render_looping_button("main")
 with col_btn:
     if st.button("📊 Reject Rate Stats", width='stretch', help="View per-image download stats"):
         show_reject_rate_stats()
