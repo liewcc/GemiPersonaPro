@@ -3,7 +3,7 @@ streamlit>=1.40.0
 # AI & Image Processing
 torch
 torchvision
-opencv-python
+opencv-python-headless
 numpy
 requests
 pillow
