@@ -29,6 +29,25 @@ def get_automation_stats():
         return {}
 
 
+def is_gemipersona_running():
+    """Check if GemiPersona engine or Streamlit app is alive."""
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8000/health")
+        with urllib.request.urlopen(req, timeout=1.0) as response:
+            return response.status == 200
+    except Exception:
+        pass
+    stats = get_automation_stats()
+    if stats:
+        return True
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8501/healthz")
+        with urllib.request.urlopen(req, timeout=1.0) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Shared helper: build and show a themed tkinter popup near the taskbar
 # ---------------------------------------------------------------------------
@@ -123,6 +142,34 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
         activebackground='#363d52', activeforeground=C_TEXT,
         command=root.destroy
     ).pack(side='left', padx=(8 if folder_path else 0, 0))
+
+    def _open_gemipersona():
+        run_bat = os.path.join(_SCRIPT_DIR, "run.bat")
+        if os.path.exists(run_bat):
+            os.startfile(run_bat)
+        root.destroy()
+
+    running = is_gemipersona_running()
+
+    if running:
+        gp_bg = C_BTN_SEC
+        gp_fg = '#4a5568'
+        gp_cursor = 'arrow'
+        gp_cmd = lambda: None
+    else:
+        gp_bg = C_BTN_PRI
+        gp_fg = '#ffffff'
+        gp_cursor = 'hand2'
+        gp_cmd = _open_gemipersona
+
+    tk.Button(
+        btn_bar, text='Open GemiPersona', relief='flat',
+        bg=gp_bg, fg=gp_fg, font=FONT_BTN,
+        padx=10, pady=4, cursor=gp_cursor,
+        activebackground='#6d28d9' if not running else gp_bg,
+        activeforeground='#ffffff' if not running else gp_fg,
+        command=gp_cmd
+    ).pack(side='left', padx=(8, 0))
 
     # -- Position: bottom-right, above taskbar --
     root.update_idletasks()
