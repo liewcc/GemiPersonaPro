@@ -50,6 +50,9 @@ When automation stops, the dialog displays a final summary:
 GemiPersonaPro natively supports a silent **Background Image Notifier** (`image_notifier.py` / `start_notifier.vbs`) that runs as an **independent program** in your Windows System Tray.
 - **Independent Operation**: Because it runs entirely independent from the Streamlit UI, **it will continue to operate even after you close the Streamlit browser window**. This is designed so you can step away from the setup page and still receive updates.
 - **Function**: It monitors your configured save directory and pops up a native Windows UI notification (including your currently active profile state) whenever new images are successfully downloaded.
+- **Enhanced Taskbar UI**: The notifier popup includes interactive buttons:
+  - **Open Folder**: Instantly opens the directory where the new images were saved.
+  - **Open GemiPersona**: A smart launch button. If the GemiPersona main application or engine is not running, this button is active; clicking it will launch the `run.bat` automatically. If the application is already running, the button will be disabled to prevent duplicate processes.
 - **How to Control**: You can toggle the notifier on/off directly from the **Dashboard UI**, using the **Start/Stop Notifier** button on the bottom left. Alternatively, to stop it completely when the UI is closed, look for its blue `GemiPersona Notifier` icon in your Windows right-bottom SystemTray, right-click, and select **"Quit"**.
 
 ---
