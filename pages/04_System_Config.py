@@ -163,7 +163,7 @@ with col_quota:
 
         if st.button("Save Quota Phrases", icon="📝", width='stretch'):
             new_phrases = edited_quota_df["phrase"].tolist()
-            new_phrases = [p.strip() for p in new_phrases if p.strip()]
+            new_phrases = [p.strip() for p in new_phrases if p is not None and p.strip()]
             save_config({"quota_full": new_phrases})
             st.success("Quota phrases updated!")
             st.rerun()
