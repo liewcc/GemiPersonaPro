@@ -2,6 +2,12 @@
 
 This guide will walk you through the first-time setup and your first automation run with GemiPersonaPro.
 
+## Phase 0: Pre-flight Requirements
+Before running the setup, ensure your Windows system is ready:
+1. **Python 3.10+**: Must be installed and added to PATH.
+2. **VC++ Redistributable**: [Download and install this](https://aka.ms/vs/17/release/vc_redist.x64.exe) first. Without it, the AI models and image processing features will fail to load.
+3. **Download Method**: If you don't use Git, ensure you've downloaded the project as a ZIP and extracted it completely.
+
 ---
 
 ## Phase 1: Launching the System
