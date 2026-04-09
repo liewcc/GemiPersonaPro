@@ -47,8 +47,8 @@ To address this, GemiPersonaPro was completely rewritten to use a more robust AP
 ## 🛠️ Quick Setup
 
 ### 1. Prerequisites
-- **Python 3.10+**: Ensure Python is added to your system PATH.
-- **C++ Redistributable**: [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) is **REQUIRED** for AI models and OpenCV to function.
+- **C++ Redistributable**: [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) is **REQUIRED**. Install this first.
+- **Zero-Config Python**: No need to install Python manually. The setup script uses `uv` to automatically fetch and configure the correct Python version for you.
 - **Git (Optional)**: If you don't have Git, simply download the repository as a ZIP.
 
 ### 2. Installation
