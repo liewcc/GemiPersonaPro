@@ -24,6 +24,7 @@ models/*.pt
 
 # AI specific instructions
 rule.md
+
 # Local sensitive configuration files
 config.json
 user_login_lookup.json
