@@ -37,7 +37,13 @@ DEFAULT_CONFIG = {
     "name_padding": 2,
     "name_start": 1,
     "startup_redirect": "gemini_setup",
-    "quota_full": ["quota exceeded", "daily limit", "reached your limit"],
+    "quota_full": [
+        "quota exceeded",
+        "daily limit",
+        "reached your limit",
+        "我今天无法为您创建更多图像",
+        "十分抱歉"
+    ],
     "selected_files": []
 }
 
