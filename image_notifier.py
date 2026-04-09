@@ -1,4 +1,5 @@
 import os
+import subprocess
 import time
 import threading
 import json
@@ -30,19 +31,10 @@ def get_automation_stats():
 
 
 def is_gemipersona_running():
-    """Check if GemiPersona engine or Streamlit app is alive."""
-    try:
-        req = urllib.request.Request("http://127.0.0.1:8000/health")
-        with urllib.request.urlopen(req, timeout=1.0) as response:
-            return response.status == 200
-    except Exception:
-        pass
-    stats = get_automation_stats()
-    if stats:
-        return True
+    """Check if the GemiPersona Streamlit app is alive on port 8501."""
     try:
         req = urllib.request.Request("http://127.0.0.1:8501/healthz")
-        with urllib.request.urlopen(req, timeout=1.0) as response:
+        with urllib.request.urlopen(req, timeout=1.5) as response:
             return response.status == 200
     except Exception:
         return False
@@ -146,7 +138,11 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
     def _open_gemipersona():
         run_bat = os.path.join(_SCRIPT_DIR, "run.bat")
         if os.path.exists(run_bat):
-            os.startfile(run_bat)
+            subprocess.Popen(
+                ["cmd", "/c", "start", "", run_bat],
+                shell=False,
+                close_fds=True
+            )
         root.destroy()
 
     running = is_gemipersona_running()
