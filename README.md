@@ -47,17 +47,17 @@ To address this, GemiPersonaPro was completely rewritten to use a more robust AP
 ## 🛠️ Quick Setup
 
 ### 1. Prerequisites
-- Python 3.10 or higher.
-- Git installed on your system.
+- **Python 3.10+**: Ensure Python is added to your system PATH.
+- **C++ Redistributable**: [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) is **REQUIRED** for AI models and OpenCV to function.
+- **Git (Optional)**: If you don't have Git, simply download the repository as a ZIP.
 
 ### 2. Installation
-Clone the repository and run the setup script:
-```bash
-git clone https://github.com/liewcc/GemiPersonaPro.git
-cd GemiPersonaPro
-setup.bat
-```
-*The setup script will automatically create a virtual environment, install dependencies, and download the required AI models (LaMa).*
+1. **Get the Code**: 
+   - [Download ZIP](https://github.com/liewcc/GemiPersonaPro/archive/refs/heads/main.zip) and extract it, OR
+   - Run `git clone https://github.com/liewcc/GemiPersonaPro.git`
+2. **Run Setup**:
+   - Open the project folder and run `setup.bat`.
+   - *The script will automatically create a virtual environment, install dependencies, and download the LaMa AI model.*
 
 ### 3. Running the App
 After setup, simply run:

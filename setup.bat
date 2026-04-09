@@ -3,6 +3,12 @@ setlocal enabledelayedexpansion
 
 :: Project: GemiPersona
 :: Purpose: Automated environment setup using uv
+:: IMPORTANT: Microsoft Visual C++ Redistributable MUST be installed before running this script.
+
+echo --------------------------------------------------
+echo [!] CRITICAL: Ensure Microsoft Visual C++ Redistributable is installed.
+echo     Download: https://aka.ms/vs/17/release/vc_redist.x64.exe
+echo --------------------------------------------------
 
 echo [1/5] Checking for uv installation...
 where uv >nul 2>nul
