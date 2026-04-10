@@ -1,43 +1,60 @@
-# 🔄 Loop Control Config
+# 🔄 Loop Control Config: Automation Strategy guide
 
-The **Loop Control Config** is an advanced automation feature in GemiPersonaPro designed to maximize image generation success rates by intelligently handling server-side restrictions and overloads.
+The **Loop Control Config** is the "brain" of GemiPersonaPro's automation. It determines how the system navigates through multiple accounts and how it reacts when things don't go as planned. 
 
-## 📖 Overview
+This guide explains the deeper purpose of each control and how to configure them for maximum efficiency.
 
-When generating images with Gemini, you may encounter two primary types of interruptions:
-1.  **Refusals**: Gemini's safety filters or "sensitive prompt" blockers prevent an image from being generated.
-2.  **Resets**: The server becomes overloaded, causing the page to hang or require a refresh.
+---
 
-The **Loop Control Config** allows you to automate the response to these events, turning potential failures into opportunities for success.
+## 1. ♾️ Infinite Table Loop (The "Perpetual Mode")
 
-## 🛠️ How it Works
+**Purpose**: To keep the automation running identity-loops indefinitely without manual intervention.
 
-This feature monitors the generation process and triggers specific actions based on user-defined thresholds.
+- **How it Works**: Normally, automation stops once the last account in your `Credentials Table` is processed. If this is enabled, the system won't stop. Instead, it enters a "Cooldown" state.
+- **Cooldown (Minutes)**: How long the system waits after finishing the last account before jumping back to the very first account and starting again.
+- **Strategic Benefit**: Perfect for 24/7 generation. By setting a cooldown (e.g., 60 minutes), you give your accounts time to "rest" and potentially reset their own daily quotas before the next loop begins.
+- **⏱ Unit**: **Minutes**. (e.g., 1440 = 24 hours).
 
-### 1. Refusal Management (`refused_threshold`)
-Gemini's image filter is dynamic and influenced by server load. Sometimes, a prompt that is rejected during peak hours might be accepted if retried when the server is "busy" or during a different session, as the filter's strictness can vary.
-- **Action**: By seting a refusal threshold, the system will retry the download multiple times. If the limit is reached, it will automatically perform a **Next Profile** switch or **New Chat** restart.
-- **Benefit**: Increases the probability of bypassing occasional filter false positives.
+## 2. ⏱ Time Threshold (The "Account Duty Cycle")
 
-### 2. Reset Management (`reset_threshold`)
-Server overloads can lead to "Page Resets." Frequent resets often indicate a degraded session or a throttled account.
-- **Action**: If the number of resets for a single image exceeds your threshold, the system will switch to a fresh account.
-- **Benefit**: Prevents the automation from getting stuck in a loop of server errors.
+**Purpose**: To prevent "Session Stale" and rotate accounts based on time, even if they haven't hit their quota.
 
-## ⚙️ Configuration Parameters
+- **How it Works**: Monitors how long a single account has been active in the current session.
+- **Threshold (Minutes)**: Once an account has been running for this many minutes, the system triggers an action (Next Profile or Re-login).
+- **Strategic Benefit**: 
+    - **Freshness**: Browser sessions can become slow or buggy over hours. Periodic rotation keeps the engine responsive.
+    - **Detection Avoidance**: Regularly switching profiles mimics more natural human behavior compared to one account generating for 10 hours straight.
+- **⏱ Unit**: **Minutes**.
 
-You can find these settings in the **Dashboard** under the **Loop Control** section:
+## 3. 🚫 Refused Threshold (Filter Management)
 
-| Parameter | Description | Recommended |
-| :--- | :--- | :--- |
-| **Enable Refused Control** | Monitor and act on image rejections. | `On` |
-| **Refused Threshold** | Max rejections per image before switching. | `5 - 10` |
-| **Enable Reset Control** | Monitor and act on page resets. | `On` |
-| **Reset Threshold** | Max resets per image before switching. | `3` |
-| **Action Type** | What to do when threshold is hit (`Next Profile` or `New Chat`). | `Next Profile` |
+**Purpose**: To handle Gemini's "I can't create that image" refusals intelligently.
 
-## 💡 Pro Tip
-This feature is particularly effective for high-volume automation. By allowing a few "refusals" before switching, you capitalize on the moments when Gemini's filtering is less intensive due to server traffic, significantly increasing your total successful downloads.
+- **How it Works**: If Gemini refuses a prompt, the system retries. If the number of refusals for a *single image* hits this limit, it assumes the current account's filter is too "sensitive" at the moment.
+- **Action**: Usually switches to the **Next Profile** to try the same prompt on a different account.
+
+## 4. 🔄 Reset Threshold (Stability Management)
+
+**Purpose**: To recover from server-side hangs or "Application Reset" errors.
+
+- **How it Works**: If the page crashes or requires a refresh too many times for one image download, the system intervenes.
+- **Action**: Switches to a fresh profile to avoid getting stuck in a loop of server-side instability.
+
+---
+
+## ⚙️ Configuration Summary
+
+| Parameter | Unit | Purpose | Recommended |
+| :--- | :--- | :--- | :--- |
+| **Infinite Loop Cooldown** | **Minutes** | Wait time before restarting the account list. | `60 - 120` |
+| **Time Threshold** | **Minutes** | Max time per account before rotating. | `30 - 60` |
+| **Refused Threshold** | Count | Retries before giving up on a filtered account. | `5` |
+| **Reset Threshold** | Count | Retries before giving up on a crashing account. | `3` |
+
+---
+
+> [!TIP]
+> **Balance is Key**: Setting a **Time Threshold** of 30 minutes combined with an **Infinite Loop** cooldown of 60 minutes ensures that your accounts are used in healthy bursts, significantly reducing the chance of long-term account flags or shadow-bans.
 
 ---
 *Back to [README](../README.md)*
