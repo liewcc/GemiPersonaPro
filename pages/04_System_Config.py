@@ -31,36 +31,18 @@ def on_change_timeout():
 config = load_config()
 login_data = load_login_lookup()
 
-# --- Page Entry Detection & Force Reload ---
-if st.session_state.get("_last_config_page") != "System_Config":
-    st.session_state._last_config_page = "System_Config"
-    
-    # Force fresh reload from disk to ensure we have the latest data
-    config = load_config()
-    login_data = load_login_lookup()
-    
-    # Overwrite session state with latest config values
-    st.session_state.cfg_show_console = config.get("show_engine_console", True)
-    st.session_state.cfg_headless = config.get("headless", False)
-    st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
-    
-    # Force reload of login rows and clear any unsaved editor states
-    st.session_state.login_rows = list(login_data)
-    st.session_state._login_reload = False
-    
-    # Clear Streamlit data_editor widget states to discard unsaved UI edits
-    if "quota_editor" in st.session_state:
-        del st.session_state["quota_editor"]
-    if "login_editor" in st.session_state:
-        del st.session_state["login_editor"]
+# --- Always reload fresh data on every page entry / rerun ---
+# Engine settings are saved to disk immediately via on_change callbacks,
+# so disk values always reflect the current state — safe to unconditionally restore.
+st.session_state.cfg_show_console = config.get("show_engine_console", True)
+st.session_state.cfg_headless = config.get("headless", False)
+st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 
-# Ensure keys exist if it IS the first run of the session
-if "cfg_show_console" not in st.session_state:
-    st.session_state.cfg_show_console = config.get("show_engine_console", True)
-if "cfg_headless" not in st.session_state:
-    st.session_state.cfg_headless = config.get("headless", False)
-if "cfg_timeout" not in st.session_state:
-    st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
+# Reload login rows from disk on every rerun.
+# The data_editor widgets preserve unsaved edits via their own widget keys,
+# so any in-progress user changes in the table are not lost.
+st.session_state.login_rows = list(login_data)
+st.session_state._login_reload = False
 
 WATCHDOG_LOG_PATH = "watchdog.log"
 
@@ -172,11 +154,8 @@ with col_quota:
 with col_cred:
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>USER LOGIN CREDENTIALS</p>", unsafe_allow_html=True)
     with st.container(border=True):
-        # login_rows is now handled by the page entry reload logic at the top,
-        # but we keep this check for manual trigger or safety.
-        if "login_rows" not in st.session_state or st.session_state.get("_login_reload"):
-            st.session_state.login_rows = list(login_data)
-            st.session_state._login_reload = False
+        # login_rows is always reloaded from disk at the top of the script;
+        # no additional check needed here.
 
         rows = st.session_state.login_rows
         usernames = [r.get("username", "") for r in rows if r.get("username")]
