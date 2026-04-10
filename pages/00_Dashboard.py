@@ -283,24 +283,24 @@ def show_loop_control_dialog():
     ACTION_LABELS  = {"next_profile": "Next Profile", "re_login": "Re-login (same account)"}
 
     # --- Infinite Table Loop ---
-    st.markdown("**♾️ Infinite Table Loop (with Cooldown)**")
-    inf_c1, inf_c2 = st.columns([1, 1])
+    inf_c1, inf_c2 = st.columns([5, 1])
     with inf_c1:
-        inf_en = st.toggle("Enable", value=lc["infinite_loop_enabled"], key="lc_inf_en")
+        inf_en = st.toggle("**♾️ Infinite Loop (with Cooldown)**", value=lc["infinite_loop_enabled"], key="lc_inf_en", 
+                           help="If enabled, the automation will restart from the first account after processing all profiles in the list. This timer is in MINUTES.")
     with inf_c2:
-        inf_min = st.number_input("Sleep minutes", min_value=1, max_value=1440,
+        inf_min = st.number_input("Cooldown Minutes", min_value=1, max_value=1440,
                                   value=int(lc["infinite_loop_minutes"]), step=1,
                                   disabled=not inf_en, key="lc_inf_min",
                                   label_visibility="collapsed")
     st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
 
     # --- Time ---
-    st.markdown("**⏱ Time Threshold**")
-    lc_row1_c1, lc_row1_c2 = st.columns([1, 3])
+    lc_row1_c1, lc_row1_c2 = st.columns([5, 1])
     with lc_row1_c1:
-        t_en = st.toggle("Enable", value=lc["time_enabled"], key="lc_time_en")
+        t_en = st.toggle("**⏱ Time Threshold**", value=lc["time_enabled"], key="lc_time_en",
+                         help="If enabled, switches accounts or re-logins after the set duration (in MINUTES).")
     with lc_row1_c2:
-        t_min = st.number_input("Minutes per cycle", min_value=1, max_value=600,
+        t_min = st.number_input("Cycle Minutes", min_value=1, max_value=600,
                                 value=int(lc["time_minutes"]), step=1,
                                 disabled=not t_en, key="lc_time_min",
                                 label_visibility="collapsed")
@@ -312,10 +312,10 @@ def show_loop_control_dialog():
     st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
 
     # --- Refused ---
-    st.markdown("**🚫 Refused Threshold**")
-    lc_row2_c1, lc_row2_c2 = st.columns([1, 3])
+    lc_row2_c1, lc_row2_c2 = st.columns([5, 1])
     with lc_row2_c1:
-        r_en = st.toggle("Enable", value=lc["refused_enabled"], key="lc_ref_en")
+        r_en = st.toggle("**🚫 Refused Threshold**", value=lc["refused_enabled"], key="lc_ref_en",
+                         help="Switch account after this many consecutive image refusals.")
     with lc_row2_c2:
         r_thr = st.number_input("Refused count", min_value=1, max_value=999,
                                 value=int(lc["refused_threshold"]), step=1,
@@ -329,10 +329,10 @@ def show_loop_control_dialog():
     st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
 
     # --- Reset ---
-    st.markdown("**🔄 Reset Threshold**")
-    lc_row3_c1, lc_row3_c2 = st.columns([1, 3])
+    lc_row3_c1, lc_row3_c2 = st.columns([5, 1])
     with lc_row3_c1:
-        rs_en = st.toggle("Enable", value=lc["reset_enabled"], key="lc_rst_en")
+        rs_en = st.toggle("**🔄 Reset Threshold**", value=lc["reset_enabled"], key="lc_rst_en",
+                          help="Switch account after this many consecutive page resets.")
     with lc_row3_c2:
         rs_thr = st.number_input("Reset count", min_value=1, max_value=999,
                                  value=int(lc["reset_threshold"]), step=1,
