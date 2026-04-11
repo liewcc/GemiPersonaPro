@@ -187,12 +187,15 @@ with col_cred:
                 "username": r.get("username", ""), 
                 "auto_delete": r.get("auto_delete", False),
                 "delete_range": r.get("delete_range", "Last hour"),
-                "note": r.get("note", ""),
-                "quota_full": r.get("quota_full", "")
+                "quota_full": r.get("quota_full", ""),
+                "last_switched_at": r.get("last_switched_at", ""),
+                "session_images":   r.get("session_images", ""),
+                "session_refused":  r.get("session_refused", ""),
+                "session_resets":   r.get("session_resets", ""),
             }
             for r in rows
         ]
-        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "note", "quota_full"])
+        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
 
         # 这里的 width 设为 "content" 以确保紧凑且不报错
         edited_df = st.data_editor(
@@ -212,8 +215,11 @@ with col_cred:
                 "username": st.column_config.TextColumn("Username", width="medium"),
                 "auto_delete": st.column_config.CheckboxColumn("Auto Delete", help="Auto delete history on switch", width="small"),
                 "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], help="Deletion time range", width="small"),
-                "note": st.column_config.TextColumn("Note", width="medium"),
                 "quota_full": st.column_config.TextColumn("Quota Full At", help="Date/time when quota was hit", width="stretch", disabled=True),
+                "last_switched_at": st.column_config.TextColumn("Switched At", help="Timestamp when this account was last switched away", width="medium", disabled=True),
+                "session_images":   st.column_config.NumberColumn("Images",  help="Images downloaded during this account's last session", width="small", disabled=True),
+                "session_refused":  st.column_config.NumberColumn("Refused", help="Refused count during this account's last session",   width="small", disabled=True),
+                "session_resets":   st.column_config.NumberColumn("Resets",  help="Reset count during this account's last session",     width="small", disabled=True),
             },
             num_rows="dynamic",
             width="stretch",
@@ -222,12 +228,12 @@ with col_cred:
             key="login_editor"
         )
 
-        btn_save, btn_reload, btn_clear = st.columns([1.2, 1.2, 1.6])
+        btn_save, btn_reload, btn_clear, btn_clear_stats = st.columns([1.2, 1.2, 1.6, 1.6])
 
         with btn_save:
             if st.button("Save Credentials Table", icon="🔒", type="primary", width="stretch"):
                 records = edited_df.to_dict("records")
-                records = [r for r in records if r.get("username") or r.get("note")]
+                records = [r for r in records if r.get("username")]
                 
                 # Map existing quota_full if not present in records 
                 # (though it should be there as a column)
@@ -237,8 +243,11 @@ with col_cred:
                      "username": r.get("username", ""),
                      "auto_delete": r.get("auto_delete", False),
                      "delete_range": r.get("delete_range", "Last hour"),
-                     "note": r.get("note", ""),
-                     "quota_full": r.get("quota_full", "")}
+                     "quota_full": r.get("quota_full", ""),
+                     "last_switched_at": r.get("last_switched_at", ""),
+                     "session_images":   r.get("session_images", ""),
+                     "session_refused":  r.get("session_refused", ""),
+                     "session_resets":   r.get("session_resets", "")}
                     for r in records
                 ]
                 save_login_lookup(final)
@@ -263,6 +272,18 @@ with col_cred:
                 save_login_lookup(rows)
                 st.session_state._login_reload = True
                 st.success("All quota timestamps cleared!")
+                st.rerun()
+
+        with btn_clear_stats:
+            if st.button("Clear Session Stats", icon="🗑️", help="Reset all per-account session stats (Switched At, Images, Refused, Resets)", type="secondary", width="stretch"):
+                for r in rows:
+                    r["last_switched_at"] = ""
+                    r["session_images"]   = ""
+                    r["session_refused"]  = ""
+                    r["session_resets"]   = ""
+                save_login_lookup(rows)
+                st.session_state._login_reload = True
+                st.success("All session stats cleared!")
                 st.rerun()
 
 # --- Technical Details ---
