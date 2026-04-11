@@ -16,7 +16,7 @@ Before the system can switch accounts, you must first register them as browser p
 
 ## 2. Configuring the Account Table
 To enable automation to "know" your accounts, you must list them in the system configuration.
-1. Navigate to the **System Config** page.
+1. Navigate to the **System Config** page (See the [🛠️ System Configuration Guide](./system_config.md) for a detailed breakdown).
 2. Locate the **User Login Credentials** section.
 3. Add your account usernames (the part before `@gmail.com` is usually enough) into the table.
 4. Click **"Save Credentials Tables"**.
