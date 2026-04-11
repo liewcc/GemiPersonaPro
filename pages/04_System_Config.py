@@ -275,15 +275,12 @@ with col_cred:
                 st.rerun()
 
         with btn_clear_stats:
-            if st.button("Clear Session Stats", icon="🗑️", help="Reset all per-account session stats (Switched At, Images, Refused, Resets)", type="secondary", width="stretch"):
+            if st.button("Clear Switched At Date", icon="🧹", help="Manually reset all Switched At timestamps", type="secondary", width="stretch"):
                 for r in rows:
                     r["last_switched_at"] = ""
-                    r["session_images"]   = ""
-                    r["session_refused"]  = ""
-                    r["session_resets"]   = ""
                 save_login_lookup(rows)
                 st.session_state._login_reload = True
-                st.success("All session stats cleared!")
+                st.success("All Switched At timestamps cleared!")
                 st.rerun()
 
 # --- Technical Details ---
