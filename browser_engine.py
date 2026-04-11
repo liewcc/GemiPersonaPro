@@ -43,6 +43,10 @@ class BrowserEngine:
         self._session_lost = False      # Watchdog flag for engine_service to detect logout
         self._watchdog_task = None      # Handle for the background watchdog task
         self._watchdog_log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "watchdog.log"))
+        # Per-account session stats snapshot: captured when an account becomes active.
+        # Stores {"successes": N, "refusals": N, "resets": N} so that per-account deltas
+        # can be computed when that account is later switched away.
+        self._acct_snapshot = None
         # Registration browser handles (separate from main browser)
         self._reg_playwright = None
         self._reg_context = None

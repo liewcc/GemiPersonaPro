@@ -347,7 +347,20 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     if not profile_name:
         return {"status": "error", "message": "No valid profile found"}
 
-    # 5. Update persistence
+    # 5a. Record per-account session stats for the outgoing account (delta vs. snapshot)
+    if 0 <= start_index < len(users) and getattr(engine, "_acct_snapshot", None) is not None:
+        snap = engine._acct_snapshot
+        cur  = engine.automation_status
+        users[start_index]["last_switched_at"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        users[start_index]["session_images"]   = max(0, int(cur.get("successes", 0)) - int(snap.get("successes", 0)))
+        users[start_index]["session_refused"]  = max(0, int(cur.get("refusals",  0)) - int(snap.get("refusals",  0)))
+        users[start_index]["session_resets"]   = max(0, int(cur.get("resets",    0)) - int(snap.get("resets",    0)))
+        print(f"[ENGINE] Session stats for '{users[start_index]['username']}': "
+              f"images={users[start_index]['session_images']}, "
+              f"refused={users[start_index]['session_refused']}, "
+              f"resets={users[start_index]['session_resets']}")
+
+    # 5b. Update persistence
     for u in users:
         u["active"] = (u["username"] == target_user["username"])
     with open(lookup_path, "w", encoding="utf-8") as f:
@@ -456,6 +469,14 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
             engine._log_debug(f"API>> Failed to clear local storage: {e}")
     # -----------------------------------
     
+    # Reset the per-account snapshot to current cumulative stats so that the incoming
+    # account's session begins with a clean delta baseline.
+    engine._acct_snapshot = {
+        "successes": engine.automation_status.get("successes", 0),
+        "refusals":  engine.automation_status.get("refusals",  0),
+        "resets":    engine.automation_status.get("resets",    0),
+    }
+
     return {
         "status": "success",
         "message": f"Switched to {target_user['username']}",
@@ -772,6 +793,9 @@ async def start_automation(req: AutomationRequest):
     # Initialize cycle timer to capture initial setup time in the first image's duration
     engine._cycle_start_time = time.time()
     engine._lc_cycle_start_time = time.time()
+    # Snapshot the current stats baseline for the first account's session.
+    # Stats were just reset to 0 above, so this snapshot is always {0, 0, 0}.
+    engine._acct_snapshot = {"successes": 0, "refusals": 0, "resets": 0}
 
     asyncio.create_task(automation_manager(req))
     return {"status": "success", "message": "Automation started in background"}
