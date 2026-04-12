@@ -13,9 +13,9 @@ def get_login_lookup_path():
     return os.path.join(get_project_root(), "user_login_lookup.json")
 
 DEFAULT_CONFIG = {
-    "show_engine_console": True,
+    "show_engine_console": False,
     "heartbeat_timeout": 3600,
-    "headless": False,
+    "headless": True,
     "browser_url": "https://gemini.google.com/app",
     "prompt": "",
     "selected_tool": "",
