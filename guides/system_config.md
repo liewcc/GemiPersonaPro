@@ -47,7 +47,7 @@ This table manages your account rotation and tracks individual session performan
 
 ### 🧹 Cleaning Tools
 - **Clear Quota Full Recorded Date**: Resets all "Quota Full At" timestamps to empty, allowing accounts to enter the rotation again if they were previously blocked.
-- **Clear Session Stats**: Wipes all historical session data (`Switched At`, `Images`, `Refused`, `Resets`) to start tracking with a clean slate.
+- **Reset Session Stats**: Wipes all historical session data (`Switched At`, `Images`, `Refused`, `Resets`) for all accounts to start tracking with a clean slate.
 
 ---
 *Tip: Always click **Save Credentials Table** after editing usernames or toggling Bypass settings to ensure the background engine sees the updates.*
