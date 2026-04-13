@@ -360,16 +360,10 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
               f"refused={users[start_index]['session_refused']}, "
               f"resets={users[start_index]['session_resets']}")
 
-    # 5b. Update persistence
-    for u in users:
-        u["active"] = (u["username"] == target_user["username"])
-    with open(lookup_path, "w", encoding="utf-8") as f:
-        json.dump(users, f, indent=4, ensure_ascii=False)
-
+    # 5b. Load Target URL for Navigation
     target_url = "https://gemini.google.com/app"
     cfg = load_config()
     target_url = cfg.get("browser_url", target_url)
-    save_config({"active_user": target_user["username"]})
 
     # 6. Restart Engine
     print(f"[ENGINE] Switching to: {target_user['username']}")
@@ -432,6 +426,17 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     except Exception as e:
         print(f"[ENGINE] Error during login check: {e}")
         return {"status": "error", "message": f"Login check failed: {e}"}
+
+    # --- [FIX BUG 1] Update persistence ONLY AFTER successful login verification ---
+    for u in users:
+        u["active"] = (u["username"] == target_user["username"])
+    try:
+        with open(lookup_path, "w", encoding="utf-8") as f:
+            json.dump(users, f, indent=4, ensure_ascii=False)
+        save_config({"active_user": target_user["username"]})
+    except Exception as e:
+        print(f"[ENGINE] Warning: failed to save persistence after login check: {e}")
+
     # --- [NEW] Trigger History Deletion if enabled for this profile ---
     try:
         from config_utils import load_login_lookup
@@ -632,10 +637,46 @@ async def automation_manager(req: AutomationRequest):
                         engine._lc_cycle_start_time = time.time()
                         engine._automation_needs_new_chat = True
                         continue
+                    elif lc_switch_res.get("status") == "table_full":
+                        loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
+                        inf_en = loop_ctrl.get("infinite_loop_enabled", False)
+                        if not inf_en:
+                            engine._log_debug("API>> Loop Control switch: All profiles processed or hit quota. Table complete. Stopping automation.")
+                            break
+                        else:
+                            sleep_min = loop_ctrl.get("infinite_loop_minutes", 60)
+                            engine._log_debug(f"API>> Loop Control switch: All profiles processed. Infinite loop enabled: sleeping for {sleep_min} min...")
+                            print(f"[AUTO] Loop Control cycle finish. Sleeping for {sleep_min} minutes before next run.")
+                            
+                            sleep_sec = int(sleep_min * 60)
+                            interrupted = False
+                            for _ in range(sleep_sec):
+                                if engine._stop_automation_event.is_set():
+                                    interrupted = True
+                                    break
+                                await asyncio.sleep(1)
+                                
+                            if interrupted:
+                                engine._log_debug("API>> Sleep interrupted by user stop.")
+                                break
+                                
+                            # Awake from sleep. Reset anchor point for the next full loop.
+                            engine._log_debug("API>> Awakening from sleep. Restarting infinite loop cycle...")
+                            new_anchor = load_config().get("active_user")
+                            engine.automation_status["initial_user"] = new_anchor
+                            if hasattr(engine, '_session_lost'): engine._session_lost = False
+                            engine._stop_automation_event.clear()
+                            
+                            # Short circuit variables for loop control
+                            engine._lc_cycle_start_time = time.time()
+                            engine._lc_pending_refused = 0
+                            engine._lc_pending_resets = 0
+                            continue
                     else:
                         engine._log_debug(
-                            f"API>> Loop Control switch failed: {lc_switch_res.get('message')}. Continuing..."
+                            f"API>> Loop Control switch failed: {lc_switch_res.get('message')}. Breaking loop to prevent infinite retry..."
                         )
+                        break
 
             # 5. Handle Terminal/Retry States
             if result.get("status") == "quota":
