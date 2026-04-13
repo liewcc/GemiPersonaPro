@@ -233,11 +233,12 @@ def render_stats_body_fragment():
         """
         st.markdown(summary_html, unsafe_allow_html=True)
 
-        st.markdown(f"**{len(records)}** image(s) downloaded.")
+        real_img_count = sum(1 for r in records if r.get("filename") != "[Stopped/Interrupted]")
+        st.markdown(f"**{real_img_count}** image(s) downloaded.")
         _render_reject_table(display_records)
     else:
         st.caption("🏁 Automation stopped. View final stats below.")
-        total_images = len(records)
+        total_images = sum(1 for r in records if r.get("filename") != "[Stopped/Interrupted]")
         total_dur = sum(r.get("duration_sec", 0) for r in records)
         avg_dur = total_dur / total_images if total_images else 0
         total_r = sum(int(r.get("refused_count", 0)) for r in records)

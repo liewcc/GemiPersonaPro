@@ -363,14 +363,21 @@ class BrowserEngine:
         ]
         
         target = None
-        for sel in prompt_selectors:
-            try:
-                elem = self._page.locator(sel).first
-                if await elem.is_visible(timeout=2000):
-                    target = elem
-                    break
-            except:
-                continue
+        retry_waits = [0, 3, 5, 8]  # Progressive waits in seconds (first attempt is instant)
+        for attempt, wait_sec in enumerate(retry_waits):
+            if wait_sec > 0:
+                self._log_debug(f"Prompt input not found. Retrying in {wait_sec}s (attempt {attempt + 1}/{len(retry_waits)})...")
+                await asyncio.sleep(wait_sec)
+            for sel in prompt_selectors:
+                try:
+                    elem = self._page.locator(sel).first
+                    if await elem.is_visible(timeout=2000):
+                        target = elem
+                        break
+                except:
+                    continue
+            if target:
+                break
         
         if not target:
             raise Exception("Could not find prompt input area on current page.")
@@ -1768,7 +1775,15 @@ class BrowserEngine:
                     import traceback
                     tb = traceback.format_exc()
                     self._log_debug(f"Automation Error in Cycle #{self.automation_status['cycles']+1}:\n{tb}")
-                    break
+                    # Treat as a recoverable reset instead of breaking the entire loop.
+                    # This allows engine_service to continue with the next round or switch accounts.
+                    self.automation_status["cycles"] += 1
+                    self.automation_status["resets"] += 1
+                    self._pending_resets = getattr(self, '_pending_resets', 0) + 1
+                    self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
+                    self._automation_needs_new_chat = True
+                    self._log_debug("Recoverable error — will retry with New Chat on next round.")
+                    return {"status": "reset", "message": f"Automation error (recovered): {e}"}
 
             # NOTE: We NO LONGER clear _cycle_start_time here...
             self.automation_status["is_running"] = False
