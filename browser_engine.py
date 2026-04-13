@@ -1284,6 +1284,9 @@ class BrowserEngine:
                 self._log_debug(f"Download skip: {e}")
                 await self._page.keyboard.press("Escape")
 
+        if dl_count == 0:
+            return {"status": "ignored", "message": "Images detected but all downloads failed.", "saved_paths": []}
+
         return {
             "status": "success", 
             "count": dl_count, 
@@ -1678,8 +1681,11 @@ class BrowserEngine:
                             saved_paths = dl_resp.get("saved_paths", [])
                             self._update_config_start(new_start)
                             
-                            # Confirm files landed on disk before counting as a true success.
-                            self.automation_status["successes"] += 1
+                            # Confirm files actually landed on disk before counting as a true success.
+                            if not saved_paths:
+                                self._log_debug("Download returned success but saved_paths is empty. Success NOT counted.")
+                            else:
+                                self.automation_status["successes"] += 1
                             
                             # Write per-image reject stat record
                             cycle_end = time.time()
