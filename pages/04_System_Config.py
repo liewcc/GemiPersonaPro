@@ -26,6 +26,9 @@ def on_change_headless():
 def on_change_timeout():
     save_config({"heartbeat_timeout": st.session_state.cfg_timeout})
 
+def on_change_watchdog_delay():
+    save_config({"watchdog_initial_delay": st.session_state.cfg_watchdog_delay})
+
 # --- Main Logic ---
 
 config = load_config()
@@ -37,6 +40,7 @@ login_data = load_login_lookup()
 st.session_state.cfg_show_console = config.get("show_engine_console", True)
 st.session_state.cfg_headless = config.get("headless", False)
 st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
+st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
 
 # Reload login rows from disk on every rerun.
 # The data_editor widgets preserve unsaved edits via their own widget keys,
@@ -91,6 +95,16 @@ with col_engine:
             key="cfg_timeout",
             on_change=on_change_timeout,
             help="0 = Always stays alive."
+        )
+
+        st.number_input(
+            "Watchdog Initial Delay (seconds)",
+            min_value=5,
+            max_value=120,
+            step=5,
+            key="cfg_watchdog_delay",
+            on_change=on_change_watchdog_delay,
+            help="How long the Watchdog waits after automation starts before its first session check. Increase if Gem pages take long to load."
         )
 
 # --- Watchdog Log ---

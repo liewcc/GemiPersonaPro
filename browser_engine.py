@@ -1829,8 +1829,14 @@ class BrowserEngine:
         """
         # Fully silent start - anomalies only are logged
         try:
-            # Initial cooldown to let first-page navigation settle
-            await asyncio.sleep(5) 
+            # Initial cooldown to let first-page navigation settle.
+            # Read from config; default 20s to cover Gem URL load + model/tool apply.
+            try:
+                _cfg = load_config()
+                initial_delay = _cfg.get("watchdog_initial_delay", 20)
+            except Exception:
+                initial_delay = 20
+            await asyncio.sleep(initial_delay)
             
             while not self._stop_automation_event.is_set():
                 if not self.is_running or not self._page:

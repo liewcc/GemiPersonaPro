@@ -838,6 +838,11 @@ async def start_automation(req: AutomationRequest):
     # Stats were just reset to 0 above, so this snapshot is always {0, 0, 0}.
     engine._acct_snapshot = {"successes": 0, "refusals": 0, "resets": 0}
 
+    # Mark as running IMMEDIATELY (synchronous) to prevent race conditions.
+    # Without this, two near-simultaneous requests can both pass the "is_running" guard
+    # above because the async task hasn't set the flag yet — causing duplicate managers.
+    engine.automation_status["is_running"] = True
+
     asyncio.create_task(automation_manager(req))
     return {"status": "success", "message": "Automation started in background"}
 

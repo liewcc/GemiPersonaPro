@@ -948,9 +948,29 @@ def show_dash_metadata(img_path):
     try:
         with Image.open(img_path) as img:
             png_info, exif_data = img.info, img._getexif()
-            if png_info: st.markdown("**✨ Textual Info**"); st.json(png_info)
-            if exif_data: st.markdown("**📸 Technical Metadata**"); st.json({TAGS.get(k, k): str(v) for k, v in exif_data.items()})
-    except: st.error("Failed to read metadata.")
+            if png_info:
+                # Format all metadata textual info as individual copyable blocks
+                for k, v in png_info.items():
+                    if k.lower() == 'dpi': continue # Skip DPI if it exists and we don't want it, though we can print all. Let's just print all.
+                    val = str(v).replace('\\n', '\n')
+                    icon = "✨"
+                    if k.lower() in ("prompt", "parameters", "description"):
+                        icon = "📝"
+                    elif k.lower() == "url":
+                        icon = "🔗"
+                    elif k.lower() in ("path", "save_path"):
+                        icon = "📂"
+                    
+                    # Special display for specific keys if needed, otherwise default to Title Case
+                    title = k.upper() if k.lower() == "url" else k.replace('_', ' ').title()
+                    
+                    st.markdown(f"**{icon} {title}**")
+                    st.code(val, language="text", wrap_lines=True)
+            if exif_data:
+                st.markdown("**📸 Technical Metadata**")
+                st.json({TAGS.get(k, k): str(v) for k, v in exif_data.items()})
+    except Exception as e:
+        st.error(f"Failed to read metadata: {e}")
 
 @st.fragment(run_every="5s")
 def render_image_gallery():
