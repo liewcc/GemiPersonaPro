@@ -780,12 +780,8 @@ async def automation_manager(req: AutomationRequest):
         if engine._cycle_start_time is not None:
             final_dur = time.time() - engine._cycle_start_time
             if final_dur > 1 or engine._pending_refused > 0 or engine._pending_resets > 0:
-                engine._write_reject_stat(
-                    filename="[Stopped/Interrupted]",
-                    duration_sec=final_dur,
-                    refused_count=engine._pending_refused,
-                    reset_count=engine._pending_resets
-                )
+                engine._log_debug(f"API>> Automation manager ending. Discarding trailing stats: dur={final_dur:.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
+
         
         engine.automation_status["is_running"] = False
         stats = engine.automation_status

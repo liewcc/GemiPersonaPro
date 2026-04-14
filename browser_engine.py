@@ -1224,8 +1224,16 @@ class BrowserEngine:
 
         if result != "NOT_FOUND":
             self._log_debug(f"Redo triggered: {result}")
-            # Extra wait to allow the UI to transition to 'generating'
-            await asyncio.sleep(1.0)
+            # Ensure the UI has transitioned to 'generating' before returning
+            for _ in range(15):
+                await asyncio.sleep(0.5)
+                is_gen = await self._page.evaluate('''() => {
+                    return !!document.querySelector('mat-progress-bar') || 
+                           !!document.querySelector('mat-icon[data-mat-icon-name="stop"]') || 
+                           !!document.querySelector('section.processing-state_container--processing');
+                }''')
+                if is_gen:
+                    break
             return {"status": "success", "message": f"Redo action sent ({result})."}
         else:
             self._log_debug("Redo button not found.")
@@ -1719,12 +1727,12 @@ class BrowserEngine:
                             # Write per-image reject stat record
                             cycle_end = time.time()
                             cycle_dur = cycle_end - self._cycle_start_time if self._cycle_start_time else 0
-                            for sp in saved_paths:
+                            for i, sp in enumerate(saved_paths):
                                 self._write_reject_stat(
                                     filename=os.path.basename(sp),
                                     duration_sec=cycle_dur / max(len(saved_paths), 1),
-                                    refused_count=self._pending_refused,
-                                    reset_count=self._pending_resets
+                                    refused_count=self._pending_refused if i == 0 else 0,
+                                    reset_count=self._pending_resets if i == 0 else 0
                                 )
                             # Snapshot pending counters BEFORE zeroing
                             cycle_refused_snap = getattr(self, '_pending_refused', 0)
