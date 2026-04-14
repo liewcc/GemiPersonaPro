@@ -268,7 +268,32 @@ class BrowserEngine:
 
         self._page = await self._context.new_page()
         await self.apply_hardcore_stealth(self._page)
+        
+        # Force minimize for non-headless mode.
+        # --start-minimized gets overridden by Playwright's new_page(), so we
+        # re-minimize via CDP to keep the headed fallback window invisible.
+        if not headless:
+            await self._force_minimize_window()
+        
         self.is_running = True
+
+    async def _force_minimize_window(self):
+        """Use CDP to force the browser window into minimized state.
+        
+        Called after new_page() in non-headless mode because Playwright's
+        page creation overrides Chrome's --start-minimized flag.
+        """
+        if not self._page:
+            return
+        try:
+            cdp = await self._page.context.new_cdp_session(self._page)
+            window_info = await cdp.send("Browser.getWindowForTarget")
+            await cdp.send("Browser.setWindowBounds", {
+                "windowId": window_info["windowId"],
+                "bounds": {"windowState": "minimized"}
+            })
+        except Exception as e:
+            print(f"[DEBUG] CDP minimize failed: {e}")
 
     async def stop(self):
         """Stops the browser session and cleans up sandbox."""
@@ -342,6 +367,10 @@ class BrowserEngine:
             # PROACTIVE: Check for agreement popups immediately after navigation
             await self.dismiss_agreement_popups()
             await asyncio.sleep(0.5)  # Grace period: let DOM stabilize after popup dismissal
+            # Re-minimize after navigation if running in non-headless mode,
+            # since goto() can restore a minimized window.
+            if not self.last_headless:
+                await self._force_minimize_window()
             return response.status if response else 0
         except Exception as e:
             print(f"Navigation warning: {e}")
