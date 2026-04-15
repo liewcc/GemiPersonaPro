@@ -1811,6 +1811,13 @@ class BrowserEngine:
                             self._automation_needs_new_chat = True
                             return {"status": status, "message": resp.get("message", "Unknown issue occurred")}
 
+                    elif status == "stopped":
+                        # Stop signal received during submit_response.
+                        # Break immediately to avoid re-iterating the while loop with is_initial=True,
+                        # which would duplicate setup steps (new_chat, apply_settings) and
+                        # potentially re-download the same image from the previous response.
+                        break
+
                     await asyncio.sleep(2)
                     
 
