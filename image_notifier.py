@@ -315,6 +315,10 @@ def monitor_directory():
                              if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
 
             if image_files:
+                # Give the engine a short grace period to update its internal success counter
+                # after the file has appeared on disk to avoid 'Saved: 0' race conditions.
+                time.sleep(1.5)
+                
                 stats          = get_automation_stats()
                 l_state        = "Running" if stats.get('is_running', False) else "Stopped"
                 active_account = config.get('active_user', 'N/A') or 'N/A'

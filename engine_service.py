@@ -314,8 +314,8 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         norm_email = normalize(candidate.get("username"))
         
         # ANCHOR LOGIC: If we've looped back to initial_user, we are done with one full traversal.
-        # But only if we actually moved (offset > 0).
-        if direction != 0 and offset > 0:
+        # But only if we actually moved (offset > 0) AND we are in an automated search (reason is not None).
+        if reason and direction != 0 and offset > 0:
              if initial_user and normalize(initial_user) == norm_email:
                  print("[ENGINE] Table traversal complete. Back to initial user.")
                  return {"status": "table_full", "message": "All profiles have been processed or hit quota."}
