@@ -299,7 +299,7 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         # We mark the user at start_index (the one that was just active)
         if 0 <= start_index < len(users):
             u = users[start_index]
-            u["quota_full"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+            u["quota_full"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             print(f"[ENGINE] Marked {u['username']} as Quota Full.")
             try:
                 with open(lookup_path, "w", encoding="utf-8") as f:
