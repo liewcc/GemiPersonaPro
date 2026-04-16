@@ -255,6 +255,20 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         if not val: return ""
         return val.split('@')[0].lower().strip()
 
+    # Determine outgoing user index based on current_email or 'active' flag
+    outgoing_index = -1
+    if current_email:
+        norm_current = normalize(current_email)
+        for i, u in enumerate(users):
+            if normalize(u.get("username")) == norm_current:
+                outgoing_index = i
+                break
+    if outgoing_index == -1:
+        for i, u in enumerate(users):
+            if u.get("active"):
+                outgoing_index = i
+                break
+
     # 3a. Direct target: find the requested user immediately
     if target_username:
         norm_target = normalize(target_username)
@@ -274,19 +288,7 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
 
     # 3b. Sequential: find current user's index
     else:
-        start_index = -1
-        if current_email:
-            norm_current = normalize(current_email)
-            for i, u in enumerate(users):
-                if normalize(u.get("username")) == norm_current:
-                    start_index = i
-                    break
-        if start_index == -1:
-            for i, u in enumerate(users):
-                if u.get("active"):
-                    start_index = i
-                    break
-        if start_index == -1: start_index = 0
+        start_index = outgoing_index if outgoing_index != -1 else 0
 
     # 4. Find target / next valid profile
     profile_name = None
@@ -296,9 +298,9 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
 
     # If reason is quota, mark current user as full BEFORE finding next
     if reason == "quota":
-        # We mark the user at start_index (the one that was just active)
-        if 0 <= start_index < len(users):
-            u = users[start_index]
+        # We mark the user at outgoing_index (the one that was just active)
+        if 0 <= outgoing_index < len(users):
+            u = users[outgoing_index]
             u["quota_full"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             print(f"[ENGINE] Marked {u['username']} as Quota Full.")
             try:
@@ -347,18 +349,23 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     if not profile_name:
         return {"status": "error", "message": "No valid profile found"}
 
+    is_real_switch = True
+    if target_user and outgoing_index != -1:
+        if normalize(users[outgoing_index].get("username")) == normalize(target_user.get("username")):
+            is_real_switch = False
+
     # 5a. Record per-account session stats for the outgoing account (delta vs. snapshot)
-    if 0 <= start_index < len(users) and getattr(engine, "_acct_snapshot", None) is not None:
+    if is_real_switch and 0 <= outgoing_index < len(users) and getattr(engine, "_acct_snapshot", None) is not None:
         snap = engine._acct_snapshot
         cur  = engine.automation_status
-        users[start_index]["last_switched_at"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        users[start_index]["session_images"]   = max(0, int(cur.get("successes", 0)) - int(snap.get("successes", 0)))
-        users[start_index]["session_refused"]  = max(0, int(cur.get("refusals",  0)) - int(snap.get("refusals",  0)))
-        users[start_index]["session_resets"]   = max(0, int(cur.get("resets",    0)) - int(snap.get("resets",    0)))
-        print(f"[ENGINE] Session stats for '{users[start_index]['username']}': "
-              f"images={users[start_index]['session_images']}, "
-              f"refused={users[start_index]['session_refused']}, "
-              f"resets={users[start_index]['session_resets']}")
+        users[outgoing_index]["last_switched_at"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        users[outgoing_index]["session_images"]   = max(0, int(cur.get("successes", 0)) - int(snap.get("successes", 0)))
+        users[outgoing_index]["session_refused"]  = max(0, int(cur.get("refusals",  0)) - int(snap.get("refusals",  0)))
+        users[outgoing_index]["session_resets"]   = max(0, int(cur.get("resets",    0)) - int(snap.get("resets",    0)))
+        print(f"[ENGINE] Session stats for '{users[outgoing_index]['username']}': "
+              f"images={users[outgoing_index]['session_images']}, "
+              f"refused={users[outgoing_index]['session_refused']}, "
+              f"resets={users[outgoing_index]['session_resets']}")
 
     # 5b. Load Target URL for Navigation
     target_url = "https://gemini.google.com/app"
@@ -476,11 +483,12 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     
     # Reset the per-account snapshot to current cumulative stats so that the incoming
     # account's session begins with a clean delta baseline.
-    engine._acct_snapshot = {
-        "successes": engine.automation_status.get("successes", 0),
-        "refusals":  engine.automation_status.get("refusals",  0),
-        "resets":    engine.automation_status.get("resets",    0),
-    }
+    if is_real_switch:
+        engine._acct_snapshot = {
+            "successes": engine.automation_status.get("successes", 0),
+            "refusals":  engine.automation_status.get("refusals",  0),
+            "resets":    engine.automation_status.get("resets",    0),
+        }
 
     return {
         "status": "success",
