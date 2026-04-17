@@ -30,7 +30,8 @@ While automation handles most cleaning, the Asset Sanitizer gives you ultimate c
 ---
 
 ## 4. Batch Processing
-On the Asset Sanitizer page, you can trigger batch cleaning for entire sequences:
+On the Asset Sanitizer page, you can trigger batch operations for entire sequences:
+- **Resequence & Export**: Automatically copy and rename all images into a new sibling folder, sequentially numbered starting from 1 (e.g. `001.png`, `002.png`). Padding is detected automatically, and the `processed/` subfolder is synchronized if present. The original folder and files are never modified.
 - **Range Control**: Specify a start and end image number (e.g., `1` to `50`).
 - **Batch Clean**: Click to run the AI sanitizer across the entire selected range.
 

@@ -62,13 +62,19 @@ def batch_processing_sidebar_fragment():
     """Sidebar fragment for batch processing, moved to global scope per rule.md for stability."""
     st.markdown("### Batch Processing")
     with st.container(border=True):
-        if st.button("🪄 Batch Remove Watermarks", key="san_batch_rm_btn_frag", width="stretch", 
+        if st.button("🪄 Batch Remove Watermarks", key="san_batch_rm_btn_frag", width="stretch",
                      disabled=not st.session_state.sanitizer_is_dir):
             st.session_state.show_batch_dialog = True
             st.rerun(scope="fragment")
-    
+        if st.button("🔢 Resequence Files", key="san_batch_rename_btn_frag", width="stretch",
+                     disabled=not st.session_state.sanitizer_is_dir):
+            st.session_state.show_rename_dialog = True
+            st.rerun(scope="fragment")
+
     if st.session_state.show_batch_dialog:
         batch_watermark_removal_dialog(st.session_state.sanitizer_path)
+    if st.session_state.show_rename_dialog:
+        rename_export_dialog(st.session_state.sanitizer_path)
 
 # --- Initialize Session State ---
 if "config" not in st.session_state:
@@ -85,6 +91,7 @@ if "batch_last_index" not in st.session_state: st.session_state.batch_last_index
 if "batch_is_running" not in st.session_state: st.session_state.batch_is_running = False
 if "batch_stop_requested" not in st.session_state: st.session_state.batch_stop_requested = False
 if "show_batch_dialog" not in st.session_state: st.session_state.show_batch_dialog = False
+if "show_rename_dialog" not in st.session_state: st.session_state.show_rename_dialog = False
 if "batch_files" not in st.session_state: st.session_state.batch_files = []
 
 # --- Gallery Pagination State ---
@@ -106,6 +113,7 @@ if "last_page" not in st.session_state:
     st.session_state.last_page = "Asset Sanitizer"
 # --- Navigation & State Reset Logic ---
 st.session_state.show_batch_dialog = False
+st.session_state.show_rename_dialog = False
 st.session_state.batch_is_running = False
 st.session_state.batch_stop_requested = False
 
@@ -979,6 +987,124 @@ def img_to_b64(path):
     with open(path, "rb") as f:
         b64 = base64.b64encode(f.read()).decode()
     return b64, mime
+
+@st.dialog("🔢 Resequence & Export", width="medium")
+def rename_export_dialog(folder_path):
+    """Copies folder images into a new sibling folder with sequential names starting from 1.
+    Syncs the processed/ subfolder if present. Original files are never modified."""
+    import shutil
+
+    # Prevent operating inside a 'processed' subfolder
+    base_name = os.path.basename(folder_path.rstrip("/\\"))
+    if base_name.lower() == "processed":
+        folder_path = os.path.dirname(folder_path)
+        base_name = os.path.basename(folder_path.rstrip("/\\"))
+
+    parent_dir  = os.path.dirname(folder_path)
+    output_dir  = os.path.join(parent_dir, f"{base_name}_rename")
+    proc_src    = os.path.join(folder_path, "processed")
+
+    # Scan and sort source images
+    try:
+        raw_files    = [f for f in os.listdir(folder_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+        sorted_files = sorted(raw_files, key=natural_sort_key)
+    except Exception as e:
+        st.error(f"Cannot read folder: {e}")
+        return
+
+    if not sorted_files:
+        st.warning("No images found in the selected folder.")
+        if st.button("Close", width="stretch"): st.rerun()
+        return
+
+    total = len(sorted_files)
+
+    # Detect padding from first filename; ensure it covers total file count
+    first_nums      = re.findall(r'\d+', sorted_files[0])
+    detected_pad    = len(first_nums[-1]) if first_nums else 1
+    padding         = max(detected_pad, len(str(total)))
+
+    # Processed folder status
+    has_processed = os.path.isdir(proc_src)
+    if has_processed:
+        proc_names = {f for f in os.listdir(proc_src) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))}
+        proc_count = sum(1 for f in sorted_files if f in proc_names)
+    else:
+        proc_count = 0
+
+    # --- Completed state ---
+    if st.session_state.get("_rename_op_done"):
+        synced = st.session_state.get("_rename_op_synced", 0)
+        st.success(f"✅ Copied and renamed **{total}** files → `{base_name}_rename/`")
+        if has_processed and synced > 0:
+            st.success(f"✅ Synced **{synced}** files → `{base_name}_rename/processed/`")
+        st.info(f"📁 Output location: `{output_dir}`")
+        if st.button("Close", width="stretch", type="primary"):
+            for k in ("_rename_op_done", "_rename_op_synced"):
+                st.session_state.pop(k, None)
+            st.session_state.show_rename_dialog = False
+            st.rerun()
+        return
+
+    # --- Info panel ---
+    st.write(f"📁 **Source:** `{base_name}` ({total} images)")
+    st.write(f"📁 **Output:** `{base_name}_rename`")
+    st.write(f"🔢 **Padding:** `{padding}` digits  *(auto-detected from `{sorted_files[0]}`)*")
+    if has_processed:
+        st.write(f"📂 **Sync `processed/`:** ✅ Found ({proc_count} matching files)")
+    else:
+        st.write(f"📂 **Sync `processed/`:** ⚠️ Not found — will skip")
+
+    if os.path.exists(output_dir):
+        st.error(f"❌ Destination already exists: `{base_name}_rename`\n\nPlease rename or delete it first, then try again.")
+        if st.button("Close", width="stretch", type="primary"):
+            st.session_state.show_rename_dialog = False
+            st.rerun()
+        return
+
+    st.info("ℹ️ Original files are preserved. A new sibling folder will be created with sequential copies.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚀 Proceed", width="stretch", type="primary"):
+            with st.spinner("Copying and renaming..."):
+                try:
+                    os.makedirs(output_dir)
+                    if has_processed:
+                        os.makedirs(os.path.join(output_dir, "processed"), exist_ok=True)
+
+                    # Build old → new name mapping
+                    name_map = {
+                        fname: str(i + 1).zfill(padding) + os.path.splitext(fname)[1]
+                        for i, fname in enumerate(sorted_files)
+                    }
+
+                    # Copy main folder files
+                    for old_name, new_name in name_map.items():
+                        shutil.copy2(
+                            os.path.join(folder_path, old_name),
+                            os.path.join(output_dir, new_name)
+                        )
+
+                    # Sync processed/ folder
+                    synced = 0
+                    if has_processed:
+                        proc_out = os.path.join(output_dir, "processed")
+                        for old_name, new_name in name_map.items():
+                            src_file = os.path.join(proc_src, old_name)
+                            if os.path.exists(src_file):
+                                shutil.copy2(src_file, os.path.join(proc_out, new_name))
+                                synced += 1
+
+                    st.session_state["_rename_op_done"]   = True
+                    st.session_state["_rename_op_synced"] = synced
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Operation failed: {e}")
+    with col2:
+        if st.button("Cancel", width="stretch"):
+            st.session_state.show_rename_dialog = False
+            st.rerun()
 
 # --- UI Layout ---
 with st.sidebar:

@@ -15,6 +15,11 @@ The automation engine now supports dynamically reloading prompts without interru
 ### 3. Configurable Watchdog Delay
 - Introduced a configurable Watchdog delay to improve automation stability. This helps manage the timing of automated tasks and prevents premature timeouts.
 
+### 4. Resequence & Export Assets
+- Introduced a **Resequence Files** utility in the Asset Sanitizer's batch processing options.
+- This non-destructive feature allows users to safely copy and rename a sequence of images into a new sibling folder, sequentially numbered starting from 1 (with automatic zero-padding detection based on the original filenames).
+- Any corresponding AI-cleaned images in the `processed/` subfolder are automatically synchronized and re-numbered to match the new naming scheme.
+
 ## 🐛 Critical Bug Fixes
 
 ### 1. Fixed Duplicate Image Downloads (Race Condition)
