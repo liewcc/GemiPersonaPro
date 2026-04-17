@@ -855,6 +855,13 @@ async def stop_automation():
     await engine.stop_automation()
     return {"status": "success", "message": "Stop signal sent"}
 
+@app.post("/browser/automation/request_new_chat")
+async def request_new_chat():
+    if not engine.is_running:
+        raise HTTPException(status_code=400, detail="Engine not running")
+    engine._automation_needs_new_chat = True
+    return {"status": "success", "message": "New chat requested for next cycle"}
+
 @app.get("/browser/automation/stats")
 async def get_automation_stats():
     return engine.automation_status

@@ -782,11 +782,18 @@ with col1:
             with p_btn_col:
                 if st.button("Load", key="prompt_load", width="stretch"):
                     st.session_state["_load_from_config"] = True
+                    if auto_active:
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log("Loaded prompt from config. Will apply on next cycle.")
                     st.rerun()
                 if st.button("Save", key="prompt_save", width="stretch"):
                     st.session_state.config = save_config({"prompt": st.session_state["prompt_input_widget"]})
                     st.session_state["prompt_input"] = st.session_state["prompt_input_widget"]
-                    add_log("Prompt saved to config.")
+                    if auto_active:
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log("Prompt saved. Will apply on next cycle.")
+                    else:
+                        add_log("Prompt saved to config.")
                 if st.button("Send to Browser", key="prompt_send", width="stretch", disabled=not browser_active or auto_active):
                     st.session_state.config = save_config({"prompt": st.session_state["prompt_input_widget"]}) 
                     async def do_prompt():

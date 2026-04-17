@@ -199,6 +199,11 @@ class EngineClient:
             resp = await client.post(f"{self.base_url}/browser/automation/stop", timeout=30.0)
             return resp.json()
 
+    async def request_new_chat(self):
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{self.base_url}/browser/automation/request_new_chat", timeout=10.0)
+            return resp.json()
+
     async def get_automation_stats(self):
         try:
             async with httpx.AsyncClient() as client:

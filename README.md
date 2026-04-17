@@ -3,6 +3,7 @@
 </p>
 
 **Contents**
+- [🆕 Latest Updates & Features](./guides/latest_updates.md)
 - [📜 Project Origin](#-project-origin)
 - [🚀 Features](#-features)
 - [📖 Documentation](#-documentation)
