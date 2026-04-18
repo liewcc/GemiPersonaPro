@@ -38,3 +38,7 @@ The automation engine now supports dynamically reloading prompts without interru
 ### 5. Accurate Reject Rate Statistics
 - Resolved data inconsistency in `reject_stat_log.json` where session interruptions were being misreported as image downloads.
 - The automation manager's cleanup logic now correctly stops logging `[Stopped/Interrupted]` entries, ensuring that refused and reset counts are accurately attributed without double-counting.
+
+### 6. Suppressed Streamlit Fragment Warning
+- Added a logging filter in the application entry point (`start.py`) to suppress the benign but noisy "fragment does not exist anymore" warning.
+- This warning naturally occurs during full-app reruns when periodic `@st.fragment` components are destroyed before their timers fire.

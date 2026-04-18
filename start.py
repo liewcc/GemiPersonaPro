@@ -1,3 +1,13 @@
+import logging
+
+class _SuppressFragmentWarning(logging.Filter):
+    def filter(self, record):
+        return "does not exist anymore" not in record.getMessage()
+
+logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").addFilter(
+    _SuppressFragmentWarning()
+)
+
 import streamlit as st
 
 import os
