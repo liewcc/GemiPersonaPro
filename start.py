@@ -4,7 +4,9 @@ class _SuppressFragmentWarning(logging.Filter):
     def filter(self, record):
         return "does not exist anymore" not in record.getMessage()
 
-logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").addFilter(
+# The "fragment does not exist anymore" message is logged at INFO level
+# from streamlit.runtime.app_session (not script_run_context as previously assumed).
+logging.getLogger("streamlit.runtime.app_session").addFilter(
     _SuppressFragmentWarning()
 )
 
