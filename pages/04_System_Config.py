@@ -242,6 +242,38 @@ with col_cred:
             key="login_editor"
         )
 
+        # --- Instant save for Bypass / Auto Delete ---
+        # st.data_editor has no per-column on_change, so we compare after render.
+        # Only fires when row count is unchanged (structural add/delete still requires
+        # the Save button to avoid ambiguity). Merges only bypass/auto_delete back
+        # into the current on-disk rows so other unsaved edits are never clobbered.
+        _INSTANT_COLS = ["bypass", "auto_delete"]
+        _can_compare = (
+            not editor_df.empty
+            and not edited_df.empty
+            and len(editor_df) == len(edited_df)
+        )
+        if _can_compare:
+            orig_check = editor_df[_INSTANT_COLS].reset_index(drop=True)
+            new_check  = edited_df[_INSTANT_COLS].reset_index(drop=True)
+            if not orig_check.equals(new_check):
+                edited_records = edited_df.to_dict("records")
+                uname_to_edit  = {r.get("username", ""): r for r in edited_records}
+                patched = []
+                for disk_row in rows:
+                    uname = disk_row.get("username", "")
+                    if uname in uname_to_edit:
+                        e = uname_to_edit[uname]
+                        patched.append({
+                            **disk_row,
+                            "bypass":      bool(e.get("bypass", False)),
+                            "auto_delete": bool(e.get("auto_delete", False)),
+                        })
+                    else:
+                        patched.append(disk_row)
+                save_login_lookup(patched)
+                st.toast("Bypass / Auto Delete saved.", icon="💾")
+
         btn_save, btn_reload, btn_clear, btn_clear_stats = st.columns([1.2, 1.2, 1.6, 1.6])
 
         with btn_save:

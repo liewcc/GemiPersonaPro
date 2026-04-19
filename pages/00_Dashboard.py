@@ -1022,7 +1022,10 @@ def render_image_gallery():
             with cols[idx]:
                 with st.container(border=True):
                     file_path = os.path.join(target_dir, filename)
-                    st.image(file_path, width="stretch")
+                    try:
+                        st.image(file_path, width="stretch")
+                    except Exception:
+                        st.caption("⏳ Loading...")
                     st.caption(filename)
                     bt_c1, bt_c2, bt_c3, bt_c4 = st.columns(4)
                     with bt_c1:

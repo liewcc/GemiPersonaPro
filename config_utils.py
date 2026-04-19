@@ -95,12 +95,24 @@ def load_login_lookup():
     return []
 
 def save_login_lookup(data):
-    """Writes user_login_lookup.json atomically."""
+    """Writes user_login_lookup.json atomically via temp-file + os.replace.
+    
+    Prevents the engine from reading a partially-written file during
+    concurrent UI saves (os.replace is atomic on Windows within the same FS).
+    """
     lookup_path = get_login_lookup_path()
+    tmp_path = lookup_path + ".tmp"
     try:
-        with open(lookup_path, "w", encoding="utf-8") as f:
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
+        os.replace(tmp_path, lookup_path)
         return True
     except Exception as e:
         print(f"[CONFIG] Lookup Write Error: {e}")
+        # Clean up orphaned tmp file if present
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass
         return False
