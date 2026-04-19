@@ -158,9 +158,16 @@ REJECT_STAT_LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 REJECT_STAT_LOG_PATH = os.path.normpath(REJECT_STAT_LOG_PATH)
 
 def _format_dur_str(dur):
-    if dur >= 60:
-        return f"{int(dur // 60)}:{int(dur % 60):02d}"
-    return f"{dur:.1f}s"
+    dur = max(0.0, float(dur or 0))
+    h = int(dur // 3600)
+    m = int((dur % 3600) // 60)
+    s = int(dur % 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    elif m > 0:
+        return f"{m}:{s:02d}"
+    else:
+        return f"{s}s"
 
 @st.fragment(run_every=1)
 def render_stats_body_fragment():

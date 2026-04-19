@@ -20,6 +20,13 @@ The automation engine now supports dynamically reloading prompts without interru
 - This non-destructive feature allows users to safely copy and rename a sequence of images into a new sibling folder, sequentially numbered starting from 1 (with automatic zero-padding detection based on the original filenames).
 - Any corresponding AI-cleaned images in the `processed/` subfolder are automatically synchronized and re-numbered to match the new naming scheme.
 
+### 5. Enhanced Duration Formatting in Reject Rate Stats
+- Updated the duration display in the **Reject Rate Stats** dialog to a more readable `H:MM:SS` format.
+- Durations under 1 minute display as seconds (e.g., `42s`).
+- Durations between 1 minute and 1 hour display as `M:SS` (e.g., `3:05`).
+- Durations over 1 hour display as `H:MM:SS` (e.g., `1:03:07`).
+- This update applies to the live elapsed timer, total session time, average time per image, and individual record durations.
+
 ## 🐛 Critical Bug Fixes
 
 ### 1. Fixed Duplicate Image Downloads (Race Condition)
