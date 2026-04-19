@@ -596,6 +596,7 @@ async def automation_manager(req: AutomationRequest):
                         os.makedirs(p_dir, exist_ok=True)
                         
                         print(f"[AUTO] Refining {len(paths)} new images...")
+                        await asyncio.sleep(0)  # Yield event loop so dashboard reads inter_cycle_since before blocking
                         for p in paths:
                             if os.path.exists(p):
                                 with Image.open(p) as img:
@@ -838,6 +839,7 @@ async def start_automation(req: AutomationRequest):
     # Initialize cycle timer to capture initial setup time in the first image's duration
     engine._cycle_start_time = time.time()
     engine._lc_cycle_start_time = time.time()
+    engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
     # Snapshot the current stats baseline for the first account's session.
     # Stats were just reset to 0 above, so this snapshot is always {0, 0, 0}.
     engine._acct_snapshot = {"successes": 0, "refusals": 0, "resets": 0}

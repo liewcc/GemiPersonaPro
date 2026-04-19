@@ -49,3 +49,8 @@ The automation engine now supports dynamically reloading prompts without interru
 ### 6. Suppressed Streamlit Fragment Warning
 - Added a logging filter in the application entry point (`start.py`) to suppress the benign but noisy "fragment does not exist anymore" warning.
 - This warning naturally occurs during full-app reruns when periodic `@st.fragment` components are destroyed before their timers fire.
+
+### 7. Precise Reject Rate Duration Tracking & UI Stabilization
+- **Fixed "Processing..." Duration Offset**: Resolved an issue where the live "Processing..." duration would reset or start with a 2-minute offset. The system now uses raw float timestamps (	ime.time()) passed directly from the engine to ensure 100% accuracy and consistency with completed records.
+- **Refinement Phase Monitoring**: The dashboard now distinguishes between the **Image Generation** phase ("Processing...") and the **Watermark Removal** phase ("Refining Image..."), tracking the time spent in each independently.
+- **Stats Cache & UI Stability**: Implemented a caching mechanism for automation stats. This prevents the "Summary" table header from flashing momentarily when the API times out during heavy CPU-bound watermark processing (LaMa), ensuring a smooth, persistent monitoring experience.

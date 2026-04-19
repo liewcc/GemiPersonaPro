@@ -176,9 +176,17 @@ def render_stats_body_fragment():
     is_running = False
     try:
         stats = asyncio.run(st.session_state.client.get_automation_stats())
+        if stats:
+            st.session_state._last_known_stats = stats
         is_running = stats.get("is_running", False)
     except:
-        pass
+        # API timeout during heavy watermark processing blocks the event loop.
+        # Fall back to UI state and last known stats to prevent the "Stopped" summary flashing.
+        if st.session_state.get("ui_auto_looping_active", False):
+            is_running = True
+            stats = st.session_state.get("_last_known_stats", {})
+        else:
+            is_running = False
 
     # 2. Read log records
     records = []
@@ -207,11 +215,25 @@ def render_stats_body_fragment():
         
         p_refused = max(0, total_api_refused - total_log_refused)
         p_resets = max(0, total_api_resets - total_log_resets)
-        p_dur = max(0.0, cur_elapsed_sec - total_log_dur)
+
+        # Use current_cycle_start exposed by the engine — mirrors the exact same reference
+        import time
+        cycle_start_ts = stats.get("current_cycle_start_ts")
+        inter_cycle_ts = stats.get("inter_cycle_start_ts")
+        filename_display = "Processing..."
+
+        if cycle_start_ts:
+            p_dur = max(0.0, time.time() - float(cycle_start_ts))
+        elif inter_cycle_ts:
+            p_dur = max(0.0, time.time() - float(inter_cycle_ts))
+            filename_display = "Refining Image..."
+        else:
+            # Engine hasn't started the new cycle yet
+            p_dur = 0.0
         
         pending_record = {
             "index": "⌛",
-            "filename": "Processing...",
+            "filename": filename_display,
             "duration_sec": p_dur,
             "refused_count": p_refused,
             "reset_count": p_resets

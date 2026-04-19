@@ -386,7 +386,7 @@ class BrowserEngine:
             "div[aria-label='Enter a prompt here']",
             "div.ql-editor[contenteditable='true']",
             "textarea[aria-label='Enter a prompt here']",
-            # NOTE: "[contenteditable='true']" removed — too broad, causes Playwright
+            # NOTE: "[contenteditable='true']" removed â€” too broad, causes Playwright
             # strict=True violation when multiple contenteditable elements exist (e.g.
             # after a popup is dismissed and Gemini re-renders its UI).
         ]
@@ -580,7 +580,7 @@ class BrowserEngine:
         
         if to_ui:
             self._log_debug(f"WATCHDOG>> {msg}")
-            # Ensure the critical record is also printed to console as per "正式log" request
+            # Ensure the critical record is also printed to console as per "æ­£å¼log" request
             timestamp_now = datetime.now().strftime("[%H:%M:%S]")
             print(f"{timestamp_now} WATCHDOG>> {msg}")
 
@@ -815,7 +815,7 @@ class BrowserEngine:
             "button:has-text('I agree')",
             "button:has-text('Got it')",
             "button:has-text('Confirm')",
-            "button:has-text('同意')" # Support for Chinese UI
+            "button:has-text('åŒæ„')" # Support for Chinese UI
         ]
         
         try:
@@ -1640,9 +1640,11 @@ class BrowserEngine:
                 else: # images
                     if successes >= goal: break
 
-                # 2. Cycle Strategy — record start time for this cycle
+                # 2. Cycle Strategy â€” record start time for this cycle
                 if getattr(self, '_cycle_start_time', None) is None:
                     self._cycle_start_time = time.time()
+                    self.automation_status["current_cycle_start_ts"] = self._cycle_start_time
+                    self.automation_status["inter_cycle_start_ts"] = None  # exit watermark phase
                 if getattr(self, '_lc_cycle_start_time', None) is None:
                     self._lc_cycle_start_time = time.time()
                 is_initial = (cycles == 0) or getattr(self, "_automation_needs_new_chat", True)
@@ -1747,6 +1749,9 @@ class BrowserEngine:
                             self._pending_refused = 0
                             self._pending_resets = 0
                             self._cycle_start_time = None
+                            self.automation_status["current_cycle_start_ts"] = None
+                            # Mark the inter-cycle phase start (watermark / post-processing period)
+                            self.automation_status["inter_cycle_start_ts"] = time.time()
                             
                             # Reset loop control pending counters.
                             self._lc_pending_refused = 0
@@ -1767,7 +1772,7 @@ class BrowserEngine:
                             cycle_dur          = 0
                             lc_cycle_dur       = 0
                         
-                        # Cycle complete — expose cycle stats for loop-control threshold check
+                        # Cycle complete â€” expose cycle stats for loop-control threshold check
                         return {
                             "status": "success",
                             "saved_paths": saved_paths,
@@ -1832,7 +1837,7 @@ class BrowserEngine:
                     self._pending_resets = getattr(self, '_pending_resets', 0) + 1
                     self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
                     self._automation_needs_new_chat = True
-                    self._log_debug("Recoverable error — will retry with New Chat on next round.")
+                    self._log_debug("Recoverable error â€” will retry with New Chat on next round.")
                     return {"status": "reset", "message": f"Automation error (recovered): {e}"}
 
             # NOTE: We NO LONGER clear _cycle_start_time here...
@@ -2009,3 +2014,6 @@ if __name__ == "__main__":
     # Test script
     engine = BrowserEngine()
     asyncio.run(engine.test_connection())
+
+
+
