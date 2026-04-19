@@ -27,6 +27,10 @@ The automation engine now supports dynamically reloading prompts without interru
 - Durations over 1 hour display as `H:MM:SS` (e.g., `1:03:07`).
 - This update applies to the live elapsed timer, total session time, average time per image, and individual record durations.
 
+### 6. Editable User Login Credentials
+- Users can now directly edit or clear quota timestamps and session statistics (`Quota Full At`, `Switched At`, `Images`, `Refused`, `Resets`) straight from the **User Login Credentials** data table in the **System Config** dashboard.
+- This provides greater manual control over account tracking data.
+
 ## 🐛 Critical Bug Fixes
 
 ### 1. Fixed Duplicate Image Downloads (Race Condition)
