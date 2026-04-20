@@ -27,22 +27,14 @@ The automation engine now supports dynamically reloading prompts without interru
 - Durations over 1 hour display as `H:MM:SS` (e.g., `1:03:07`).
 - This update applies to the live elapsed timer, total session time, average time per image, and individual record durations.
 
-### 6. Editable User Login Credentials
-- Users can now directly edit or clear quota timestamps and session statistics (`Quota Full At`, `Switched At`, `Images`, `Refused`, `Resets`) straight from the **User Login Credentials** data table in the **System Config** dashboard.
-- This provides greater manual control over account tracking data.
+### 6. Fully Real-Time Editable Login Credentials & Batch Actions
+- The entire **User Login Credentials** table now saves instantly upon editing any field (including usernames, delete ranges, and session statistics). This provides greater manual control and improved workflow efficiency.
+- The manual "Save Credentials Table" button has been repurposed as **"Set Active Account"** and moved next to the account dropdown, strictly for explicitly setting the active profile.
+- Added four new **Batch Action** buttons beneath the table to instantly Select All or Clear All for `Bypass` and `Auto Delete` across all accounts.
 
-### 7. Instant-Save for Login Credentials
-- The **Bypass** and **Auto Delete** checkboxes in the **User Login Credentials** table now update the underlying configuration file immediately when toggled.
-- This eliminates the need to manually click "Save Credentials Table" for these specific flags, improving workflow efficiency.
-- The system uses a smart merge strategy to ensure that other pending edits in the table are preserved during these instant updates.
-
-### 8. Atomic Configuration Persistence
+### 7. Atomic Configuration Persistence
 - Implemented a robust "atomic write" mechanism for the `user_login_lookup.json` file.
 - The system now writes to a temporary file before performing an atomic replacement, ensuring that the background automation engine never reads a partially-written or corrupted configuration file during a UI save operation.
-
-### 9. Fully Real-Time Editable Login Credentials & Batch Actions
-- The entire **User Login Credentials** table now saves instantly upon editing any field (including usernames, delete ranges, and session statistics). The manual "Save Credentials Table" button has been repurposed strictly for explicitly setting the Active Account.
-- Added four new **Batch Action** buttons beneath the table to instantly Select All or Clear All for `Bypass` and `Auto Delete` across all accounts.
 
 ## 🐛 Critical Bug Fixes
 
