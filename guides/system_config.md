@@ -41,13 +41,16 @@ This table manages your account rotation and tracks individual session performan
 
 ## 4. Management Buttons
 
-### 🔒 Save & 🔄 Reload
-- **Save Credentials Table**: Commits all manual changes (Bypass, Auto Delete settings, etc.) to `user_login_lookup.json`.
-- **Reload Credentials Table**: Discards unsaved changes and pulls the freshest data from disk.
+### 🔒 Account Activation & 🔄 Reload
+- **Set Active Account**: Commits the currently selected username from the dropdown as the "Active" account for the engine.
+- **Reload Credentials Table**: Pulls the freshest data from disk to ensure the UI is perfectly synced with the underlying JSON.
+
+### ⚡ Batch Actions
+- Use the **Batch Action** buttons (All Bypass, Clear Bypass, etc.) to instantly apply settings to every account in your list simultaneously.
 
 ### 🧹 Cleaning Tools
 - **Clear Quota Full Recorded Date**: Resets all "Quota Full At" timestamps to empty, allowing accounts to enter the rotation again if they were previously blocked.
 - **Reset Session Stats**: Wipes all historical session data (`Switched At`, `Images`, `Refused`, `Resets`) for all accounts to start tracking with a clean slate.
 
 ---
-*Tip: Always click **Save Credentials Table** after editing usernames or toggling Bypass settings to ensure the background engine sees the updates.*
+*Tip: Credential edits (usernames, bypass, stats) are now saved **instantly** to disk. Use the **Set Active Account** button only when you want to change which profile the engine is currently using.*

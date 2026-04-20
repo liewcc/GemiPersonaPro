@@ -43,8 +43,8 @@ st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
 
 # Reload login rows from disk on every rerun.
-# The data_editor widgets preserve unsaved edits via their own widget keys,
-# so any in-progress user changes in the table are not lost.
+# Since all edits in the data_editor are saved to disk instantly,
+# reloading ensures the UI and JSON are always in perfect synchronization.
 st.session_state.login_rows = list(login_data)
 st.session_state._login_reload = False
 
