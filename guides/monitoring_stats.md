@@ -24,7 +24,22 @@ If automation is running, this dialog **auto-refreshes every 1 second**. It show
 
 ---
 
-## 3. Key Metrics Explained
+## 3. Reject Rate Stats Chart
+Click the **"📈 Stats Chart"** button to open a visual representation of your performance data.
+
+### Performance Trends
+This dialog displays a **Line Chart** summarizing the efficiency of each downloaded image:
+- **X-Axis**: Individual filenames (with `.png` extension removed for clarity).
+- **Y-Axis**:
+    - **Duration (m)**: The total processing time in minutes.
+    - **Refused**: The number of times Gemini refused to generate that specific image.
+    - **Resets**: The number of times the browser engine had to reset during the generation.
+
+This chart is essential for identifying patterns, such as specific prompts or times of day when Gemini is more likely to refuse requests or when the engine stability fluctuates.
+
+---
+
+## 4. Key Metrics Explained
 
 ### Refusals (Gemini Block)
 Occurs when Gemini returns a "I can't help with that" or "Safety Policy" response. 

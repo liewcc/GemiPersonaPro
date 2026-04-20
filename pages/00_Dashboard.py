@@ -17,6 +17,7 @@ import json
 import os
 import threading
 import psutil
+import pandas as pd
 
 # Fix for Windows asyncio
 if sys.platform == 'win32':
@@ -294,6 +295,52 @@ def render_stats_body_fragment():
 def show_reject_rate_stats():
     """Renders the stats with 1s auto-refresh if automation is running."""
     render_stats_body_fragment()
+
+@st.dialog("📈 Reject Rate Chart", width="large")
+def show_reject_rate_chart():
+    """Displays a bar chart of the reject rate statistics."""
+    records = []
+    if os.path.exists(REJECT_STAT_LOG_PATH):
+        try:
+            with open(REJECT_STAT_LOG_PATH, "r", encoding="utf-8") as _f:
+                records = json.load(_f)
+        except: pass
+    
+    if not records:
+        st.info("No data yet. Start an automation session to collect statistics.")
+        return
+
+    # Filter out summary records if any (like [Stopped/Interrupted])
+    clean_records = [r for r in records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
+    
+    if not clean_records:
+        st.info("No valid records found for charting.")
+        return
+
+    # Prepare data for plotting
+    df = pd.DataFrame(clean_records)
+    
+    # Ensure numeric types and convert Duration to minutes
+    df["duration_min"] = pd.to_numeric(df["duration_sec"], errors='coerce').fillna(0) / 60.0
+    df["refused_count"] = pd.to_numeric(df["refused_count"], errors='coerce').fillna(0)
+    df["reset_count"] = pd.to_numeric(df["reset_count"], errors='coerce').fillna(0)
+    
+    # Rename for cleaner legend
+    df = df.rename(columns={
+        "duration_min": "Duration (m)",
+        "refused_count": "Refused",
+        "reset_count": "Resets"
+    })
+    
+    # Use filename as index for the X-axis (strip .png extension for cleaner display)
+    df["display_name"] = df["filename"].apply(lambda x: str(x).replace(".png", ""))
+    df.set_index("display_name", inplace=True)
+    
+    st.markdown("### Performance Trends")
+    st.line_chart(df[["Duration (m)", "Refused", "Resets"]])
+    
+    st.markdown("---")
+    st.caption("X-axis shows the filename (no .png). Y-axis values represent time in **minutes** or count of occurrences.")
 
 
 LOOP_CTRL_DEFAULTS = {
@@ -713,9 +760,7 @@ with st.sidebar:
             st.session_state.auto_goal = new_goal
             save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
 
-        # Loop control button is now a module-level @st.fragment (render_looping_button).
-        # It is self-contained and recomputes its own state internally.
-        render_looping_button("sidebar")
+
 
         # Loop Control Config button (shown below Start/Stop, always visible)
         if st.button("⚙️ Loop Control Config", width="stretch",
@@ -833,7 +878,7 @@ render_dash_account_status()
 render_live_status_bar()
 
 # Put the stats bar and buttons in columns
-col_stats, col_view, col_loop_btn, col_btn = st.columns([2.2, 1.1, 1, 0.7])
+col_stats, col_view, col_loop_btn, col_btn, col_chart = st.columns([2.0, 1.0, 1.0, 0.7, 0.7])
 with col_stats:
     render_automation_stats()
 with col_view:
@@ -848,6 +893,9 @@ with col_loop_btn:
 with col_btn:
     if st.button("📊 Reject Rate Stats", width='stretch', help="View per-image download stats"):
         show_reject_rate_stats()
+with col_chart:
+    if st.button("📈 Stats Chart", width='stretch', help="Visualize performance trends"):
+        show_reject_rate_chart()
 
 def save_with_metadata(p_img, original_img, output_path_or_buf, original_stats=None):
     from PIL import PngImagePlugin

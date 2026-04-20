@@ -5,6 +5,7 @@ torch
 torchvision
 opencv-python-headless
 numpy
+pandas
 requests
 pillow
 tqdm

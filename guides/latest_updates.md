@@ -67,3 +67,10 @@ The automation engine now supports dynamically reloading prompts without interru
 ### 8. Dashboard Gallery Concurrency Handling
 - Fixed a crash (`UnidentifiedImageError`) in the Dashboard gallery fragment that occurred when the system attempted to display an image while it was still being written to disk by the automation engine.
 - The gallery now gracefully handles partially-written files by displaying a "⏳ Loading..." status, preventing the UI from crashing and ensuring a more resilient monitoring experience.
+
+### 9. Reject Rate Stats Visual Chart
+- Added a new **📈 Stats Chart** button to the Dashboard main panel.
+- This feature provides a visual breakdown of automation efficiency using a multi-metric line chart.
+- It tracks **Duration (in minutes)**, **Refusals**, and **Resets** per file, with filenames automatically cleaned (removing `.png` suffixes) for better readability on the X-axis.
+- This visualization helps users quickly identify performance bottlenecks or problematic prompts in long automation sessions.
+
