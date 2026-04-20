@@ -40,6 +40,10 @@ The automation engine now supports dynamically reloading prompts without interru
 - Implemented a robust "atomic write" mechanism for the `user_login_lookup.json` file.
 - The system now writes to a temporary file before performing an atomic replacement, ensuring that the background automation engine never reads a partially-written or corrupted configuration file during a UI save operation.
 
+### 9. Fully Real-Time Editable Login Credentials & Batch Actions
+- The entire **User Login Credentials** table now saves instantly upon editing any field (including usernames, delete ranges, and session statistics). The manual "Save Credentials Table" button has been repurposed strictly for explicitly setting the Active Account.
+- Added four new **Batch Action** buttons beneath the table to instantly Select All or Clear All for `Bypass` and `Auto Delete` across all accounts.
+
 ## 🐛 Critical Bug Fixes
 
 ### 1. Fixed Duplicate Image Downloads (Race Condition)

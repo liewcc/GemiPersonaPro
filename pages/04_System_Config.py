@@ -181,13 +181,32 @@ with col_cred:
                 break
 
         if usernames:
-            selected_active = st.selectbox(
-                "Active Account",
-                options=usernames,
-                index=min(active_index, len(usernames) - 1),
-                help="Select the account to use for the current session",
-                key="active_account_select"
-            )
+            sel_col, btn_col = st.columns([3, 1])
+            with sel_col:
+                selected_active = st.selectbox(
+                    "Active Account",
+                    options=usernames,
+                    index=min(active_index, len(usernames) - 1),
+                    help="Select the account to use for the current session",
+                    key="active_account_select"
+                )
+            with btn_col:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Set Active Account", icon="🔒", type="primary", width="stretch"):
+                    current_rows = load_login_lookup()
+                    final = [
+                        {
+                            **r,
+                            "active": (r.get("username") == selected_active),
+                        }
+                        for r in current_rows
+                    ]
+                    save_login_lookup(final)
+                    st.session_state._login_reload = True
+                    if "active_account_select" in st.session_state:
+                        del st.session_state["active_account_select"]
+                    st.success("Active account updated!")
+                    st.rerun()
         else:
             selected_active = None
             st.info("Add a new credential row below to get started.")
@@ -242,66 +261,56 @@ with col_cred:
             key="login_editor"
         )
 
-        # --- Instant save for Bypass / Auto Delete ---
-        # st.data_editor has no per-column on_change, so we compare after render.
-        # Only fires when row count is unchanged (structural add/delete still requires
-        # the Save button to avoid ambiguity). Merges only bypass/auto_delete back
-        # into the current on-disk rows so other unsaved edits are never clobbered.
-        _INSTANT_COLS = ["bypass", "auto_delete"]
-        _can_compare = (
+        # --- Instant save for all editable columns ---
+        # st.data_editor has no per-column on_change; we compare before/after render.
+        # Index-based patching is used so username renames are handled correctly.
+        _INSTANT_COLS = [
+            "bypass", "auto_delete", "delete_range", "username",
+            "quota_full", "last_switched_at",
+            "session_images", "session_refused", "session_resets"
+        ]
+        _row_count_same = (
             not editor_df.empty
             and not edited_df.empty
             and len(editor_df) == len(edited_df)
         )
-        if _can_compare:
+        if _row_count_same:
+            # Row-count unchanged: index-based patch (handles username renames safely)
             orig_check = editor_df[_INSTANT_COLS].reset_index(drop=True)
             new_check  = edited_df[_INSTANT_COLS].reset_index(drop=True)
             if not orig_check.equals(new_check):
                 edited_records = edited_df.to_dict("records")
-                uname_to_edit  = {r.get("username", ""): r for r in edited_records}
                 patched = []
-                for disk_row in rows:
-                    uname = disk_row.get("username", "")
-                    if uname in uname_to_edit:
-                        e = uname_to_edit[uname]
+                for idx, disk_row in enumerate(rows):
+                    if idx < len(edited_records):
+                        e = edited_records[idx]
+                        new_uname = str(e.get("username", disk_row.get("username", ""))).strip()
                         patched.append({
                             **disk_row,
-                            "bypass":      bool(e.get("bypass", False)),
-                            "auto_delete": bool(e.get("auto_delete", False)),
+                            "bypass":           bool(e.get("bypass", False)),
+                            "auto_delete":      bool(e.get("auto_delete", False)),
+                            "delete_range":     str(e.get("delete_range", disk_row.get("delete_range", "All time"))),
+                            "username":         new_uname if new_uname else disk_row.get("username", ""),
+                            "quota_full":       e.get("quota_full") if pd.notna(e.get("quota_full")) and e.get("quota_full") is not None else "",
+                            "last_switched_at": e.get("last_switched_at") if pd.notna(e.get("last_switched_at")) and e.get("last_switched_at") is not None else "",
+                            "session_images":   e.get("session_images") if pd.notna(e.get("session_images")) and e.get("session_images") is not None else "",
+                            "session_refused":  e.get("session_refused") if pd.notna(e.get("session_refused")) and e.get("session_refused") is not None else "",
+                            "session_resets":   e.get("session_resets") if pd.notna(e.get("session_resets")) and e.get("session_resets") is not None else "",
                         })
                     else:
                         patched.append(disk_row)
                 save_login_lookup(patched)
-                st.toast("Bypass / Auto Delete saved.", icon="💾")
+                st.toast("Credentials updated.", icon="💾")
+        elif not edited_df.empty:
+            # Row count changed (row added or deleted): write full table immediately.
+            # Filter out blank rows (username empty) to avoid phantom entries.
+            records = edited_df.to_dict("records")
+            valid = [r for r in records if str(r.get("username", "")).strip()]
+            if valid:
+                save_login_lookup(valid)
+                st.toast("Credentials updated.", icon="💾")
 
-        btn_save, btn_reload, btn_clear, btn_clear_stats = st.columns([1.2, 1.2, 1.6, 1.6])
-
-        with btn_save:
-            if st.button("Save Credentials Table", icon="🔒", type="primary", width="stretch"):
-                records = edited_df.to_dict("records")
-                records = [r for r in records if r.get("username")]
-                
-                # Map existing quota_full if not present in records 
-                # (though it should be there as a column)
-                final = [
-                    {"active": (r.get("username") == selected_active),
-                     "bypass": r.get("bypass", False),
-                     "username": r.get("username", ""),
-                     "auto_delete": r.get("auto_delete", False),
-                     "delete_range": r.get("delete_range", "Last hour"),
-                     "quota_full": r.get("quota_full", ""),
-                     "last_switched_at": r.get("last_switched_at", ""),
-                     "session_images":   r.get("session_images", ""),
-                     "session_refused":  r.get("session_refused", ""),
-                     "session_resets":   r.get("session_resets", "")}
-                    for r in records
-                ]
-                save_login_lookup(final)
-                st.session_state._login_reload = True
-                if "active_account_select" in st.session_state:
-                    del st.session_state["active_account_select"]
-                st.success("Credentials saved!")
-                st.rerun()
+        btn_reload, btn_clear, btn_clear_stats = st.columns([1, 1.2, 1.2])
 
         with btn_reload:
             if st.button("Reload Credentials Table", icon="🔄", type="secondary", width="stretch"):
@@ -330,6 +339,37 @@ with col_cred:
                 save_login_lookup(rows)
                 st.session_state._login_reload = True
                 st.success("All session stats cleared!")
+                st.rerun()
+
+        st.markdown("<p style='font-size: 0.8em; margin-bottom: 2px; margin-top: 10px; text-transform: uppercase;'>Batch Actions:</p>", unsafe_allow_html=True)
+        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+
+        with b_col1:
+            if st.button("✓ All Bypass", type="secondary", width="stretch"):
+                for r in rows: r["bypass"] = True
+                save_login_lookup(rows)
+                st.session_state._login_reload = True
+                st.rerun()
+
+        with b_col2:
+            if st.button("✗ Clear Bypass", type="secondary", width="stretch"):
+                for r in rows: r["bypass"] = False
+                save_login_lookup(rows)
+                st.session_state._login_reload = True
+                st.rerun()
+
+        with b_col3:
+            if st.button("✓ All Auto Delete", type="secondary", width="stretch"):
+                for r in rows: r["auto_delete"] = True
+                save_login_lookup(rows)
+                st.session_state._login_reload = True
+                st.rerun()
+
+        with b_col4:
+            if st.button("✗ Clear Auto Delete", type="secondary", width="stretch"):
+                for r in rows: r["auto_delete"] = False
+                save_login_lookup(rows)
+                st.session_state._login_reload = True
                 st.rerun()
 
 # --- Technical Details ---
