@@ -30,7 +30,7 @@ def on_change_watchdog_delay():
     save_config({"watchdog_initial_delay": st.session_state.cfg_watchdog_delay})
 
 def on_change_quota_cooldown():
-    save_config({"quota_cooldown_minutes": st.session_state.cfg_quota_cooldown})
+    save_config({"quota_cooldown_hours": st.session_state.cfg_quota_cooldown_hrs})
 
 # --- Main Logic ---
 
@@ -44,7 +44,7 @@ st.session_state.cfg_show_console = config.get("show_engine_console", True)
 st.session_state.cfg_headless = config.get("headless", False)
 st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
-st.session_state.cfg_quota_cooldown = config.get("quota_cooldown_minutes", 0)
+st.session_state.cfg_quota_cooldown_hrs = config.get("quota_cooldown_hours", 0)
 
 # Reload login rows from disk on every rerun.
 # Since all edits in the data_editor are saved to disk instantly,
@@ -112,13 +112,13 @@ with col_engine:
         )
 
         st.number_input(
-            "Quota Cooldown (minutes)",
+            "Quota Cooldown (hours)",
             min_value=0,
-            max_value=1440,
-            step=5,
-            key="cfg_quota_cooldown",
+            max_value=168,
+            step=1,
+            key="cfg_quota_cooldown_hrs",
             on_change=on_change_quota_cooldown,
-            help="If > 0, accounts whose quota was hit within this many minutes ago will be skipped during profile switching. 0 = disabled."
+            help="If > 0, accounts are locked for this many hours after hitting quota (unlock = quota_full_time + hours). 0 = disabled."
         )
 
 # --- Watchdog Log ---

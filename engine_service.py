@@ -297,9 +297,9 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     initial_user = engine.automation_status.get("initial_user")
 
     # Pre-read quota cooldown setting once to avoid repeated disk reads inside the loop
-    _quota_cooldown_min = 0
+    _quota_cooldown_hrs = 0
     try:
-        _quota_cooldown_min = load_config().get("quota_cooldown_minutes", 0) or 0
+        _quota_cooldown_hrs = load_config().get("quota_cooldown_hours", 0) or 0
     except Exception:
         pass
 
@@ -346,18 +346,21 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
             print(f"[ENGINE] Skipping '{candidate.get('username')}' (Bypass enabled).")
             continue
 
-        # Skip accounts whose quota was hit within the configured cooldown window
-        if _quota_cooldown_min > 0:
+        # Skip accounts whose quota unlock time has not yet been reached
+        # unlock_time = quota_full_time + cooldown_hours; skip if now < unlock_time
+        if _quota_cooldown_hrs > 0:
             qf_str = candidate.get("quota_full", "")
             if qf_str:
                 try:
+                    from datetime import timedelta
                     qf_time = datetime.strptime(qf_str, "%d/%m/%Y %H:%M:%S")
-                    elapsed_min = (datetime.now() - qf_time).total_seconds() / 60.0
-                    if elapsed_min < _quota_cooldown_min:
-                        remaining = _quota_cooldown_min - elapsed_min
+                    unlock_time = qf_time + timedelta(hours=_quota_cooldown_hrs)
+                    if datetime.now() < unlock_time:
+                        remaining_min = (unlock_time - datetime.now()).total_seconds() / 60.0
                         engine._log_debug(
                             f"API>> Skipping '{candidate.get('username')}' "
-                            f"(Quota cooldown: {remaining:.1f} min remaining)."
+                            f"(Quota locked until {unlock_time.strftime('%d/%m %H:%M')}, "
+                            f"{remaining_min:.0f} min remaining)."
                         )
                         continue
                 except Exception:
