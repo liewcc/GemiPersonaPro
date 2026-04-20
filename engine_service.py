@@ -296,6 +296,13 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
     num_users = len(users)
     initial_user = engine.automation_status.get("initial_user")
 
+    # Pre-read quota cooldown setting once to avoid repeated disk reads inside the loop
+    _quota_cooldown_min = 0
+    try:
+        _quota_cooldown_min = load_config().get("quota_cooldown_minutes", 0) or 0
+    except Exception:
+        pass
+
     # If reason is quota, mark current user as full BEFORE finding next
     if reason == "quota":
         # We mark the user at outgoing_index (the one that was just active)
@@ -338,6 +345,23 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         if candidate.get("bypass", False):
             print(f"[ENGINE] Skipping '{candidate.get('username')}' (Bypass enabled).")
             continue
+
+        # Skip accounts whose quota was hit within the configured cooldown window
+        if _quota_cooldown_min > 0:
+            qf_str = candidate.get("quota_full", "")
+            if qf_str:
+                try:
+                    qf_time = datetime.strptime(qf_str, "%d/%m/%Y %H:%M:%S")
+                    elapsed_min = (datetime.now() - qf_time).total_seconds() / 60.0
+                    if elapsed_min < _quota_cooldown_min:
+                        remaining = _quota_cooldown_min - elapsed_min
+                        engine._log_debug(
+                            f"API>> Skipping '{candidate.get('username')}' "
+                            f"(Quota cooldown: {remaining:.1f} min remaining)."
+                        )
+                        continue
+                except Exception:
+                    pass  # Unparseable timestamp — do not skip
 
         if cand_profile:
             prof_dir = get_abs_path(os.path.join("browser_user_data", cand_profile))

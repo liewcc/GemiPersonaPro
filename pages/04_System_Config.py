@@ -29,6 +29,9 @@ def on_change_timeout():
 def on_change_watchdog_delay():
     save_config({"watchdog_initial_delay": st.session_state.cfg_watchdog_delay})
 
+def on_change_quota_cooldown():
+    save_config({"quota_cooldown_minutes": st.session_state.cfg_quota_cooldown})
+
 # --- Main Logic ---
 
 config = load_config()
@@ -41,6 +44,7 @@ st.session_state.cfg_show_console = config.get("show_engine_console", True)
 st.session_state.cfg_headless = config.get("headless", False)
 st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
+st.session_state.cfg_quota_cooldown = config.get("quota_cooldown_minutes", 0)
 
 # Reload login rows from disk on every rerun.
 # Since all edits in the data_editor are saved to disk instantly,
@@ -105,6 +109,16 @@ with col_engine:
             key="cfg_watchdog_delay",
             on_change=on_change_watchdog_delay,
             help="How long the Watchdog waits after automation starts before its first session check. Increase if Gem pages take long to load."
+        )
+
+        st.number_input(
+            "Quota Cooldown (minutes)",
+            min_value=0,
+            max_value=1440,
+            step=5,
+            key="cfg_quota_cooldown",
+            on_change=on_change_quota_cooldown,
+            help="If > 0, accounts whose quota was hit within this many minutes ago will be skipped during profile switching. 0 = disabled."
         )
 
 # --- Watchdog Log ---

@@ -44,7 +44,8 @@ DEFAULT_CONFIG = {
         "我今天无法为您创建更多图像",
         "十分抱歉"
     ],
-    "selected_files": []
+    "selected_files": [],
+    "quota_cooldown_minutes": 0
 }
 
 def load_config():

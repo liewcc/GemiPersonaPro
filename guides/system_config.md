@@ -11,6 +11,7 @@ These settings control the behavior of the background browser process.
 - **Run Browser Headless**: If enabled (default: False), the automated browser will run invisibly in the background. High-speed generation is best performed in this mode.
 - **Heartbeat Timeout**: The duration (in seconds) the engine will wait for a response from the UI before auto-shutting down to save resources. Set to `0` to keep the engine alive indefinitely.
 - **Watchdog Initial Delay**: The duration (in seconds) the background Watchdog waits after automation starts before running its first session/login check. Increase this (e.g., to 20 or 30 seconds) if your Gem URLs or models take a long time to load, preventing the Watchdog from falsely detecting a "Guest" status during the initial page transition.
+- **Quota Cooldown (minutes)**: When set to a value greater than `0`, any account whose **Quota Full At** timestamp falls within this many minutes of the current time will be **automatically skipped** during profile switching. This is useful for preventing the engine from immediately re-entering an account that just hit its limit. Set to `0` (default) to disable this check entirely.
 ---
 
 ## 2. Quota Full Phrases
