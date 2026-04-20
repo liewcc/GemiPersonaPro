@@ -935,7 +935,7 @@ with col_auto_stats:
 render_live_status_bar()
 
 # Put the buttons in columns
-col_view, col_loop_btn, col_btn, col_chart = st.columns([1.5, 1.5, 1.0, 1.0])
+col_view, col_loop_btn, col_btn, col_chart = st.columns(4)
 with col_view:
     if st.button("📂 View Download Folder", width='stretch', help="Open the save directory in File Explorer"):
         save_dir = st.session_state.config.get("save_dir", "")
