@@ -840,21 +840,27 @@ def render_dash_account_status():
         is_logged_in = True
         display_account = result.get("account_id", "Unknown")
 
-    status_color = "#00ff00" if active else "#ff4444"
+    status_color = "#28a745" if active else "#d73a49"
     status_text = "ONLINE" if active else "OFFLINE"
-    col_status, col_account = st.columns([1, 5])
-    with col_status:
-        st.markdown(f"<p style='margin: 0; font-size: 0.9em;'><span style='color:{status_color};'>\u25cf</span> <b>BROWSER:</b> {status_text}</p>", unsafe_allow_html=True)
-    with col_account:
-        if not active:
-            st.markdown("<p style='margin: 0; font-size: 0.9em; color: #888;'>Account: Not Ready</p>", unsafe_allow_html=True)
-        elif result is None and not cached_account:
-            st.markdown("<p style='margin: 0; font-size: 0.9em; color: #aaa;'>Account: Scanning...</p>", unsafe_allow_html=True)
-        elif is_logged_in:
-            st.markdown(f"<p style='margin: 0; font-size: 0.9em;'><b>Account:</b> <span style='color:#a0a0ff;'>{display_account}</span></p>", unsafe_allow_html=True)
-        else:
-            st.markdown("<p style='margin: 0; font-size: 0.9em;'><b>Account:</b> <span style='color:#ff8888;'>GUEST / NOT LOGGED IN</span></p>", unsafe_allow_html=True)
-    st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+    
+    if not active:
+        account_html = "<span style='color: #6a737d;'>Not Ready</span>"
+    elif result is None and not cached_account:
+        account_html = "<span style='color: #6a737d;'>Scanning...</span>"
+    elif is_logged_in:
+        account_html = f"<span style='color: #0366d6; font-weight: 600;'>{display_account}</span>"
+    else:
+        account_html = "<span style='color: #d73a49; font-weight: 600;'>GUEST / NOT LOGGED IN</span>"
+
+    bg_color = "#ffffff" if active else "#f6f8fa"
+    st.markdown(f"""
+    <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 0.9em; border: 1px solid #ddd; color: #24292e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+        <div style='flex: 1; display: flex; align-items: center; justify-content: space-between;'>
+            <div><b style='color: {status_color};'>●</b> <b>BROWSER:</b> {status_text}</div>
+            <div style='text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 10px;'><b>Account:</b> {account_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 @st.fragment(run_every="5s")
 def render_automation_stats():
@@ -918,13 +924,18 @@ def render_live_status_bar():
     else:
         st.markdown(get_status_bar_html("LIVE ENTRY", "Waiting for logs...", "#059669"), unsafe_allow_html=True)
 
-render_dash_account_status()
+# Top status bar row
+col_account_status, col_auto_stats = st.columns(2)
+with col_account_status:
+    render_dash_account_status()
+with col_auto_stats:
+    render_automation_stats()
+
+# Second row: live entry
 render_live_status_bar()
 
-# Put the stats bar and buttons in columns
-col_stats, col_view, col_loop_btn, col_btn, col_chart = st.columns([2.0, 1.0, 1.0, 0.7, 0.7])
-with col_stats:
-    render_automation_stats()
+# Put the buttons in columns
+col_view, col_loop_btn, col_btn, col_chart = st.columns([1.5, 1.5, 1.0, 1.0])
 with col_view:
     if st.button("📂 View Download Folder", width='stretch', help="Open the save directory in File Explorer"):
         save_dir = st.session_state.config.get("save_dir", "")

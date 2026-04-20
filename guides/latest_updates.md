@@ -82,3 +82,9 @@ The automation engine now supports dynamically reloading prompts without interru
 - It tracks **Duration (in minutes)**, **Refusals**, and **Resets** per file, with filenames automatically cleaned (removing `.png` suffixes) for better readability on the X-axis.
 - This visualization helps users quickly identify performance bottlenecks or problematic prompts in long automation sessions.
 
+
+### 10. Dashboard Layout Enhancements
+- Restructured the top layout of the Dashboard page ( 0_Dashboard.py) for a cleaner, unified presentation.
+- The **Account/Browser Status** and the **Automation Stats** (RUNNING | Cycles) are now displayed horizontally side-by-side.
+- Upgraded the text-based Account status into a styled container that precisely matches the aesthetics (height, border, background color) of the Automation Stats box.
+- Rebalanced the layout of the quick-action buttons below the status row to distribute evenly across the screen.
