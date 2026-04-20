@@ -298,7 +298,8 @@ def show_reject_rate_stats():
 
 @st.dialog("📈 Reject Rate Chart", width="large")
 def show_reject_rate_chart():
-    """Displays a bar chart of the reject rate statistics."""
+    """Displays a bar chart of the reject rate statistics (Snapshot)."""
+    # 1. Load historical records
     records = []
     if os.path.exists(REJECT_STAT_LOG_PATH):
         try:
@@ -306,15 +307,49 @@ def show_reject_rate_chart():
                 records = json.load(_f)
         except: pass
     
-    if not records:
-        st.info("No data yet. Start an automation session to collect statistics.")
-        return
+    # 2. Fetch live stats for the snapshot
+    stats = {}
+    is_running = False
+    try:
+        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        is_running = stats.get("is_running", False)
+    except: pass
 
-    # Filter out summary records if any (like [Stopped/Interrupted])
+    # 3. Clean historical records
     clean_records = [r for r in records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
+
+    # 4. Append live 'Processing' data if running (Snapshot at this moment)
+    if is_running:
+        total_api_refused = int(stats.get("refusals") or 0)
+        total_api_resets = int(stats.get("resets") or 0)
+        total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
+        total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
+        
+        p_refused = max(0, total_api_refused - total_log_refused)
+        p_resets = max(0, total_api_resets - total_log_resets)
+
+        cycle_start_ts = stats.get("current_cycle_start_ts")
+        inter_cycle_ts = stats.get("inter_cycle_start_ts")
+        filename_display = "Processing..."
+
+        if cycle_start_ts:
+            p_dur = max(0.0, time.time() - float(cycle_start_ts))
+        elif inter_cycle_ts:
+            p_dur = max(0.0, time.time() - float(inter_cycle_ts))
+            filename_display = "Refining Image..."
+        else:
+            p_dur = 0.0
+        
+        pending_record = {
+            "filename": filename_display,
+            "duration_sec": p_dur,
+            "refused_count": p_refused,
+            "reset_count": p_resets
+        }
+        clean_records.append(pending_record)
     
     if not clean_records:
-        st.info("No valid records found for charting.")
+        st.info("No data yet. Start an automation session to collect statistics.")
         return
 
     # Prepare data for plotting
@@ -336,11 +371,11 @@ def show_reject_rate_chart():
     df["display_name"] = df["filename"].apply(lambda x: str(x).replace(".png", ""))
     df.set_index("display_name", inplace=True)
     
-    st.markdown("### Performance Trends")
+    st.markdown("### Performance Trends (Snapshot)")
     st.line_chart(df[["Duration (m)", "Refused", "Resets"]])
     
     st.markdown("---")
-    st.caption("X-axis shows the filename (no .png). Y-axis values represent time in **minutes** or count of occurrences.")
+    st.caption("This chart is a **snapshot** of the moment the dialog was opened. X-axis shows the filename. Y-axis values represent time in **minutes** or count of occurrences.")
 
 
 LOOP_CTRL_DEFAULTS = {
@@ -669,15 +704,24 @@ def render_looping_button(location="sidebar"):
             st.session_state.auto_stop_requested = False
             st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
     else:
+        @st.dialog("Confirm Stop Automation")
+        def confirm_stop_automation_dash():
+            st.write("Are you sure you want to stop the looping process?")
+            col_y, col_n = st.columns(2)
+            if col_y.button("Yes, Stop", type="primary", use_container_width=True, key=f"dash_yes_stop_{location}"):
+                async def do_stop_auto():
+                    add_log("Stopping Automation Loop...")
+                    resp = await st.session_state.client.stop_automation()
+                    add_log(f"Auto Stop: {resp.get('message')}")
+                asyncio.run(do_stop_auto())
+                st.session_state.auto_stop_requested = True
+                st.session_state.ui_auto_looping_active = False
+                st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
+            if col_n.button("Cancel", use_container_width=True, key=f"dash_no_stop_{location}"):
+                st.rerun()
+
         if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
-            async def do_stop_auto():
-                add_log("Stopping Automation Loop...")
-                resp = await st.session_state.client.stop_automation()
-                add_log(f"Auto Stop: {resp.get('message')}")
-            asyncio.run(do_stop_auto())
-            st.session_state.auto_stop_requested = True
-            st.session_state.ui_auto_looping_active = False
-            st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
+            confirm_stop_automation_dash()
 
 # --- UI Layout ---
 with st.sidebar:

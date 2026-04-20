@@ -1178,8 +1178,11 @@ with col1:
                 st.session_state.auto_goal = new_goal
                 st.session_state.config = save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
 
-            if not show_as_inactive:
-                if st.button("⏹️ Stop Looping Process", width="stretch"):
+            @st.dialog("Confirm Stop Automation")
+            def confirm_stop_automation():
+                st.write("Are you sure you want to stop the looping process?")
+                col_y, col_n = st.columns(2)
+                if col_y.button("Yes, Stop", type="primary", use_container_width=True):
                     async def do_stop_auto():
                         add_log("Stopping Automation Loop...")
                         resp = await st.session_state.client.stop_automation()
@@ -1187,6 +1190,12 @@ with col1:
                     asyncio.run(do_stop_auto())
                     st.session_state.auto_stop_requested = True
                     st.rerun()
+                if col_n.button("Cancel", use_container_width=True):
+                    st.rerun()
+
+            if not show_as_inactive:
+                if st.button("⏹️ Stop Looping Process", width="stretch"):
+                    confirm_stop_automation()
             else:
                 # Start button disabled if:
                 # 1. Browser is OFF
