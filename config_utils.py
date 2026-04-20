@@ -45,7 +45,7 @@ DEFAULT_CONFIG = {
         "十分抱歉"
     ],
     "selected_files": [],
-    "quota_cooldown_hours": 0
+    "quota_cooldown_hours": 24
 }
 
 def load_config():

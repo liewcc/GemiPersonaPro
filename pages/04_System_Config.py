@@ -44,7 +44,7 @@ st.session_state.cfg_show_console = config.get("show_engine_console", True)
 st.session_state.cfg_headless = config.get("headless", False)
 st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
-st.session_state.cfg_quota_cooldown_hrs = config.get("quota_cooldown_hours", 0)
+st.session_state.cfg_quota_cooldown_hrs = config.get("quota_cooldown_hours", 24)
 
 # Reload login rows from disk on every rerun.
 # Since all edits in the data_editor are saved to disk instantly,

@@ -4,7 +4,15 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
-### 1. Dynamic Prompt Reload Logic
+### 1. Quota Cooldown — Automatic Account Lock After Quota Hit
+Accounts can now be automatically held out of the rotation for a configurable period after hitting their daily quota.
+- A new **Quota Cooldown (hours)** setting has been added to the **ENGINE SETTINGS** panel on the System Config page (default: **24 hours**).
+- When set to a value greater than `0`, the engine computes an **unlock time** for each account: `unlock_time = quota_full_time + cooldown_hours`.
+- During every profile switch, any account whose unlock time has not yet been reached is **automatically skipped**, preventing the engine from wasting a session on an account that is still locked.
+- The engine log will display the exact unlock timestamp and minutes remaining, e.g.: `API>> Skipping 'user@gmail.com' (Quota locked until 21/04 00:00, 180 min remaining).`
+- Set the value to `0` to disable the feature entirely and restore the original behavior.
+
+### 2. Dynamic Prompt Reload Logic
 The automation engine now supports dynamically reloading prompts without interrupting the ongoing session. 
 - When you click **"Load"** or **"Save"** in the Gemini Setup dashboard during an active automation cycle, the engine will safely request a new chat (`request_new_chat` endpoint) at the start of the next loop.
 - This ensures the system utilizes the most up-to-date prompts immediately, eliminating the need to stop and restart the automation.

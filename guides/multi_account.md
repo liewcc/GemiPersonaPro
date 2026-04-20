@@ -26,6 +26,14 @@ If you want to temporarily skip an account during automation (e.g., to preserve 
 - When the system auto-switches due to a quota limit or a loop control threshold, it will **automatically skip** any account marked as "Bypass" and proceed to the next available one.
 - This allows you to selectively manage which accounts are actively used in the rotation without having to delete them from your configuration.
 
+### Quota Cooldown
+For accounts that hit their daily quota, the engine can automatically keep them locked out of the rotation for a set period of time.
+- Configure the **Quota Cooldown (hours)** value in **System Config → ENGINE SETTINGS** (default: **24 hours**).
+- When an account hits its quota, the engine records the exact time in the **Quota Full At** column. On every subsequent profile switch, the engine calculates each account's **unlock time**: `quota_full_time + cooldown_hours`.
+- Any account whose unlock time has not yet passed is **silently skipped** with a log entry showing the remaining wait time.
+- **Example**: An account hits quota at `20/04 00:00`. With a 24-hour cooldown, its unlock time is `21/04 00:00`. The engine will skip it on every switch attempt until that time has passed.
+- Set the cooldown to `0` to disable this behavior entirely and let all accounts re-enter the rotation immediately.
+
 ---
 
 ## 3. Switching Profiles
