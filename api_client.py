@@ -194,6 +194,12 @@ class EngineClient:
             resp = await client.post(f"{self.base_url}/browser/automation/start", json=payload, timeout=30.0)
             return resp.json()
 
+    async def continue_automation(self, mode, goal, config):
+        async with httpx.AsyncClient() as client:
+            payload = {"mode": mode, "goal": goal, "config": config}
+            resp = await client.post(f"{self.base_url}/browser/automation/continue", json=payload, timeout=30.0)
+            return resp.json()
+
     async def stop_automation(self):
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{self.base_url}/browser/automation/stop", timeout=30.0)

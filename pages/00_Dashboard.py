@@ -746,52 +746,109 @@ def render_looping_button(location="sidebar"):
 
     _show_as_inactive = not _ui_is_active or _stop_req
 
-    if _show_as_inactive:
-        _start_disabled = not _browser_active or _is_busy or not _auto_enabled or _stop_req
-        if st.button("▶️ Start Looping Process", key=f"start_loop_{location}", width="stretch", type="primary", disabled=_start_disabled):
-            current_config = load_config()
-            current_config["selected_files"] = st.session_state.selected_files
-            current_config["remove_watermark"] = st.session_state.auto_remove_wm
+    history_records = []
+    if os.path.exists(REJECT_STAT_LOG_PATH):
+        try:
+            with open(REJECT_STAT_LOG_PATH, "r", encoding="utf-8") as _f:
+                history_records = json.load(_f)
+        except: pass
+    
+    clean_history = [r for r in history_records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
+    history_count = len(clean_history)
+    
+    is_goal_reached = False
+    if st.session_state.auto_mode == "rounds" and history_count >= st.session_state.auto_goal:
+        is_goal_reached = True
+    elif st.session_state.auto_mode == "images" and history_count >= st.session_state.auto_goal:
+        is_goal_reached = True
 
-            def trigger_automation():
-                async def do_start_auto():
-                    add_log("API>> Triggering Automation Start...")
-                    try:
-                        resp = await st.session_state.client.start_automation(
-                            mode=st.session_state.auto_mode,
-                            goal=st.session_state.auto_goal,
-                            config=current_config
-                        )
-                        add_log(f"API>> Start Result: {resp.get('message')}")
-                    except Exception as e:
-                        add_log(f"API ERROR: {e}")
-                asyncio.run(do_start_auto())
+    @st.dialog("Confirm Stop Automation")
+    def confirm_stop_automation_dash():
+        st.write("Are you sure you want to stop the looping process?")
+        col_y, col_n = st.columns(2)
+        if col_y.button("Yes, Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
+            async def do_stop_auto():
+                add_log("Stopping Automation Loop...")
+                resp = await st.session_state.client.stop_automation()
+                add_log(f"Auto Stop: {resp.get('message')}")
+            asyncio.run(do_stop_auto())
+            st.session_state.auto_stop_requested = True
+            st.session_state.ui_auto_looping_active = False
+            st.rerun()
+        if col_n.button("Cancel", width="stretch", key=f"dash_no_stop_{location}"):
+            st.rerun()
 
-            t = threading.Thread(target=trigger_automation, daemon=True)
-            add_script_run_ctx(t)
-            t.start()
-            st.session_state.ui_auto_looping_active = True
-            st.session_state.auto_stop_requested = False
-            st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
-    else:
-        @st.dialog("Confirm Stop Automation")
-        def confirm_stop_automation_dash():
-            st.write("Are you sure you want to stop the looping process?")
-            col_y, col_n = st.columns(2)
-            if col_y.button("Yes, Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
-                async def do_stop_auto():
-                    add_log("Stopping Automation Loop...")
-                    resp = await st.session_state.client.stop_automation()
-                    add_log(f"Auto Stop: {resp.get('message')}")
-                asyncio.run(do_stop_auto())
-                st.session_state.auto_stop_requested = True
-                st.session_state.ui_auto_looping_active = False
-                st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
-            if col_n.button("Cancel", width="stretch", key=f"dash_no_stop_{location}"):
+    @st.dialog("⚠️ Cannot Continue")
+    def show_goal_reached_dialog():
+        st.write("The previously configured goal has already been reached.")
+        st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
+        if st.button("OK", width="stretch", key=f"gr_ok_{location}"):
+            st.rerun()
+
+    btn_col1, btn_col2 = st.columns(2)
+
+    with btn_col1:
+        if _show_as_inactive:
+            _start_disabled = not _browser_active or _is_busy or not _auto_enabled or _stop_req
+            if st.button("▶️ Start Looping Process", key=f"start_loop_{location}", width="stretch", type="primary", disabled=_start_disabled):
+                current_config = load_config()
+                current_config["selected_files"] = st.session_state.selected_files
+                current_config["remove_watermark"] = st.session_state.auto_remove_wm
+
+                def trigger_automation():
+                    async def do_start_auto():
+                        add_log("API>> Triggering Automation Start...")
+                        try:
+                            resp = await st.session_state.client.start_automation(
+                                mode=st.session_state.auto_mode,
+                                goal=st.session_state.auto_goal,
+                                config=current_config
+                            )
+                            add_log(f"API>> Start Result: {resp.get('message')}")
+                        except Exception as e:
+                            add_log(f"API ERROR: {e}")
+                    asyncio.run(do_start_auto())
+
+                t = threading.Thread(target=trigger_automation, daemon=True)
+                add_script_run_ctx(t)
+                t.start()
+                st.session_state.ui_auto_looping_active = True
+                st.session_state.auto_stop_requested = False
                 st.rerun()
+        else:
+            if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
+                confirm_stop_automation_dash()
 
-        if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
-            confirm_stop_automation_dash()
+    with btn_col2:
+        _continue_disabled = not _show_as_inactive or history_count == 0 or not _browser_active or _is_busy or not _auto_enabled or _stop_req
+        if st.button("⏯️ Continue Session", key=f"continue_loop_{location}", width="stretch", disabled=_continue_disabled):
+            if is_goal_reached:
+                show_goal_reached_dialog()
+            else:
+                current_config = load_config()
+                current_config["selected_files"] = st.session_state.selected_files
+                current_config["remove_watermark"] = st.session_state.auto_remove_wm
+
+                def trigger_continue():
+                    async def do_continue_auto():
+                        add_log("API>> Triggering Automation Continue...")
+                        try:
+                            resp = await st.session_state.client.continue_automation(
+                                mode=st.session_state.auto_mode,
+                                goal=st.session_state.auto_goal,
+                                config=current_config
+                            )
+                            add_log(f"API>> Continue Result: {resp.get('message')}")
+                        except Exception as e:
+                            add_log(f"API ERROR: {e}")
+                    asyncio.run(do_continue_auto())
+
+                t = threading.Thread(target=trigger_continue, daemon=True)
+                add_script_run_ctx(t)
+                t.start()
+                st.session_state.ui_auto_looping_active = True
+                st.session_state.auto_stop_requested = False
+                st.rerun()
 
 # --- UI Layout ---
 with st.sidebar:
@@ -1005,7 +1062,7 @@ with col_auto_stats:
 render_live_status_bar()
 
 # Put the buttons in columns
-col_view, col_loop_btn, col_btn, col_chart = st.columns(4)
+col_view, col_loop_btn, col_btn, col_chart = st.columns([1, 2, 1, 1])
 with col_view:
     if st.button("📂 View Download Folder", width='stretch', help="Open the save directory in File Explorer"):
         save_dir = st.session_state.config.get("save_dir", "")

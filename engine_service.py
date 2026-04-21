@@ -824,6 +824,29 @@ async def automation_manager(req: AutomationRequest):
         engine._log_debug(f"API>> Automation Manager Exited. Final Stats: {stats}")
         print("[AUTO] Automation manager exited.")
 
+def _hydrate_automation_state_from_log():
+    try:
+        records = []
+        if os.path.exists(engine._reject_log_path):
+            with open(engine._reject_log_path, "r", encoding="utf-8") as f:
+                records = json.load(f)
+        
+        valid_records = [r for r in records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
+        
+        successes = len(valid_records)
+        refusals = sum(int(r.get("refused_count", 0)) for r in valid_records)
+        resets = sum(int(r.get("reset_count", 0)) for r in valid_records)
+        
+        return {
+            "successes": successes,
+            "refusals": refusals,
+            "resets": resets,
+            "cycles": successes
+        }
+    except Exception as e:
+        print(f"[AUTO] Failed to hydrate state from log: {e}")
+        return None
+
 @app.post("/browser/automation/start")
 async def start_automation(req: AutomationRequest):
     if not engine.is_running:
@@ -878,6 +901,61 @@ async def start_automation(req: AutomationRequest):
 
     asyncio.create_task(automation_manager(req))
     return {"status": "success", "message": "Automation started in background"}
+
+@app.post("/browser/automation/continue")
+async def continue_automation(req: AutomationRequest):
+    if not engine.is_running:
+        raise HTTPException(status_code=400, detail="Engine not running")
+    if engine.automation_status.get("is_running"):
+        return {"status": "error", "message": "Automation already running"}
+        
+    engine._stop_automation_event.clear()
+    
+    cfg = load_config()
+    initial_user = cfg.get("active_user")
+
+    # If state is completely 0 (e.g. after engine restart), hydrate it
+    if engine.automation_status.get("successes", 0) == 0 and engine.automation_status.get("refusals", 0) == 0:
+        hydrated = _hydrate_automation_state_from_log()
+        if hydrated and (hydrated["successes"] > 0 or hydrated["refusals"] > 0):
+            engine.automation_status.update({
+                "successes": hydrated["successes"],
+                "refusals": hydrated["refusals"],
+                "resets": hydrated["resets"],
+                "cycles": hydrated["cycles"],
+            })
+            engine._log_debug(f"API>> Hydrated session state from log: {hydrated}")
+
+    # Update mode and goal from current request, preserve existing stats
+    engine.automation_status.update({
+        "mode": req.mode,
+        "goal": req.goal,
+        "initial_user": initial_user
+    })
+    
+    if "start_time" not in engine.automation_status or not engine.automation_status["start_time"]:
+        engine.automation_status["start_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if not hasattr(engine, "_acct_snapshot") or engine._acct_snapshot is None:
+        engine._acct_snapshot = {
+            "successes": engine.automation_status.get("successes", 0),
+            "refusals": engine.automation_status.get("refusals", 0),
+            "resets": engine.automation_status.get("resets", 0)
+        }
+
+    engine._pending_refused = 0
+    engine._pending_resets = 0
+    engine._lc_pending_refused = 0
+    engine._lc_pending_resets = 0
+    
+    # Reset timers so loop control doesn't instantly timeout
+    engine._cycle_start_time = time.time()
+    engine._lc_cycle_start_time = time.time()
+    engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
+    
+    engine.automation_status["is_running"] = True
+    asyncio.create_task(automation_manager(req))
+    return {"status": "success", "message": "Automation continued in background"}
 
 @app.post("/browser/automation/stop")
 async def stop_automation():

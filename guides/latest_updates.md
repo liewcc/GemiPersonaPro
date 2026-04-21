@@ -4,7 +4,14 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
-### 1. Quota Cooldown — Automatic Account Lock After Quota Hit
+### 1. Continue Session (Resume Automation)
+- Added a highly requested **⏯️ Continue Session** functionality to both the Dashboard and Gemini Setup pages.
+- Allows users to pause an active automation loop and subsequently resume it without wiping the current session's Reject Rate statistics or counter metrics.
+- Features a robust **State Hydration** mechanism: if the application or backend engine is restarted while a session is paused, the engine will automatically parse the `reject_stat_log.json` to seamlessly rebuild the previous metrics (Successes, Refusals, Resets) directly into memory upon clicking Continue.
+- Implements strict **Goal Protection**: attempting to continue a session that has already reached its configured image/round target will automatically trigger an alert dialog, preventing accidental data pollution or instant-stop loops.
+- **UI Stabilization**: Refactored the control layout across both pages. The `Start / Stop` buttons now swap seamlessly in place, while the `Continue` button securely occupies the adjacent column, ensuring absolute layout stability and zero button-jumping during active automation.
+
+### 2. Quota Cooldown — Automatic Account Lock After Quota Hit
 Accounts can now be automatically held out of the rotation for a configurable period after hitting their daily quota.
 - A new **Quota Cooldown (hours)** setting has been added to the **ENGINE SETTINGS** panel on the System Config page (default: **24 hours**).
 - When set to a value greater than `0`, the engine computes an **unlock time** for each account: `unlock_time = quota_full_time + cooldown_hours`.
@@ -12,35 +19,35 @@ Accounts can now be automatically held out of the rotation for a configurable pe
 - The engine log will display the exact unlock timestamp and minutes remaining, e.g.: `API>> Skipping 'user@gmail.com' (Quota locked until 21/04 00:00, 180 min remaining).`
 - Set the value to `0` to disable the feature entirely and restore the original behavior.
 
-### 2. Dynamic Prompt Reload Logic
+### 3. Dynamic Prompt Reload Logic
 The automation engine now supports dynamically reloading prompts without interrupting the ongoing session. 
 - When you click **"Load"** or **"Save"** in the Gemini Setup dashboard during an active automation cycle, the engine will safely request a new chat (`request_new_chat` endpoint) at the start of the next loop.
 - This ensures the system utilizes the most up-to-date prompts immediately, eliminating the need to stop and restart the automation.
 
-### 2. Formatted Prompt Metadata Text
+### 4. Formatted Prompt Metadata Text
 - Added improvements to text-processing when pasting text copied from the dashboard's Image Metadata into the Gemini setup prompt input. The system now automatically converts `\n\n` sequences into proper paragraph breaks, retaining the intended formatting and structure.
 
-### 3. Configurable Watchdog Delay
+### 5. Configurable Watchdog Delay
 - Introduced a configurable Watchdog delay to improve automation stability. This helps manage the timing of automated tasks and prevents premature timeouts.
 
-### 4. Resequence & Export Assets
+### 6. Resequence & Export Assets
 - Introduced a **Resequence Files** utility in the Asset Sanitizer's batch processing options.
 - This non-destructive feature allows users to safely copy and rename a sequence of images into a new sibling folder, sequentially numbered starting from 1 (with automatic zero-padding detection based on the original filenames).
 - Any corresponding AI-cleaned images in the `processed/` subfolder are automatically synchronized and re-numbered to match the new naming scheme.
 
-### 5. Enhanced Duration Formatting in Reject Rate Stats
+### 7. Enhanced Duration Formatting in Reject Rate Stats
 - Updated the duration display in the **Reject Rate Stats** dialog to a more readable `H:MM:SS` format.
 - Durations under 1 minute display as seconds (e.g., `42s`).
 - Durations between 1 minute and 1 hour display as `M:SS` (e.g., `3:05`).
 - Durations over 1 hour display as `H:MM:SS` (e.g., `1:03:07`).
 - This update applies to the live elapsed timer, total session time, average time per image, and individual record durations.
 
-### 6. Fully Real-Time Editable Login Credentials & Batch Actions
+### 8. Fully Real-Time Editable Login Credentials & Batch Actions
 - The entire **User Login Credentials** table now saves instantly upon editing any field (including usernames, delete ranges, and session statistics). This provides greater manual control and improved workflow efficiency.
 - The manual "Save Credentials Table" button has been repurposed as **"Set Active Account"** and moved next to the account dropdown, strictly for explicitly setting the active profile.
 - Added four new **Batch Action** buttons beneath the table to instantly Select All or Clear All for `Bypass` and `Auto Delete` across all accounts.
 
-### 7. Atomic Configuration Persistence
+### 9. Atomic Configuration Persistence
 - Implemented a robust "atomic write" mechanism for the `user_login_lookup.json` file.
 - The system now writes to a temporary file before performing an atomic replacement, ensuring that the background automation engine never reads a partially-written or corrupted configuration file during a UI save operation.
 

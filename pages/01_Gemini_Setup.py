@@ -1178,6 +1178,31 @@ with col1:
                 st.session_state.auto_goal = new_goal
                 st.session_state.config = save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
 
+            # Calculate history and goal validation for Continue button
+            REJECT_STAT_LOG_PATH = "reject_stat_log.json"
+            history_records = []
+            if os.path.exists(REJECT_STAT_LOG_PATH):
+                try:
+                    with open(REJECT_STAT_LOG_PATH, "r", encoding="utf-8") as _f:
+                        history_records = json.load(_f)
+                except: pass
+            
+            clean_history = [r for r in history_records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
+            history_count = len(clean_history)
+            
+            is_goal_reached = False
+            if st.session_state.auto_mode == "rounds" and history_count >= st.session_state.auto_goal:
+                is_goal_reached = True
+            elif st.session_state.auto_mode == "images" and history_count >= st.session_state.auto_goal:
+                is_goal_reached = True
+
+            @st.dialog("⚠️ Cannot Continue")
+            def show_goal_reached_dialog_setup():
+                st.write("The previously configured goal has already been reached.")
+                st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
+                if st.button("OK", width="stretch", key="gr_ok_setup"):
+                    st.rerun()
+
             @st.dialog("Confirm Stop Automation")
             def confirm_stop_automation():
                 st.write("Are you sure you want to stop the looping process?")
@@ -1193,45 +1218,74 @@ with col1:
                 if col_n.button("Cancel", width="stretch"):
                     st.rerun()
 
-            if not show_as_inactive:
-                if st.button("⏹️ Stop Looping Process", width="stretch"):
-                    confirm_stop_automation()
-            else:
-                # Start button disabled if:
-                # 1. Browser is OFF
-                # 2. Manual Submit/Redo is busy
-                # 3. Auto Looping toggle is OFF
-                # 4. Stop was recently requested
-                start_disabled = not browser_active or is_busy or not auto_enabled or st.session_state.auto_stop_requested
-                if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=start_disabled):
-                    # Capture current UI state for automation
-                    current_config = load_config()
-                    current_config["selected_files"] = st.session_state.selected_files
-                    current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
-                    current_config["selected_tool"] = st.session_state.get("tool_selectbox")
-                    current_config["selected_model"] = st.session_state.get("model_selectbox")
-                    current_config["remove_watermark"] = st.session_state.auto_remove_wm
-                    
-                    def trigger_automation():
-                        async def do_start_auto():
-                            add_log("API>> Triggering Automation Start...")
-                            try:
-                                resp = await st.session_state.client.start_automation(
-                                    mode=st.session_state.auto_mode,
-                                    goal=st.session_state.auto_goal,
-                                    config=current_config
-                                )
-                                add_log(f"API>> Start Result: {resp.get('message')}")
-                            except Exception as e:
-                                add_log(f"API ERROR: {e}")
-                        asyncio.run(do_start_auto())
+            btn_col1, btn_col2 = st.columns(2)
 
-                    t = threading.Thread(target=trigger_automation, daemon=True)
-                    add_script_run_ctx(t)
-                    t.start()
-                    # Small delay to let thread initiate the POST before rerun
-                    time.sleep(0.5)
-                    st.rerun()
+            with btn_col1:
+                if not show_as_inactive:
+                    if st.button("⏹️ Stop Looping Process", width="stretch"):
+                        confirm_stop_automation()
+                else:
+                    start_disabled = not browser_active or st.session_state.get("is_busy", False) or not auto_enabled or st.session_state.auto_stop_requested
+                    if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=start_disabled):
+                        current_config = load_config()
+                        current_config["selected_files"] = st.session_state.selected_files
+                        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
+                        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
+                        current_config["selected_model"] = st.session_state.get("model_selectbox")
+                        current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                        
+                        def trigger_automation():
+                            async def do_start_auto():
+                                add_log("API>> Triggering Automation Start...")
+                                try:
+                                    resp = await st.session_state.client.start_automation(
+                                        mode=st.session_state.auto_mode,
+                                        goal=st.session_state.auto_goal,
+                                        config=current_config
+                                    )
+                                    add_log(f"API>> Start Result: {resp.get('message')}")
+                                except Exception as e:
+                                    add_log(f"API ERROR: {e}")
+                            asyncio.run(do_start_auto())
+
+                        t = threading.Thread(target=trigger_automation, daemon=True)
+                        add_script_run_ctx(t)
+                        t.start()
+                        time.sleep(0.5)
+                        st.rerun()
+            
+            with btn_col2:
+                _continue_disabled = not show_as_inactive or history_count == 0 or not browser_active or st.session_state.get("is_busy", False) or not auto_enabled or st.session_state.auto_stop_requested
+                if st.button("⏯️ Continue Session", key="continue_loop_setup", width="stretch", disabled=_continue_disabled):
+                    if is_goal_reached:
+                        show_goal_reached_dialog_setup()
+                    else:
+                        current_config = load_config()
+                        current_config["selected_files"] = st.session_state.selected_files
+                        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
+                        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
+                        current_config["selected_model"] = st.session_state.get("model_selectbox")
+                        current_config["remove_watermark"] = st.session_state.auto_remove_wm
+
+                        def trigger_continue():
+                            async def do_continue_auto():
+                                add_log("API>> Triggering Automation Continue...")
+                                try:
+                                    resp = await st.session_state.client.continue_automation(
+                                        mode=st.session_state.auto_mode,
+                                        goal=st.session_state.auto_goal,
+                                        config=current_config
+                                    )
+                                    add_log(f"API>> Continue Result: {resp.get('message')}")
+                                except Exception as e:
+                                    add_log(f"API ERROR: {e}")
+                            asyncio.run(do_continue_auto())
+
+                        t = threading.Thread(target=trigger_continue, daemon=True)
+                        add_script_run_ctx(t)
+                        t.start()
+                        time.sleep(0.5)
+                        st.rerun()
 
 with col2:
     with st.container(border=True, height=MAIN_HEIGHT):
