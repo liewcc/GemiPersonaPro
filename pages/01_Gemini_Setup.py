@@ -1182,7 +1182,7 @@ with col1:
             def confirm_stop_automation():
                 st.write("Are you sure you want to stop the looping process?")
                 col_y, col_n = st.columns(2)
-                if col_y.button("Yes, Stop", type="primary", use_container_width=True):
+                if col_y.button("Yes, Stop", type="primary", width="stretch"):
                     async def do_stop_auto():
                         add_log("Stopping Automation Loop...")
                         resp = await st.session_state.client.stop_automation()
@@ -1190,7 +1190,7 @@ with col1:
                     asyncio.run(do_stop_auto())
                     st.session_state.auto_stop_requested = True
                     st.rerun()
-                if col_n.button("Cancel", use_container_width=True):
+                if col_n.button("Cancel", width="stretch"):
                     st.rerun()
 
             if not show_as_inactive:

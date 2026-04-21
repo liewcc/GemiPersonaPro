@@ -296,9 +296,10 @@ def show_reject_rate_stats():
     """Renders the stats with 1s auto-refresh if automation is running."""
     render_stats_body_fragment()
 
-@st.dialog("📈 Reject Rate Chart", width="large")
-def show_reject_rate_chart():
-    """Displays a bar chart of the reject rate statistics (Snapshot)."""
+@st.fragment(run_every=1)
+def render_chart_body_fragment():
+    st.markdown("### Performance Trends")
+    
     # 1. Load historical records
     records = []
     if os.path.exists(REJECT_STAT_LOG_PATH):
@@ -307,7 +308,7 @@ def show_reject_rate_chart():
                 records = json.load(_f)
         except: pass
     
-    # 2. Fetch live stats for the snapshot
+    # 2. Fetch live stats
     stats = {}
     is_running = False
     try:
@@ -318,7 +319,7 @@ def show_reject_rate_chart():
     # 3. Clean historical records
     clean_records = [r for r in records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
 
-    # 4. Append live 'Processing' data if running (Snapshot at this moment)
+    # 4. Append live 'Processing' data intelligently
     if is_running:
         total_api_refused = int(stats.get("refusals") or 0)
         total_api_resets = int(stats.get("resets") or 0)
@@ -331,18 +332,54 @@ def show_reject_rate_chart():
         cycle_start_ts = stats.get("current_cycle_start_ts")
         inter_cycle_ts = stats.get("inter_cycle_start_ts")
         filename_display = "Processing..."
-
-        if cycle_start_ts:
-            p_dur = max(0.0, time.time() - float(cycle_start_ts))
-        elif inter_cycle_ts:
-            p_dur = max(0.0, time.time() - float(inter_cycle_ts))
-            filename_display = "Refining Image..."
-        else:
-            p_dur = 0.0
         
+        import time
+        now_ts = time.time()
+        p_dur_live = 0.0
+        
+        if cycle_start_ts:
+            p_dur_live = max(0.0, now_ts - float(cycle_start_ts))
+        elif inter_cycle_ts:
+            p_dur_live = max(0.0, now_ts - float(inter_cycle_ts))
+            filename_display = "Refining Image..."
+            
+        current_cycle_id = cycle_start_ts or inter_cycle_ts or "unknown"
+        state_key = "chart_pending_state"
+        
+        if state_key not in st.session_state:
+            st.session_state[state_key] = {
+                "cycle_id": current_cycle_id,
+                "refused": p_refused,
+                "resets": p_resets,
+                "dur": p_dur_live,
+                "last_seen_time": now_ts
+            }
+            
+        prev_state = st.session_state[state_key]
+        time_since_last_run = now_ts - prev_state.get("last_seen_time", now_ts)
+        
+        # Update frozen duration if: new cycle, stats changed, or dialog was just reopened (> 3s pause)
+        if (prev_state["cycle_id"] != current_cycle_id or 
+            prev_state["refused"] != p_refused or 
+            prev_state["resets"] != p_resets or 
+            time_since_last_run > 3.0):
+            
+            st.session_state[state_key] = {
+                "cycle_id": current_cycle_id,
+                "refused": p_refused,
+                "resets": p_resets,
+                "dur": p_dur_live,
+                "last_seen_time": now_ts
+            }
+        else:
+            # Still running smoothly, just update the heartbeat timestamp
+            st.session_state[state_key]["last_seen_time"] = now_ts
+            
+        p_dur_frozen = st.session_state[state_key]["dur"]
+
         pending_record = {
             "filename": filename_display,
-            "duration_sec": p_dur,
+            "duration_sec": p_dur_frozen, 
             "refused_count": p_refused,
             "reset_count": p_resets
         }
@@ -368,14 +405,47 @@ def show_reject_rate_chart():
     })
     
     # Use filename as index for the X-axis (strip .png extension for cleaner display)
-    df["display_name"] = df["filename"].apply(lambda x: str(x).replace(".png", ""))
-    df.set_index("display_name", inplace=True)
+    df["Filename"] = df["filename"].apply(lambda x: str(x).replace(".png", ""))
+    df.set_index("Filename", inplace=True)
     
-    st.markdown("### Performance Trends (Snapshot)")
-    st.line_chart(df[["Duration (m)", "Refused", "Resets"]])
+    import altair as alt
+    
+    # Format duration as mm:ss for tooltip display
+    df["Duration (m:s)"] = df["duration_sec"].apply(lambda x: f"{int(x // 60):02d}:{int(x % 60):02d}")
+    df_chart = df.reset_index()
+
+    chart = alt.Chart(df_chart).transform_fold(
+        ['Duration (m)', 'Refused', 'Resets'],
+        as_=['Data', 'Value']
+    ).mark_line(
+        point=alt.OverlayMarkDef(opacity=0.01, size=250)
+    ).encode(
+        x=alt.X('Filename:N', title=None, axis=alt.Axis(labelAngle=-45)),
+        y=alt.Y('Value:Q', title=None),
+        color=alt.Color('Data:N', legend=alt.Legend(title=None, orient="bottom", symbolType="stroke", symbolOpacity=1, symbolStrokeWidth=3)),
+        tooltip=[
+            alt.Tooltip('Filename:N', title="Filename"),
+            alt.Tooltip(r'Duration (m\:s):N', title="Duration"),
+            alt.Tooltip('Refused:Q', title="Refused"),
+            alt.Tooltip('Resets:Q', title="Resets")
+        ]
+    ).properties(
+        height=350
+    ).interactive()
+
+    # CRITICAL FIX: We wrap the chart in a rigid Streamlit container.
+    # This CSS lock prevents the dialog from collapsing during any split-second unmounts!
+    with st.container(height=420, border=False):
+        st.altair_chart(chart, width="stretch")
     
     st.markdown("---")
-    st.caption("This chart is a **snapshot** of the moment the dialog was opened. X-axis shows the filename. Y-axis values represent time in **minutes** or count of occurrences.")
+    st.caption("This chart intelligently updates when a new image is successfully downloaded. X-axis shows the filename.")
+
+
+@st.dialog("📈 Reject Rate Chart", width="large")
+def show_reject_rate_chart():
+    """Displays a bar chart of the reject rate statistics."""
+    render_chart_body_fragment()
 
 
 LOOP_CTRL_DEFAULTS = {
@@ -708,7 +778,7 @@ def render_looping_button(location="sidebar"):
         def confirm_stop_automation_dash():
             st.write("Are you sure you want to stop the looping process?")
             col_y, col_n = st.columns(2)
-            if col_y.button("Yes, Stop", type="primary", use_container_width=True, key=f"dash_yes_stop_{location}"):
+            if col_y.button("Yes, Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
                 async def do_stop_auto():
                     add_log("Stopping Automation Loop...")
                     resp = await st.session_state.client.stop_automation()
@@ -717,7 +787,7 @@ def render_looping_button(location="sidebar"):
                 st.session_state.auto_stop_requested = True
                 st.session_state.ui_auto_looping_active = False
                 st.rerun()  # Fragment-scoped: only reruns this fragment, not the whole app
-            if col_n.button("Cancel", use_container_width=True, key=f"dash_no_stop_{location}"):
+            if col_n.button("Cancel", width="stretch", key=f"dash_no_stop_{location}"):
                 st.rerun()
 
         if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
