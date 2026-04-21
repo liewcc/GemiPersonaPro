@@ -217,6 +217,54 @@ async def get_snapshot():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _commit_session_stats_to_table(in_memory_users=None):
+    """Calculates delta from _acct_snapshot, adds to user_login_lookup.json, and updates snapshot."""
+    try:
+        current_user = engine.automation_status.get("current_account_id")
+        if not current_user:
+            from config_utils import load_config
+            cfg = load_config()
+            current_user = cfg.get("active_user")
+        if not current_user:
+            return
+
+        def normalize(val):
+            if not val: return ""
+            return val.split('@')[0].lower().strip()
+
+        snap = getattr(engine, "_acct_snapshot", None) or {"successes": 0, "refusals": 0, "resets": 0}
+        cur = engine.automation_status
+        delta_img = max(0, int(cur.get("successes", 0)) - int(snap.get("successes", 0)))
+        delta_ref = max(0, int(cur.get("refusals", 0)) - int(snap.get("refusals", 0)))
+        delta_rst = max(0, int(cur.get("resets", 0)) - int(snap.get("resets", 0)))
+
+        if delta_img > 0 or delta_ref > 0 or delta_rst > 0:
+            if in_memory_users is not None:
+                users_list = in_memory_users
+            else:
+                from config_utils import load_login_lookup
+                users_list = load_login_lookup()
+
+            for u in users_list:
+                if normalize(u.get("username")) == normalize(current_user):
+                    u["session_images"] = str(int(u.get("session_images") or 0) + delta_img)
+                    u["session_refused"] = str(int(u.get("session_refused") or 0) + delta_ref)
+                    u["session_resets"] = str(int(u.get("session_resets") or 0) + delta_rst)
+                    break
+            
+            if in_memory_users is None:
+                from config_utils import save_login_lookup
+                save_login_lookup(users_list)
+
+        # Always keep snapshot perfectly synced with current global stats
+        engine._acct_snapshot = {
+            "successes": cur.get("successes", 0),
+            "refusals": cur.get("refusals", 0),
+            "resets": cur.get("resets", 0)
+        }
+    except Exception as e:
+        engine._log_debug(f"API>> Error committing session stats to table: {e}")
+
 async def perform_switch_logic(h: bool = None, direction: int = 1, target_username: str = None, reason: str = None):
     """
     Internal logic for profile switching.
@@ -381,18 +429,14 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         if normalize(users[outgoing_index].get("username")) == normalize(target_user.get("username")):
             is_real_switch = False
 
-    # 5a. Record per-account session stats for the outgoing account (delta vs. snapshot)
-    if is_real_switch and 0 <= outgoing_index < len(users) and getattr(engine, "_acct_snapshot", None) is not None:
-        snap = engine._acct_snapshot
-        cur  = engine.automation_status
+    # 5a. Record per-account session stats for the outgoing account (accumulate via delta)
+    _commit_session_stats_to_table(users)
+    if is_real_switch and 0 <= outgoing_index < len(users):
         users[outgoing_index]["last_switched_at"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        users[outgoing_index]["session_images"]   = max(0, int(cur.get("successes", 0)) - int(snap.get("successes", 0)))
-        users[outgoing_index]["session_refused"]  = max(0, int(cur.get("refusals",  0)) - int(snap.get("refusals",  0)))
-        users[outgoing_index]["session_resets"]   = max(0, int(cur.get("resets",    0)) - int(snap.get("resets",    0)))
         print(f"[ENGINE] Session stats for '{users[outgoing_index]['username']}': "
-              f"images={users[outgoing_index]['session_images']}, "
-              f"refused={users[outgoing_index]['session_refused']}, "
-              f"resets={users[outgoing_index]['session_resets']}")
+              f"images={users[outgoing_index].get('session_images', 0)}, "
+              f"refused={users[outgoing_index].get('session_refused', 0)}, "
+              f"resets={users[outgoing_index].get('session_resets', 0)}")
 
     # 5b. Load Target URL for Navigation
     target_url = "https://gemini.google.com/app"
@@ -635,6 +679,9 @@ async def automation_manager(req: AutomationRequest):
                     except Exception as p_err:
                         print(f"[AUTO] Refinement step failed: {p_err}")
 
+            # --- [NEW] Real-time persistence of session stats ---
+            _commit_session_stats_to_table()
+
             # 4b. Loop-Control Threshold Check (applies to success, refused, reset, error, timeout)
             if result.get("status") in ["success", "refused", "reset", "error", "timeout"]:
                 loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
@@ -874,6 +921,18 @@ async def start_automation(req: AutomationRequest):
         "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "initial_user": initial_user
     })
+
+    # --- [NEW] Reset all table stats to 0 at the start of a fresh run ---
+    try:
+        from config_utils import load_login_lookup, save_login_lookup
+        users = load_login_lookup()
+        for u in users:
+            u["session_images"] = "0"
+            u["session_refused"] = "0"
+            u["session_resets"] = "0"
+        save_login_lookup(users)
+    except Exception as e:
+        print(f"[AUTO] Warning: could not reset session stats in lookup table: {e}")
     engine._automation_needs_new_chat = True # Ensure first round starts with New Chat
 
     # Reset per-image reject stat log for the new session
