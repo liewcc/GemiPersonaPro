@@ -47,6 +47,7 @@ Once you've mastered manual actions, let's try a single automated cycle.
 2. **Automation Goal**: In the **GEMINI AUTOMATION** section, you can set the number of loops.
 3. **Run**: Click **"Start Looping Process"**.
 4. **Observe**: Watch the browser perform the full sequence: generation, watermark removal, and saving.
+5. **Pause & Resume**: You can safely click **Stop Looping Process** at any time. When you are ready to resume, click **Continue Session** to pick up exactly where you left off without resetting your session statistics.
 
 ---
 

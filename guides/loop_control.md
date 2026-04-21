@@ -40,6 +40,18 @@ This guide explains the deeper purpose of each control and how to configure them
 - **How it Works**: If the page crashes or requires a refresh too many times for one image download, the system intervenes.
 - **Action**: Switches to a fresh profile to avoid getting stuck in a loop of server-side instability.
 
+## 5. ⏯️ Pausing & Resuming (Continue Session)
+
+**Purpose**: To safely pause a long-running automation session, or recover from an unexpected crash, without losing your current progress metrics.
+
+- **How it Works**: 
+    - During an active session, clicking **Stop Looping Process** will safely halt the automation. 
+    - The **Continue Session** button will then become available.
+    - Clicking it resumes the automation loop right where it left off.
+- **State Hydration**: Even if you completely shut down the application or restart your computer, the engine uses "State Hydration" to rebuild your previous session's statistics (Successes, Refusals, Resets) from the `reject_stat_log.json` log file.
+- **Strategic Benefit**: You can adjust settings (like modifying the Prompt) mid-session, or recover from a network outage, and your Reject Rate Chart will continue uninterrupted instead of resetting to zero.
+- **Goal Protection**: The system prevents you from continuing a session if the originally configured Target Goal has already been reached.
+
 ---
 
 ## ⚙️ Configuration Summary
