@@ -75,7 +75,7 @@ The automation engine now supports dynamically reloading prompts without interru
 - This warning naturally occurs during full-app reruns when periodic `@st.fragment` components are destroyed before their timers fire.
 
 ### 7. Precise Reject Rate Duration Tracking & UI Stabilization
-- **Fixed "Processing..." Duration Offset**: Resolved an issue where the live "Processing..." duration would reset or start with a 2-minute offset. The system now uses raw float timestamps (	ime.time()) passed directly from the engine to ensure 100% accuracy and consistency with completed records.
+- **Fixed "Processing..." Duration Offset**: Resolved an issue where the live "Processing..." duration would reset or start with a 2-minute offset. The system now uses raw float timestamps (`time.time()`) passed directly from the engine to ensure 100% accuracy and consistency with completed records.
 - **Refinement Phase Monitoring**: The dashboard now distinguishes between the **Image Generation** phase ("Processing...") and the **Watermark Removal** phase ("Refining Image..."), tracking the time spent in each independently.
 - **Stats Cache & UI Stability**: Implemented a caching mechanism for automation stats. This prevents the "Summary" table header from flashing momentarily when the API times out during heavy CPU-bound watermark processing (LaMa), ensuring a smooth, persistent monitoring experience.
 
@@ -92,7 +92,7 @@ The automation engine now supports dynamically reloading prompts without interru
 
 
 ### 10. Dashboard Layout Enhancements
-- Restructured the top layout of the Dashboard page ( 0_Dashboard.py) for a cleaner, unified presentation.
+- Restructured the top layout of the Dashboard page (`00_Dashboard.py`) for a cleaner, unified presentation.
 - The **Account/Browser Status** and the **Automation Stats** (RUNNING | Cycles) are now displayed horizontally side-by-side.
 - Upgraded the text-based Account status into a styled container that precisely matches the aesthetics (height, border, background color) of the Automation Stats box.
 - Rebalanced the layout of the quick-action buttons below the status row to distribute evenly across the screen.
