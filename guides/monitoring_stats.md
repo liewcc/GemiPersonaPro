@@ -24,7 +24,16 @@ If automation is running, this dialog **auto-refreshes every 1 second**. It show
 
 ---
 
-## 3. Reject Rate Stats Chart
+## 3. Account Health Analysis (Loading Performance)
+Located on the **System Config** page, this tool tracks how quickly each account loads the Gemini environment.
+
+- **Visual Trends**: Use the **Plot Graph** button to visualize loading speed trends over time. 
+- **Identify Bottlenecks**: Significant spikes in loading duration (Health) can indicate network issues or account-specific throttling.
+- **Artifact Tracking**: The graph explicitly labels which loading events resulted in successful image downloads, allowing you to correlate performance with output.
+
+---
+
+## 4. Reject Rate Stats Chart
 Click the **"📈 Stats Chart"** button to open a visual representation of your performance data.
 
 ### Performance Trends
@@ -39,7 +48,7 @@ This chart is essential for identifying patterns, such as specific prompts or ti
 
 ---
 
-## 4. Key Metrics Explained
+## 5. Key Metrics Explained
 
 ### Refusals (Gemini Block)
 Occurs when Gemini returns a "I can't help with that" or "Safety Policy" response. 
@@ -53,7 +62,7 @@ Occurs when the browser tab hangs, the URL deviates significantly, or the "Gener
 
 ---
 
-## 4. Performance Summary
+## 6. Performance Summary
 When automation stops, the dialog displays a final summary:
 - **Total Images**: Count of successfully saved assets.
 - **Total Time**: Total wall-clock time spent.
@@ -61,7 +70,7 @@ When automation stops, the dialog displays a final summary:
 
 ---
 
-## 5. Background Image Notifier
+## 7. Background Image Notifier
 GemiPersonaPro natively supports a silent **Background Image Notifier** (`image_notifier.py` / `start_notifier.vbs`) that runs as an **independent program** in your Windows System Tray.
 - **Independent Operation**: Because it runs entirely independent from the Streamlit UI, **it will continue to operate even after you close the Streamlit browser window**. This is designed so you can step away from the setup page and still receive updates.
 - **Function**: It monitors your configured save directory and pops up a native Windows UI notification (including your currently active profile state) whenever new images are successfully downloaded.

@@ -54,4 +54,18 @@ This table manages your account rotation and tracks individual session performan
 - **Reset Session Stats**: Wipes all historical session data (`Switched At`, `Images`, `Refused`, `Resets`) for all accounts to start tracking with a clean slate.
 
 ---
+
+## 5. Account Health Analysis
+A specialized diagnostic tool for monitoring **Nano Banana 2** loading performance across different accounts.
+
+- **Full Loading History (All Events)**: Aggregates every recorded loading event from `engine.log` into a single chronological view. Useful for auditing system-wide stability.
+- **Latest Summary**: Shows the most recent loading performance (Health/Duration) for each unique account found in the logs.
+- **Detailed History**: Allows you to drill down into a specific account's historical performance.
+- **Performance Graph**:
+    - Toggle **Plot Graph** to see a bar chart of loading durations.
+    - **Success (Green)**: Indicates images were successfully downloaded during that load.
+    - **Normal (Purple)**: Indicates a standard successful load without an immediate download.
+    - **Tooltips**: Hover over any bar to see the exact timestamp, account, and the specific **Artifact** (filename) downloaded.
+
+---
 *Tip: Credential edits (usernames, bypass, stats) are now saved **instantly** to disk. Use the **Set Active Account** button only when you want to change which profile the engine is currently using.*
