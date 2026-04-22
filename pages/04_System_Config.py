@@ -517,7 +517,7 @@ def _render_health_content(view_mode, login_data):
                     key=f"health_detailed_{target_acc}"
                 )
 
-elif menu_selection == "Account Health Analysis":
+if menu_selection == "Account Health Analysis":
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
     with st.container(border=True):
         # Initial parse to get account list from logs
