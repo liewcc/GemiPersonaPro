@@ -34,6 +34,9 @@ def on_change_watchdog_delay():
 def on_change_quota_cooldown():
     save_config({"quota_cooldown_hours": st.session_state.cfg_quota_cooldown_hrs})
 
+def on_change_health_graph():
+    save_config({"health_graph_type": st.session_state.cfg_health_graph_type})
+
 # --- Health Analysis Logic ---
 def parse_account_health(target_account=None, login_data=None):
     LOG_PATH = "engine.log"
@@ -227,6 +230,7 @@ st.session_state.cfg_headless = config.get("headless", False)
 st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
 st.session_state.cfg_quota_cooldown_hrs = config.get("quota_cooldown_hours", 24)
+st.session_state.cfg_health_graph_type = config.get("health_graph_type", "Loading Duration")
 
 st.session_state.login_rows = list(login_data)
 st.session_state._login_reload = False
@@ -369,7 +373,7 @@ if menu_selection == "Settings & Credentials":
                     save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
 
 @st.fragment(run_every=5)
-def _render_health_content(view_mode, login_data):
+def _render_health_content(view_mode, login_data, graph_type):
     """Auto-refreshes every 5 s independently; only this content area reruns."""
     _is_full = view_mode == "Full Loading History (All Events)"
     _is_active = view_mode == "Detailed History: Active Account"
@@ -386,22 +390,32 @@ def _render_health_content(view_mode, login_data):
             if st.session_state.show_health_graph:
                 st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>All Events</b></p>", unsafe_allow_html=True)
                 chart_df = pd.DataFrame(all_detailed)
-                chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                chart_df["variant"] = chart_df["session_index"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
-                light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
-                legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
-                legend_colors = [base_colors['Success'], base_colors['Normal'], light_colors['Success'], light_colors['Normal']]
-                chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                chart = alt.Chart(chart_df).mark_bar().encode(
-                    x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
-                    y=alt.Y('Seconds:Q', title=None),
-                    color=alt.Color('legend:N',
-                                    scale=alt.Scale(domain=legend_labels, range=legend_colors),
-                                    legend=alt.Legend(title=None, orient='bottom')),
-                    tooltip=['time', 'account', 'health', 'artifact', 'status']
-                ).properties(height=400)
-                st.altair_chart(chart, width="stretch")
+                if graph_type == "Loading Duration":
+                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                    chart_df["variant"] = chart_df["session_index"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                    base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                    light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                    legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                    legend_colors = [base_colors['Success'], base_colors['Normal'], light_colors['Success'], light_colors['Normal']]
+                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    chart = alt.Chart(chart_df).mark_bar().encode(
+                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                        y=alt.Y('Seconds:Q', title=None),
+                        color=alt.Color('legend:N',
+                                        scale=alt.Scale(domain=legend_labels, range=legend_colors),
+                                        legend=alt.Legend(title=None, orient='bottom')),
+                        tooltip=['time', 'account', 'health', 'artifact', 'status']
+                    ).properties(height=400)
+                    st.altair_chart(chart, width="stretch")
+                else: # Reject Rates
+                    status_colors = alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#ff4b4b'])
+                    chart = alt.Chart(chart_df).mark_bar().encode(
+                        x=alt.X('account:N', title="Account", sort='-y'),
+                        y=alt.Y('count():Q', title="Event Count"),
+                        color=alt.Color('status:N', scale=status_colors, legend=alt.Legend(title="Status", orient='bottom')),
+                        tooltip=['account', 'status', 'count()']
+                    ).properties(height=400)
+                    st.altair_chart(chart, width="stretch")
             else:
                 st.data_editor(
                     pd.DataFrame(all_detailed),
@@ -428,21 +442,31 @@ def _render_health_content(view_mode, login_data):
                 if st.session_state.show_health_graph:
                     st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{_active_user}</b> (Active Account)</p>", unsafe_allow_html=True)
                     _chart_df = pd.DataFrame(_active_detailed)
-                    _chart_df["Seconds"] = _chart_df["health"].str.replace("s", "").astype(float)
-                    _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
-                    _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                    _bc = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
-                    _lc = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
-                    _ll = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
-                    _lr = [_bc['Success'], _bc['Normal'], _lc['Success'], _lc['Normal']]
-                    _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                    _chart = alt.Chart(_chart_df).mark_bar().encode(
-                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
-                        y=alt.Y('Seconds:Q', title=None),
-                        color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom')),
-                        tooltip=['time', 'account', 'health', 'artifact', 'status']
-                    ).properties(height=400)
-                    st.altair_chart(_chart, width="stretch")
+                    if graph_type == "Loading Duration":
+                        _chart_df["Seconds"] = _chart_df["health"].str.replace("s", "").astype(float)
+                        _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                        _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                        _bc = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                        _lc = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                        _ll = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                        _lr = [_bc['Success'], _bc['Normal'], _lc['Success'], _lc['Normal']]
+                        _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                        _chart = alt.Chart(_chart_df).mark_bar().encode(
+                            x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                            y=alt.Y('Seconds:Q', title=None),
+                            color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom')),
+                            tooltip=['time', 'account', 'health', 'artifact', 'status']
+                        ).properties(height=400)
+                        st.altair_chart(_chart, width="stretch")
+                    else: # Reject Rates Donut
+                        status_colors = alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#ff4b4b'])
+                        agg_df = _chart_df.groupby('status').size().reset_index(name='count')
+                        _chart = alt.Chart(agg_df).mark_arc(innerRadius=60).encode(
+                            theta=alt.Theta(field="count", type="quantitative"),
+                            color=alt.Color(field="status", type="nominal", scale=status_colors, legend=alt.Legend(title="Status", orient='bottom')),
+                            tooltip=['status', 'count']
+                        ).properties(height=400)
+                        st.altair_chart(_chart, width="stretch")
                 else:
                     st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{_active_user}</b> (Active Account).</p>", unsafe_allow_html=True)
                     st.data_editor(
@@ -485,23 +509,33 @@ def _render_health_content(view_mode, login_data):
             if st.session_state.show_health_graph:
                 st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{target_acc}</b></p>", unsafe_allow_html=True)
                 chart_df = pd.DataFrame(detailed_list)
-                chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
-                chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
-                light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
-                legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
-                legend_colors = [base_colors['Success'], base_colors['Normal'], light_colors['Success'], light_colors['Normal']]
-                chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                chart = alt.Chart(chart_df).mark_bar().encode(
-                    x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
-                    y=alt.Y('Seconds:Q', title=None),
-                    color=alt.Color('legend:N',
-                                    scale=alt.Scale(domain=legend_labels, range=legend_colors),
-                                    legend=alt.Legend(title=None, orient='bottom')),
-                    tooltip=['time', 'account', 'health', 'artifact', 'status']
-                ).properties(height=400)
-                st.altair_chart(chart, width="stretch")
+                if graph_type == "Loading Duration":
+                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                    chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                    chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                    base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                    light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                    legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                    legend_colors = [base_colors['Success'], base_colors['Normal'], light_colors['Success'], light_colors['Normal']]
+                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    chart = alt.Chart(chart_df).mark_bar().encode(
+                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                        y=alt.Y('Seconds:Q', title=None),
+                        color=alt.Color('legend:N',
+                                        scale=alt.Scale(domain=legend_labels, range=legend_colors),
+                                        legend=alt.Legend(title=None, orient='bottom')),
+                        tooltip=['time', 'account', 'health', 'artifact', 'status']
+                    ).properties(height=400)
+                    st.altair_chart(chart, width="stretch")
+                else: # Reject Rates Donut
+                    status_colors = alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#ff4b4b'])
+                    agg_df = chart_df.groupby('status').size().reset_index(name='count')
+                    chart = alt.Chart(agg_df).mark_arc(innerRadius=60).encode(
+                        theta=alt.Theta(field="count", type="quantitative"),
+                        color=alt.Color(field="status", type="nominal", scale=status_colors, legend=alt.Legend(title="Status", orient='bottom')),
+                        tooltip=['status', 'count']
+                    ).properties(height=400)
+                    st.altair_chart(chart, width="stretch")
             else:
                 st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
                 st.data_editor(
@@ -569,4 +603,10 @@ if menu_selection == "Account Health Analysis":
                 # Placeholder to keep layout consistent
                 st.button("Plot Graph", icon="📊", width="stretch", disabled=True)
 
-        _render_health_content(view_mode, login_data)
+        if st.session_state.show_health_graph and not is_latest_summary:
+            st.markdown("<div style='margin-bottom: 5px;'></div>", unsafe_allow_html=True)
+            _, col_rad = st.columns([1.5, 1])
+            with col_rad:
+                st.radio("Graph Mode", ["Loading Duration", "Reject Rates"], horizontal=True, key="cfg_health_graph_type", on_change=on_change_health_graph, label_visibility="collapsed")
+
+        _render_health_content(view_mode, login_data, st.session_state.get("cfg_health_graph_type", "Loading Duration"))
