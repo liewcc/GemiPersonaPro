@@ -57,8 +57,8 @@ def parse_account_health(target_account=None, login_data=None):
             acc_id = None
             if "Re-login detected for" in line:
                 acc_id = line.split("Re-login detected for")[1].split()[0].strip().rstrip('.:')
-            elif "Loop Control: switched to" in line:
-                acc_id = line.split("Loop Control: switched to")[1].split()[0].strip().rstrip('.:')
+            elif "switched to" in line:
+                acc_id = line.split("switched to")[1].split()[0].strip().rstrip('.:')
             elif "current_account_id" in line:
                 match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
                 if match: acc_id = match.group(1)
@@ -75,8 +75,8 @@ def parse_account_health(target_account=None, login_data=None):
             acc_id = None
             if "Re-login detected for" in line:
                 acc_id = line.split("Re-login detected for")[1].split()[0].strip().rstrip('.:')
-            elif "Loop Control: switched to" in line:
-                acc_id = line.split("Loop Control: switched to")[1].split()[0].strip().rstrip('.:')
+            elif "switched to" in line:
+                acc_id = line.split("switched to")[1].split()[0].strip().rstrip('.:')
             elif "current_account_id" in line:
                 match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
                 if match: acc_id = match.group(1)
