@@ -279,7 +279,15 @@ if menu_selection == "Settings & Credentials":
         with st.container(border=True):
             quota_phrases = config.get("quota_full", [])
             quota_df = pd.DataFrame([{"phrase": p} for p in quota_phrases])
-            edited_quota_df = st.data_editor(quota_df, column_config={"phrase": st.column_config.TextColumn("Identification Phrase", width="stretch")}, num_rows="dynamic", width="stretch", hide_index=True, height=415, key="quota_editor")
+            edited_quota_df = st.data_editor(
+                quota_df, 
+                column_config={"phrase": st.column_config.TextColumn("Identification Phrase")}, 
+                num_rows="dynamic", 
+                width="stretch", 
+                hide_index=True, 
+                height=415, 
+                key="quota_editor"
+            )
             st.markdown("<div style='height: 85px;'></div>", unsafe_allow_html=True)
             if st.button("Save Quota Phrases", icon="📝", width='stretch'):
                 new_phrases = [p.strip() for p in edited_quota_df["phrase"].tolist() if p and p.strip()]
@@ -314,7 +322,26 @@ if menu_selection == "Settings & Credentials":
             editor_data = [{"active": r.get("active", False), "bypass": r.get("bypass", False), "username": r.get("username", ""), "auto_delete": r.get("auto_delete", False), "delete_range": r.get("delete_range", "Last hour"), "quota_full": r.get("quota_full", ""), "last_switched_at": r.get("last_switched_at", ""), "session_images": r.get("session_images", ""), "session_refused": r.get("session_refused", ""), "session_resets": r.get("session_resets", "")} for r in rows]
             editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
 
-            edited_df = st.data_editor(editor_df, column_config={"active": st.column_config.CheckboxColumn("Active", disabled=True, width="small"), "bypass": st.column_config.CheckboxColumn("Bypass", width="small"), "username": st.column_config.TextColumn("Username", width="medium"), "auto_delete": st.column_config.CheckboxColumn("Auto Delete", width="small"), "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], width="small"), "quota_full": st.column_config.TextColumn("Quota Full At", width="stretch"), "last_switched_at": st.column_config.TextColumn("Switched At", width="medium"), "session_images": st.column_config.NumberColumn("Images", width="small"), "session_refused": st.column_config.NumberColumn("Refused", width="small"), "session_resets": st.column_config.NumberColumn("Resets", width="small")}, num_rows="dynamic", width="stretch", hide_index=True, height=430, key="login_editor")
+            edited_df = st.data_editor(
+                editor_df, 
+                column_config={
+                    "active": st.column_config.CheckboxColumn("Active", disabled=True, width="small"), 
+                    "bypass": st.column_config.CheckboxColumn("Bypass", width="small"), 
+                    "username": st.column_config.TextColumn("Username"), 
+                    "auto_delete": st.column_config.CheckboxColumn("Auto Delete", width="small"), 
+                    "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], width="small"), 
+                    "quota_full": st.column_config.TextColumn("Quota Full At"), 
+                    "last_switched_at": st.column_config.TextColumn("Switched At"), 
+                    "session_images": st.column_config.NumberColumn("Images", width="small"), 
+                    "session_refused": st.column_config.NumberColumn("Refused", width="small"), 
+                    "session_resets": st.column_config.NumberColumn("Resets", width="small")
+                }, 
+                num_rows="dynamic", 
+                width="stretch", 
+                hide_index=True, 
+                height=430, 
+                key="login_editor"
+            )
 
             _INSTANT_COLS = ["bypass", "auto_delete", "delete_range", "username", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"]
             if not editor_df.empty and not edited_df.empty and len(editor_df) == len(edited_df):
@@ -375,7 +402,7 @@ elif menu_selection == "Account Health Analysis":
         
         # Initialize graph toggle state if not exists
         if "show_health_graph" not in st.session_state:
-            st.session_state.show_health_graph = False
+            st.session_state.show_health_graph = True
 
         with col_btn1:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
@@ -428,16 +455,16 @@ elif menu_selection == "Account Health Analysis":
                         tooltip=['time', 'account', 'health', 'artifact', 'status']
                     ).properties(height=400)
                     
-                    st.altair_chart(chart, width='stretch')
+                    st.altair_chart(chart, width="stretch")
                 else:
                     st.data_editor(
                         pd.DataFrame(all_detailed),
                         column_config={
-                            "account": st.column_config.TextColumn("Account", width="medium"),
-                            "time": st.column_config.TextColumn("Time", width="medium"),
-                            "health": st.column_config.TextColumn("Health", width="small"),
-                            "artifact": st.column_config.TextColumn("Artifact", width="stretch"),
-                            "status": st.column_config.TextColumn("Status", width="small")
+                            "account": st.column_config.TextColumn("Account"),
+                            "time": st.column_config.TextColumn("Time"),
+                            "health": st.column_config.TextColumn("Health"),
+                            "artifact": st.column_config.TextColumn("Artifact"),
+                            "status": st.column_config.TextColumn("Status")
                         },
                         disabled=True,
                         width="stretch",
@@ -453,11 +480,11 @@ elif menu_selection == "Account Health Analysis":
                 st.data_editor(
                     pd.DataFrame(summary_all),
                     column_config={
-                        "account": st.column_config.TextColumn("Account", width="medium"),
-                        "time": st.column_config.TextColumn("Time", width="medium"),
-                        "health": st.column_config.TextColumn("Health", width="small"),
-                        "artifact": st.column_config.TextColumn("Artifact", help="Last successful image filename", width="stretch"),
-                        "status": st.column_config.TextColumn("Status", width="small")
+                        "account": st.column_config.TextColumn("Account"),
+                        "time": st.column_config.TextColumn("Time"),
+                        "health": st.column_config.TextColumn("Health"),
+                        "artifact": st.column_config.TextColumn("Artifact", help="Last successful image filename"),
+                        "status": st.column_config.TextColumn("Status")
                     },
                     disabled=True,
                     width="stretch",
@@ -502,17 +529,17 @@ elif menu_selection == "Account Health Analysis":
                         tooltip=['time', 'account', 'health', 'artifact', 'status']
                     ).properties(height=400)
                     
-                    st.altair_chart(chart, width='stretch')
+                    st.altair_chart(chart, width="stretch")
                 else:
                     st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
                     st.data_editor(
                         pd.DataFrame(detailed_list),
                         column_config={
-                            "account": st.column_config.TextColumn("Account", width="medium"),
-                            "time": st.column_config.TextColumn("Time", width="medium"),
-                            "health": st.column_config.TextColumn("Health", width="small"),
-                            "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename", width="stretch"),
-                            "status": st.column_config.TextColumn("Status", width="small")
+                            "account": st.column_config.TextColumn("Account"),
+                            "time": st.column_config.TextColumn("Time"),
+                            "health": st.column_config.TextColumn("Health"),
+                            "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename"),
+                            "status": st.column_config.TextColumn("Status")
                         },
                         disabled=True,
                         width="stretch",
