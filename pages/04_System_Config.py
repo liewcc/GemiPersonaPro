@@ -392,13 +392,14 @@ elif menu_selection == "Account Health Analysis":
         with col_sel:
             view_mode = st.selectbox(
                 "Select View Mode",
-                options=["Full Loading History (All Events)", "Latest Summary (All Accounts)"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs],
+                options=["Full Loading History (All Events)", "Detailed History: Active Account", "Latest Summary (All Accounts)"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs],
                 help="Choose between a complete history of all loading events, a summary of all accounts, or detailed history for a specific account."
             )
         
         is_full_history = view_mode == "Full Loading History (All Events)"
+        is_active_account = view_mode == "Detailed History: Active Account"
         is_latest_summary = view_mode == "Latest Summary (All Accounts)"
-        is_detailed = not (is_full_history or is_latest_summary)
+        is_detailed = not (is_full_history or is_active_account or is_latest_summary)
         
         # Initialize graph toggle state if not exists
         if "show_health_graph" not in st.session_state:
@@ -411,7 +412,7 @@ elif menu_selection == "Account Health Analysis":
         
         with col_btn2:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if is_detailed or is_full_history:
+            if is_detailed or is_full_history or is_active_account:
                 btn_label = "Show Table" if st.session_state.show_health_graph else "Plot Graph"
                 btn_icon = "📋" if st.session_state.show_health_graph else "📊"
                 if st.button(btn_label, icon=btn_icon, width="stretch", type="secondary"):
@@ -472,6 +473,53 @@ elif menu_selection == "Account Health Analysis":
                         height=450,
                         key="health_full_history_table"
                     )
+        elif is_active_account:
+            _active_user = next((u.get("username", "") for u in login_data if u.get("active")), None)
+            if not _active_user:
+                st.info("No active account is currently set.")
+            else:
+                _active_acc = _active_user.lower()
+                _, _active_detailed, _ = parse_account_health(target_account=_active_acc, login_data=login_data)
+                if not _active_detailed:
+                    st.info(f"No detailed records found for active account: {_active_user}.")
+                else:
+                    if st.session_state.show_health_graph:
+                        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{_active_user}</b> (Active Account)</p>", unsafe_allow_html=True)
+                        _chart_df = pd.DataFrame(_active_detailed)
+                        _chart_df["Seconds"] = _chart_df["health"].str.replace("s", "").astype(float)
+                        _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                        _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                        _base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                        _light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                        _legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                        _legend_colors = [_base_colors['Success'], _base_colors['Normal'], _light_colors['Success'], _light_colors['Normal']]
+                        _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                        _chart = alt.Chart(_chart_df).mark_bar().encode(
+                            x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                            y=alt.Y('Seconds:Q', title=None),
+                            color=alt.Color('legend:N',
+                                            scale=alt.Scale(domain=_legend_labels, range=_legend_colors),
+                                            legend=alt.Legend(title=None, orient='bottom')),
+                            tooltip=['time', 'account', 'health', 'artifact', 'status']
+                        ).properties(height=400)
+                        st.altair_chart(_chart, width="stretch")
+                    else:
+                        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{_active_user}</b> (Active Account).</p>", unsafe_allow_html=True)
+                        st.data_editor(
+                            pd.DataFrame(_active_detailed),
+                            column_config={
+                                "account": st.column_config.TextColumn("Account"),
+                                "time": st.column_config.TextColumn("Time"),
+                                "health": st.column_config.TextColumn("Health"),
+                                "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename"),
+                                "status": st.column_config.TextColumn("Status")
+                            },
+                            disabled=True,
+                            width="stretch",
+                            hide_index=True,
+                            height=450,
+                            key="health_active_account_table"
+                        )
         elif is_latest_summary:
             st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
             if not summary_all:
