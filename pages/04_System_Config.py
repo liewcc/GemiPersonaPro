@@ -330,8 +330,8 @@ if menu_selection == "Settings & Credentials":
                     "username": st.column_config.TextColumn("Username"), 
                     "auto_delete": st.column_config.CheckboxColumn("Auto Delete", width="small"), 
                     "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], width="small"), 
-                    "quota_full": st.column_config.TextColumn("Quota Full At"), 
-                    "last_switched_at": st.column_config.TextColumn("Switched At"), 
+                    "quota_full": st.column_config.TextColumn("Quota Full At", width=125), 
+                    "last_switched_at": st.column_config.TextColumn("Switched At", width=125), 
                     "session_images": st.column_config.NumberColumn("Images", width="small"), 
                     "session_refused": st.column_config.NumberColumn("Refused", width="small"), 
                     "session_resets": st.column_config.NumberColumn("Resets", width="small")
