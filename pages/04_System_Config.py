@@ -217,8 +217,6 @@ def parse_account_health(target_account=None, login_data=None):
 with st.sidebar:
     st.markdown("<p style='font-weight: bold; color: #a0a0ff; margin-bottom: 10px;'>SYSTEM NAVIGATION</p>", unsafe_allow_html=True)
     menu_selection = st.radio("Select Section", ["Settings & Credentials", "Account Health Analysis"], label_visibility="collapsed")
-    st.markdown("---")
-    st.info("Configuration and monitoring tools.")
 
 # --- Main Logic ---
 config = load_config()
