@@ -368,6 +368,155 @@ if menu_selection == "Settings & Credentials":
                     for r in rows: r["last_switched_at"] = ""; r["session_images"] = r["session_refused"] = r["session_resets"] = ""
                     save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
 
+@st.fragment(run_every=5)
+def _render_health_content(view_mode, login_data):
+    """Auto-refreshes every 5 s independently; only this content area reruns."""
+    _is_full = view_mode == "Full Loading History (All Events)"
+    _is_active = view_mode == "Detailed History: Active Account"
+    _is_summary = view_mode == "Latest Summary (All Accounts)"
+
+    st.markdown("---")
+
+    if _is_full:
+        st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing every recorded loading event in chronological order (latest first).</p>", unsafe_allow_html=True)
+        _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
+        if not all_detailed:
+            st.info("No loading records found in engine.log.")
+        else:
+            if st.session_state.show_health_graph:
+                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>All Events</b></p>", unsafe_allow_html=True)
+                chart_df = pd.DataFrame(all_detailed)
+                chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                chart_df["variant"] = chart_df["session_index"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                legend_colors = [base_colors['Success'], base_colors['Normal'], light_colors['Success'], light_colors['Normal']]
+                chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                chart = alt.Chart(chart_df).mark_bar().encode(
+                    x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                    y=alt.Y('Seconds:Q', title=None),
+                    color=alt.Color('legend:N',
+                                    scale=alt.Scale(domain=legend_labels, range=legend_colors),
+                                    legend=alt.Legend(title=None, orient='bottom')),
+                    tooltip=['time', 'account', 'health', 'artifact', 'status']
+                ).properties(height=400)
+                st.altair_chart(chart, width="stretch")
+            else:
+                st.data_editor(
+                    pd.DataFrame(all_detailed),
+                    column_config={
+                        "account": st.column_config.TextColumn("Account"),
+                        "time": st.column_config.TextColumn("Time"),
+                        "health": st.column_config.TextColumn("Health"),
+                        "artifact": st.column_config.TextColumn("Artifact"),
+                        "status": st.column_config.TextColumn("Status")
+                    },
+                    disabled=True, width="stretch", hide_index=True, height=450,
+                    key="health_full_history_table"
+                )
+    elif _is_active:
+        _active_user = next((u.get("username", "") for u in login_data if u.get("active")), None)
+        if not _active_user:
+            st.info("No active account is currently set.")
+        else:
+            _active_acc = _active_user.lower()
+            _, _active_detailed, _ = parse_account_health(target_account=_active_acc, login_data=login_data)
+            if not _active_detailed:
+                st.info(f"No detailed records found for active account: {_active_user}.")
+            else:
+                if st.session_state.show_health_graph:
+                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{_active_user}</b> (Active Account)</p>", unsafe_allow_html=True)
+                    _chart_df = pd.DataFrame(_active_detailed)
+                    _chart_df["Seconds"] = _chart_df["health"].str.replace("s", "").astype(float)
+                    _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                    _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                    _bc = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                    _lc = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                    _ll = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                    _lr = [_bc['Success'], _bc['Normal'], _lc['Success'], _lc['Normal']]
+                    _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    _chart = alt.Chart(_chart_df).mark_bar().encode(
+                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                        y=alt.Y('Seconds:Q', title=None),
+                        color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom')),
+                        tooltip=['time', 'account', 'health', 'artifact', 'status']
+                    ).properties(height=400)
+                    st.altair_chart(_chart, width="stretch")
+                else:
+                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{_active_user}</b> (Active Account).</p>", unsafe_allow_html=True)
+                    st.data_editor(
+                        pd.DataFrame(_active_detailed),
+                        column_config={
+                            "account": st.column_config.TextColumn("Account"),
+                            "time": st.column_config.TextColumn("Time"),
+                            "health": st.column_config.TextColumn("Health"),
+                            "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename"),
+                            "status": st.column_config.TextColumn("Status")
+                        },
+                        disabled=True, width="stretch", hide_index=True, height=450,
+                        key="health_active_account_table"
+                    )
+    elif _is_summary:
+        _summary_all, _, _ = parse_account_health(login_data=login_data)
+        st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
+        if not _summary_all:
+            st.info("No loading records found in engine.log.")
+        else:
+            st.data_editor(
+                pd.DataFrame(_summary_all),
+                column_config={
+                    "account": st.column_config.TextColumn("Account"),
+                    "time": st.column_config.TextColumn("Time"),
+                    "health": st.column_config.TextColumn("Health"),
+                    "artifact": st.column_config.TextColumn("Artifact", help="Last successful image filename"),
+                    "status": st.column_config.TextColumn("Status")
+                },
+                disabled=True, width="stretch", hide_index=True, height=450,
+                key="health_summary_table"
+            )
+    else:
+        # Detailed mode for a specific account
+        target_acc = view_mode.replace("Detailed History: ", "")
+        _, detailed_list, _ = parse_account_health(target_account=target_acc, login_data=login_data)
+        if not detailed_list:
+            st.info(f"No detailed records found for {target_acc}.")
+        else:
+            if st.session_state.show_health_graph:
+                st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{target_acc}</b></p>", unsafe_allow_html=True)
+                chart_df = pd.DataFrame(detailed_list)
+                chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                legend_colors = [base_colors['Success'], base_colors['Normal'], light_colors['Success'], light_colors['Normal']]
+                chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                chart = alt.Chart(chart_df).mark_bar().encode(
+                    x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                    y=alt.Y('Seconds:Q', title=None),
+                    color=alt.Color('legend:N',
+                                    scale=alt.Scale(domain=legend_labels, range=legend_colors),
+                                    legend=alt.Legend(title=None, orient='bottom')),
+                    tooltip=['time', 'account', 'health', 'artifact', 'status']
+                ).properties(height=400)
+                st.altair_chart(chart, width="stretch")
+            else:
+                st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
+                st.data_editor(
+                    pd.DataFrame(detailed_list),
+                    column_config={
+                        "account": st.column_config.TextColumn("Account"),
+                        "time": st.column_config.TextColumn("Time"),
+                        "health": st.column_config.TextColumn("Health"),
+                        "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename"),
+                        "status": st.column_config.TextColumn("Status")
+                    },
+                    disabled=True, width="stretch", hide_index=True, height=450,
+                    key=f"health_detailed_{target_acc}"
+                )
+
 elif menu_selection == "Account Health Analysis":
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
     with st.container(border=True):
@@ -420,176 +569,4 @@ elif menu_selection == "Account Health Analysis":
                 # Placeholder to keep layout consistent
                 st.button("Plot Graph", icon="📊", width="stretch", disabled=True)
 
-        st.markdown("---")
-        
-        if is_full_history:
-            st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing every recorded loading event in chronological order (latest first).</p>", unsafe_allow_html=True)
-            _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
-            if not all_detailed:
-                st.info("No loading records found in engine.log.")
-            else:
-                if st.session_state.show_health_graph:
-                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>All Events</b></p>", unsafe_allow_html=True)
-                    chart_df = pd.DataFrame(all_detailed)
-                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                    
-                    # In All Events view, we use the absolute session_index to alternate colors on every account switch
-                    chart_df["variant"] = chart_df["session_index"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-
-                    # Color definitions
-                    base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
-                    light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
-                    legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
-                    legend_colors = [base_colors['Success'], base_colors['Normal'],
-                                     light_colors['Success'], light_colors['Normal']]
-
-                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                    
-                    chart = alt.Chart(chart_df).mark_bar().encode(
-                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
-                        y=alt.Y('Seconds:Q', title=None),
-                        color=alt.Color('legend:N', 
-                                        scale=alt.Scale(domain=legend_labels, range=legend_colors), 
-                                        legend=alt.Legend(title=None, orient='bottom')),
-                        tooltip=['time', 'account', 'health', 'artifact', 'status']
-                    ).properties(height=400)
-                    
-                    st.altair_chart(chart, width="stretch")
-                else:
-                    st.data_editor(
-                        pd.DataFrame(all_detailed),
-                        column_config={
-                            "account": st.column_config.TextColumn("Account"),
-                            "time": st.column_config.TextColumn("Time"),
-                            "health": st.column_config.TextColumn("Health"),
-                            "artifact": st.column_config.TextColumn("Artifact"),
-                            "status": st.column_config.TextColumn("Status")
-                        },
-                        disabled=True,
-                        width="stretch",
-                        hide_index=True,
-                        height=450,
-                        key="health_full_history_table"
-                    )
-        elif is_active_account:
-            _active_user = next((u.get("username", "") for u in login_data if u.get("active")), None)
-            if not _active_user:
-                st.info("No active account is currently set.")
-            else:
-                _active_acc = _active_user.lower()
-                _, _active_detailed, _ = parse_account_health(target_account=_active_acc, login_data=login_data)
-                if not _active_detailed:
-                    st.info(f"No detailed records found for active account: {_active_user}.")
-                else:
-                    if st.session_state.show_health_graph:
-                        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{_active_user}</b> (Active Account)</p>", unsafe_allow_html=True)
-                        _chart_df = pd.DataFrame(_active_detailed)
-                        _chart_df["Seconds"] = _chart_df["health"].str.replace("s", "").astype(float)
-                        _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
-                        _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                        _base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
-                        _light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
-                        _legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
-                        _legend_colors = [_base_colors['Success'], _base_colors['Normal'], _light_colors['Success'], _light_colors['Normal']]
-                        _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                        _chart = alt.Chart(_chart_df).mark_bar().encode(
-                            x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
-                            y=alt.Y('Seconds:Q', title=None),
-                            color=alt.Color('legend:N',
-                                            scale=alt.Scale(domain=_legend_labels, range=_legend_colors),
-                                            legend=alt.Legend(title=None, orient='bottom')),
-                            tooltip=['time', 'account', 'health', 'artifact', 'status']
-                        ).properties(height=400)
-                        st.altair_chart(_chart, width="stretch")
-                    else:
-                        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{_active_user}</b> (Active Account).</p>", unsafe_allow_html=True)
-                        st.data_editor(
-                            pd.DataFrame(_active_detailed),
-                            column_config={
-                                "account": st.column_config.TextColumn("Account"),
-                                "time": st.column_config.TextColumn("Time"),
-                                "health": st.column_config.TextColumn("Health"),
-                                "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename"),
-                                "status": st.column_config.TextColumn("Status")
-                            },
-                            disabled=True,
-                            width="stretch",
-                            hide_index=True,
-                            height=450,
-                            key="health_active_account_table"
-                        )
-        elif is_latest_summary:
-            st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
-            if not summary_all:
-                st.info("No loading records found in engine.log.")
-            else:
-                st.data_editor(
-                    pd.DataFrame(summary_all),
-                    column_config={
-                        "account": st.column_config.TextColumn("Account"),
-                        "time": st.column_config.TextColumn("Time"),
-                        "health": st.column_config.TextColumn("Health"),
-                        "artifact": st.column_config.TextColumn("Artifact", help="Last successful image filename"),
-                        "status": st.column_config.TextColumn("Status")
-                    },
-                    disabled=True,
-                    width="stretch",
-                    hide_index=True,
-                    height=450,
-                    key="health_summary_table"
-                )
-        else:
-            # Detailed mode
-            target_acc = view_mode.replace("Detailed History: ", "")
-            _, detailed_list, _ = parse_account_health(target_account=target_acc, login_data=login_data)
-            
-            if not detailed_list:
-                st.info(f"No detailed records found for {target_acc}.")
-            else:
-                if st.session_state.show_health_graph:
-                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{target_acc}</b></p>", unsafe_allow_html=True)
-                    
-                    # Prepare data for chart
-                    chart_df = pd.DataFrame(detailed_list)
-                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                    
-                    # Cycle is the rank of the session_index among all sessions for that account
-                    chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
-                    chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                    
-                    # Color definitions
-                    base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
-                    light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
-                    legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
-                    legend_colors = [base_colors['Success'], base_colors['Normal'],
-                                     light_colors['Success'], light_colors['Normal']]
-
-                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                    
-                    chart = alt.Chart(chart_df).mark_bar().encode(
-                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
-                        y=alt.Y('Seconds:Q', title=None),
-                        color=alt.Color('legend:N', 
-                                        scale=alt.Scale(domain=legend_labels, range=legend_colors), 
-                                        legend=alt.Legend(title=None, orient='bottom')),
-                        tooltip=['time', 'account', 'health', 'artifact', 'status']
-                    ).properties(height=400)
-                    
-                    st.altair_chart(chart, width="stretch")
-                else:
-                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
-                    st.data_editor(
-                        pd.DataFrame(detailed_list),
-                        column_config={
-                            "account": st.column_config.TextColumn("Account"),
-                            "time": st.column_config.TextColumn("Time"),
-                            "health": st.column_config.TextColumn("Health"),
-                            "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename"),
-                            "status": st.column_config.TextColumn("Status")
-                        },
-                        disabled=True,
-                        width="stretch",
-                        hide_index=True,
-                        height=450,
-                        key=f"health_detailed_{target_acc}"
-                    )
+        _render_health_content(view_mode, login_data)
