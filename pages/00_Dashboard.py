@@ -469,11 +469,8 @@ def render_chart_body_fragment():
 
     # CRITICAL FIX: We wrap the chart in a rigid Streamlit container.
     # This CSS lock prevents the dialog from collapsing during any split-second unmounts!
-    with st.container(height=420, border=False):
-        st.altair_chart(chart, width="stretch")
-    
-    st.markdown("---")
-    st.caption("This chart intelligently updates when a new image is successfully downloaded. X-axis shows the filename.")
+    with st.container(height=375, border=False):
+        st.altair_chart(chart, width='stretch')
 
 
 @st.dialog("📈 Reject Rate Chart", width="large")

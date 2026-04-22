@@ -520,7 +520,3 @@ elif menu_selection == "Account Health Analysis":
                         height=450,
                         key=f"health_detailed_{target_acc}"
                     )
-
-# --- Technical Details ---
-with st.expander("Technical Details (config.json)"): st.json(config)
-with st.expander("Technical Details (user_login_lookup.json)"): st.json(load_login_lookup())
