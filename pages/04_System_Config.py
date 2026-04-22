@@ -70,6 +70,9 @@ def parse_account_health(target_account=None, login_data=None):
                     found_accounts_ordered.append(norm)
 
         # Main parsing loop
+        session_index = 1
+        last_noted_account = None
+
         for i, line in enumerate(lines):
             # Track account switches
             acc_id = None
@@ -82,7 +85,13 @@ def parse_account_health(target_account=None, login_data=None):
                 if match: acc_id = match.group(1)
             
             if acc_id:
-                current_account = acc_id.split('@')[0].lower().strip()
+                normalized = acc_id.split('@')[0].lower().strip()
+                # Only increment session if the account actually changed
+                if last_noted_account is not None and normalized != last_noted_account:
+                    session_index += 1
+                
+                last_noted_account = normalized
+                current_account = normalized
             
             # Detect loading events
             if "正在加载 Nano Banana 2..." in line:
@@ -121,7 +130,7 @@ def parse_account_health(target_account=None, login_data=None):
                             duration_secs = sec
                             break
                         except: continue
-
+                
                 if duration_secs is not None:
                     if is_success and completion_idx != -1:
                         for k in range(completion_idx + 1, min(completion_idx + 10, len(lines))):
@@ -134,7 +143,8 @@ def parse_account_health(target_account=None, login_data=None):
                         "time": start_ts_str,
                         "health": f"{duration_secs}s",
                         "artifact": filename,
-                        "status": "Success" if filename else "Normal"
+                        "status": "Success" if filename else "Normal",
+                        "session_index": session_index
                     }
                     
                     detailed_results.append(record)
@@ -396,13 +406,25 @@ elif menu_selection == "Account Health Analysis":
                     st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>All Events</b></p>", unsafe_allow_html=True)
                     chart_df = pd.DataFrame(all_detailed)
                     chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                    chart_df = chart_df.sort_values("time")
                     
-                    # Styled Altair to look exactly like native st.bar_chart
+                    # In All Events view, we use the absolute session_index to alternate colors on every account switch
+                    chart_df["variant"] = chart_df["session_index"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+
+                    # Color definitions
+                    base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                    light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                    legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                    legend_colors = [base_colors['Success'], base_colors['Normal'],
+                                     light_colors['Success'], light_colors['Normal']]
+
+                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
                         y=alt.Y('Seconds:Q', title=None),
-                        color=alt.Color('status:N', scale=alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#a0a0ff']), legend=alt.Legend(title=None, orient='bottom')),
+                        color=alt.Color('legend:N', 
+                                        scale=alt.Scale(domain=legend_labels, range=legend_colors), 
+                                        legend=alt.Legend(title=None, orient='bottom')),
                         tooltip=['time', 'account', 'health', 'artifact', 'status']
                     ).properties(height=400)
                     
@@ -457,13 +479,26 @@ elif menu_selection == "Account Health Analysis":
                     # Prepare data for chart
                     chart_df = pd.DataFrame(detailed_list)
                     chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                    chart_df = chart_df.sort_values("time")
                     
-                    # Styled Altair to look exactly like native st.bar_chart
+                    # Cycle is the rank of the session_index among all sessions for that account
+                    chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                    chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                    
+                    # Color definitions
+                    base_colors = {'Success': '#2ecc71', 'Normal': '#a0a0ff'}
+                    light_colors = {'Success': '#a0e6b5', 'Normal': '#d0d0ff'}
+                    legend_labels = ['Success (Base)', 'Normal (Base)', 'Success (Light)', 'Normal (Light)']
+                    legend_colors = [base_colors['Success'], base_colors['Normal'],
+                                     light_colors['Success'], light_colors['Normal']]
+
+                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
                         y=alt.Y('Seconds:Q', title=None),
-                        color=alt.Color('status:N', scale=alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#a0a0ff']), legend=alt.Legend(title=None, orient='bottom')),
+                        color=alt.Color('legend:N', 
+                                        scale=alt.Scale(domain=legend_labels, range=legend_colors), 
+                                        legend=alt.Legend(title=None, orient='bottom')),
                         tooltip=['time', 'account', 'health', 'artifact', 'status']
                     ).properties(height=400)
                     
