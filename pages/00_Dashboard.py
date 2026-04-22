@@ -72,6 +72,13 @@ apply_premium_style()
 # --- Hide Custom Dash Styling ---
 st.markdown("""
     <style>
+        .main { overflow: hidden !important; }
+        .block-container { padding-top: 2rem !important; padding-bottom: 0rem !important; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar { width: 8px; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-track { background: transparent; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb { background: rgba(160,160,255,0.2); border-radius: 10px; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb:hover { background: rgba(160,160,255,0.4); }
+
         [data-testid="stSidebar"] {min-width: 250px;} 
         [data-testid="stSidebar"] [data-testid="stVerticalBlock"] [data-testid="stHorizontalBlock"] button {
             border: none !important;
@@ -973,20 +980,26 @@ def get_status_bar_html(label, msg, color):
 @st.fragment(run_every="10s")
 def render_dash_account_status():
     """Account + browser status bar for the Dashboard main panel."""
-    h_data = asyncio.run(st.session_state.client.check_health())
-    active = h_data.get("engine_running", False) if h_data else False
-    stats = asyncio.run(st.session_state.client.get_automation_stats())
-    cached_account = stats.get("current_account_id")
-    result = st.session_state.get("login_status")
-
+    active = False
     display_account = None
     is_logged_in = False
-    if cached_account:
-        is_logged_in = True
-        display_account = cached_account
-    elif result and result.get("logged_in"):
-        is_logged_in = True
-        display_account = result.get("account_id", "Unknown")
+    result = st.session_state.get("login_status")
+    cached_account = None
+
+    try:
+        h_data = asyncio.run(st.session_state.client.check_health())
+        active = h_data.get("engine_running", False) if h_data else False
+        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        cached_account = stats.get("current_account_id")
+
+        if cached_account:
+            is_logged_in = True
+            display_account = cached_account
+        elif result and result.get("logged_in"):
+            is_logged_in = True
+            display_account = result.get("account_id", "Unknown")
+    except Exception:
+        active = False
 
     status_color = "#28a745" if active else "#d73a49"
     status_text = "ONLINE" if active else "OFFLINE"
@@ -1013,39 +1026,39 @@ def render_dash_account_status():
 @st.fragment(run_every="5s")
 def render_automation_stats():
     _trigger_rerun = False
+    c, s, r, rs = 0, 0, 0, 0
+    status_badge, bg_color = "<b style='color: #6b7280;'>○ STANDBY</b>", "#f6f8fa"
+
     try:
         stats = asyncio.run(st.session_state.client.get_automation_stats())
-        is_active = stats.get("is_running", False)
-        if st.session_state.get("last_known_auto_active", False) and not is_active:
-            st.session_state.last_known_auto_active = False
-            # Set flag — the actual rerun must happen OUTSIDE the try/except block,
-            # because RerunException inherits from Exception and would be swallowed here.
-            _trigger_rerun = True
-        else:
-            st.session_state.last_known_auto_active = is_active
-        c, s, r, rs = stats.get("cycles", 0), stats.get("successes", 0), stats.get("refusals", 0), stats.get("resets", 0)
-        if st.session_state.get("ui_auto_looping_active"):
-            # Use real health data to detect switching
-            h_data = asyncio.run(st.session_state.client.check_health())
-            if h_data and not h_data.get("engine_running", False):
-                status_badge, bg_color = "<b style='color: #f39c12;'>● SWITCHING</b>", "#fff7e6"
+        if stats:
+            is_active = stats.get("is_running", False)
+            if st.session_state.get("last_known_auto_active", False) and not is_active:
+                st.session_state.last_known_auto_active = False
+                _trigger_rerun = True
             else:
-                status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
-        elif c > 0:
-            status_badge, bg_color = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>", "#f6f8fa"
-        else:
-            st.caption("Automation Standby.")
-            return
-        st.markdown(f"""
-        <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
-            <div>{status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b></div>
-        </div>
-        """, unsafe_allow_html=True)
-    except: pass
-    # Signal a full-app rerun via session_state flag instead of calling st.rerun(scope="app")
-    # directly inside the fragment. Calling st.rerun(scope="app") from within a fragment
-    # triggers a global rerun while the fragment is still alive, invalidating its own ID
-    # and causing "fragment id does not exist anymore" errors on the next run_every tick.
+                st.session_state.last_known_auto_active = is_active
+            
+            c, s, r, rs = stats.get("cycles", 0), stats.get("successes", 0), stats.get("refusals", 0), stats.get("resets", 0)
+            
+            if st.session_state.get("ui_auto_looping_active"):
+                # Use real health data to detect switching
+                h_data = asyncio.run(st.session_state.client.check_health())
+                if h_data and not h_data.get("engine_running", False):
+                    status_badge, bg_color = "<b style='color: #f39c12;'>● SWITCHING</b>", "#fff7e6"
+                else:
+                    status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
+            elif c > 0:
+                status_badge, bg_color = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>", "#f6f8fa"
+    except Exception:
+        status_badge, bg_color = "<b style='color: #d73a49;'>● OFFLINE</b>", "#fff5f5"
+
+    st.markdown(f"""
+    <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+        <div>{status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b></div>
+    </div>
+    """, unsafe_allow_html=True)
+
     if _trigger_rerun:
         st.session_state.needs_full_rerun = True
 

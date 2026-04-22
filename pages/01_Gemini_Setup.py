@@ -448,20 +448,26 @@ with st.sidebar:
 @st.fragment(run_every="10s")
 def render_setup_account_status():
     """Account + browser status bar for the Setup main panel."""
-    h_data = asyncio.run(st.session_state.client.check_health())
-    active = h_data.get("engine_running", False) if h_data else False
-    stats = asyncio.run(st.session_state.client.get_automation_stats())
-    cached_account = stats.get("current_account_id")
-    result = st.session_state.login_status
-
+    active = False
     display_account = None
     is_logged_in = False
-    if cached_account:
-        is_logged_in = True
-        display_account = cached_account
-    elif result and result.get("logged_in"):
-        is_logged_in = True
-        display_account = result.get("account_id", "Unknown")
+    result = st.session_state.get("login_status")
+    cached_account = None
+
+    try:
+        h_data = asyncio.run(st.session_state.client.check_health())
+        active = h_data.get("engine_running", False) if h_data else False
+        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        cached_account = stats.get("current_account_id")
+        
+        if cached_account:
+            is_logged_in = True
+            display_account = cached_account
+        elif result and result.get("logged_in"):
+            is_logged_in = True
+            display_account = result.get("account_id", "Unknown")
+    except Exception:
+        active = False
 
     status_color = "#28a745" if active else "#d73a49"
     status_text = "ONLINE" if active else "OFFLINE"
@@ -488,37 +494,41 @@ def render_setup_account_status():
 @st.fragment(run_every="5s")
 def render_setup_automation_stats():
     _trigger_rerun = False
+    c, s, r, rs = 0, 0, 0, 0
+    status_badge, bg_color = "<b style='color: #6b7280;'>○ STANDBY</b>", "#f6f8fa"
+    
     try:
         stats = asyncio.run(st.session_state.client.get_automation_stats())
-        is_active = stats.get("is_running", False)
-        if st.session_state.get("last_known_auto_active", False) and not is_active:
-            st.session_state.last_known_auto_active = False
-            _trigger_rerun = True
-        else:
-            st.session_state.last_known_auto_active = is_active
-        c, s, r, rs = stats.get("cycles", 0), stats.get("successes", 0), stats.get("refusals", 0), stats.get("resets", 0)
-        
-        # Check for switching status via health data
-        h_data = asyncio.run(st.session_state.client.check_health())
-        engine_on = h_data.get("engine_running", False) if h_data else False
-        
-        if is_active:
-            if not engine_on:
-                status_badge, bg_color = "<b style='color: #f39c12;'>● SWITCHING</b>", "#fff7e6"
+        if stats:
+            is_active = stats.get("is_running", False)
+            if st.session_state.get("last_known_auto_active", False) and not is_active:
+                st.session_state.last_known_auto_active = False
+                _trigger_rerun = True
             else:
-                status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
-        elif c > 0:
-            status_badge, bg_color = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>", "#f6f8fa"
-        else:
-            st.caption("Automation Standby.")
-            return
+                st.session_state.last_known_auto_active = is_active
+            
+            c, s, r, rs = stats.get("cycles", 0), stats.get("successes", 0), stats.get("refusals", 0), stats.get("resets", 0)
+            
+            # Check for switching status via health data
+            h_data = asyncio.run(st.session_state.client.check_health())
+            engine_on = h_data.get("engine_running", False) if h_data else False
+            
+            if is_active:
+                if not engine_on:
+                    status_badge, bg_color = "<b style='color: #f39c12;'>● SWITCHING</b>", "#fff7e6"
+                else:
+                    status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
+            elif c > 0:
+                status_badge, bg_color = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>", "#f6f8fa"
+    except Exception:
+        status_badge, bg_color = "<b style='color: #d73a49;'>● OFFLINE</b>", "#fff5f5"
 
-        st.markdown(f"""
-        <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
-            <div>{status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b></div>
-        </div>
-        """, unsafe_allow_html=True)
-    except: pass
+    st.markdown(f"""
+    <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+        <div>{status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b></div>
+    </div>
+    """, unsafe_allow_html=True)
+
     if _trigger_rerun:
         st.session_state.needs_rerun = True
 
