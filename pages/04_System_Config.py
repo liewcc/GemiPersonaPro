@@ -2,6 +2,8 @@ import streamlit as st
 import json
 import os
 import pandas as pd
+import altair as alt
+from datetime import datetime
 from style_utils import apply_premium_style, render_dashboard_header
 from config_utils import load_config as load_cfg_disk, save_config as save_cfg_disk, load_login_lookup, save_login_lookup
 
@@ -32,363 +34,458 @@ def on_change_watchdog_delay():
 def on_change_quota_cooldown():
     save_config({"quota_cooldown_hours": st.session_state.cfg_quota_cooldown_hrs})
 
-# --- Main Logic ---
+# --- Health Analysis Logic ---
+def parse_account_health(target_account=None, login_data=None):
+    LOG_PATH = "engine.log"
+    if not os.path.exists(LOG_PATH):
+        return [], [], []
+    
+    summary_results = {} # normalized_acc -> record
+    detailed_results = []
+    found_accounts_ordered = []
+    found_accounts_set = set()
+    
+    try:
+        with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+            
+        current_account = "Unknown"
+        import re
+        
+        # Pre-process lines to find all real accounts mentioned in logs in order
+        for line in lines:
+            acc_id = None
+            if "Re-login detected for" in line:
+                acc_id = line.split("Re-login detected for")[1].split()[0].strip().rstrip('.:')
+            elif "Loop Control: switched to" in line:
+                acc_id = line.split("Loop Control: switched to")[1].split()[0].strip().rstrip('.:')
+            elif "current_account_id" in line:
+                match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
+                if match: acc_id = match.group(1)
+            
+            if acc_id:
+                norm = acc_id.split('@')[0].lower().strip()
+                if norm not in found_accounts_set:
+                    found_accounts_set.add(norm)
+                    found_accounts_ordered.append(norm)
 
+        # Main parsing loop
+        for i, line in enumerate(lines):
+            # Track account switches
+            acc_id = None
+            if "Re-login detected for" in line:
+                acc_id = line.split("Re-login detected for")[1].split()[0].strip().rstrip('.:')
+            elif "Loop Control: switched to" in line:
+                acc_id = line.split("Loop Control: switched to")[1].split()[0].strip().rstrip('.:')
+            elif "current_account_id" in line:
+                match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
+                if match: acc_id = match.group(1)
+            
+            if acc_id:
+                current_account = acc_id.split('@')[0].lower().strip()
+            
+            # Detect loading events
+            if "正在加载 Nano Banana 2..." in line:
+                start_ts_str = line[1:9]
+                
+                duration_secs = None
+                completion_idx = -1
+                is_success = False
+                filename = ""
+                
+                # Look ahead for completion
+                for j in range(i + 1, min(i + 200, len(lines))): 
+                    next_line = lines[j]
+                    if any(marker in next_line for marker in ["Response successful", "Response failed", "Automation loop encountered an issue", "Gemini page was unexpectedly reset"]):
+                        end_ts_str = next_line[1:9]
+                        completion_idx = j
+                        if "Response successful" in next_line: is_success = True
+                        try:
+                            fmt = '%H:%M:%S'
+                            tdelta = datetime.strptime(end_ts_str, fmt) - datetime.strptime(start_ts_str, fmt)
+                            sec = int(tdelta.total_seconds())
+                            if sec < 0: sec += 86400
+                            duration_secs = sec
+                            break
+                        except: continue
+                    
+                    # Fallback completion: Any subsequent Gemini output
+                    if "API>> Gemini:" in next_line and "正在加载 Nano Banana 2..." not in next_line:
+                        end_ts_str = next_line[1:9]
+                        completion_idx = j
+                        try:
+                            fmt = '%H:%M:%S'
+                            tdelta = datetime.strptime(end_ts_str, fmt) - datetime.strptime(start_ts_str, fmt)
+                            sec = int(tdelta.total_seconds())
+                            if sec < 0: sec += 86400
+                            duration_secs = sec
+                            break
+                        except: continue
+
+                if duration_secs is not None:
+                    if is_success and completion_idx != -1:
+                        for k in range(completion_idx + 1, min(completion_idx + 10, len(lines))):
+                            if "Saved: " in lines[k]:
+                                filename = lines[k].split("Saved: ")[1].strip()
+                                break
+
+                    record = {
+                        "account": current_account,
+                        "time": start_ts_str,
+                        "health": f"{duration_secs}s",
+                        "artifact": filename,
+                        "status": "Success" if filename else "Normal"
+                    }
+                    
+                    detailed_results.append(record)
+                    # Always keep the LATEST record for each account in summary
+                    summary_results[current_account] = record
+
+        # Smarter Backfill for "Unknown"
+        # 1. Try first account encountered in log
+        first_real = found_accounts_ordered[0] if found_accounts_ordered else None
+        
+        # 2. Fallback: If no switches in logs, find the account marked as 'active' or with latest 'last_switched_at'
+        if not first_real and login_data:
+            try:
+                # Priority 1: The account explicitly marked as "active" in the lookup table
+                active_acc = next((u.get("username", "").lower().strip() for u in login_data if u.get("active")), None)
+                if active_acc:
+                    first_real = active_acc
+                else:
+                    # Priority 2: Account with most recent last_switched_at
+                    latest_acc = None
+                    latest_ts = None
+                    for u in login_data:
+                        ts_str = u.get("last_switched_at")
+                        if ts_str:
+                            try:
+                                ts = datetime.strptime(ts_str, "%d/%m/%Y %H:%M:%S")
+                                if latest_ts is None or ts > latest_ts:
+                                    latest_ts = ts
+                                    latest_acc = u.get("username", "").lower().strip()
+                            except: continue
+                    first_real = latest_acc
+            except: pass
+        
+        if first_real:
+            for r in detailed_results:
+                if r["account"] == "Unknown" or not r["account"]: 
+                    r["account"] = first_real
+            
+            if "Unknown" in summary_results:
+                # If the first real account doesn't have a record yet, move it
+                if first_real not in summary_results:
+                    summary_results[first_real] = summary_results["Unknown"]
+                    summary_results[first_real]["account"] = first_real
+                del summary_results["Unknown"]
+        
+        # Final catch-all: if Unknown still exists for some reason, and we have a first_real, clean it up
+        if first_real:
+            summary_results = { (first_real if k == "Unknown" else k): v for k, v in summary_results.items() }
+            for v in summary_results.values():
+                if v["account"] == "Unknown": v["account"] = first_real
+
+        if target_account == "ALL_EVENTS":
+            # Keep all results
+            pass
+        elif target_account:
+            detailed_results = [r for r in detailed_results if r["account"].lower() == target_account.lower()]
+        else:
+            detailed_results = []
+    except Exception as e:
+        import traceback
+        st.error(f"Error parsing log: {e}")
+        print(traceback.format_exc())
+    
+    summary_list = sorted(list(summary_results.values()), key=lambda x: x['time'], reverse=True)
+    detailed_list = sorted(detailed_results, key=lambda x: x['time'], reverse=True)
+    
+    return summary_list, detailed_list, sorted(list(found_accounts_set))
+
+# --- Sidebar Navigation ---
+with st.sidebar:
+    st.markdown("<p style='font-weight: bold; color: #a0a0ff; margin-bottom: 10px;'>SYSTEM NAVIGATION</p>", unsafe_allow_html=True)
+    menu_selection = st.radio("Select Section", ["Settings & Credentials", "Account Health Analysis"], label_visibility="collapsed")
+    st.markdown("---")
+    st.info("Configuration and monitoring tools.")
+
+# --- Main Logic ---
 config = load_config()
 login_data = load_login_lookup()
 
-# --- Always reload fresh data on every page entry / rerun ---
-# Engine settings are saved to disk immediately via on_change callbacks,
-# so disk values always reflect the current state — safe to unconditionally restore.
 st.session_state.cfg_show_console = config.get("show_engine_console", True)
 st.session_state.cfg_headless = config.get("headless", False)
 st.session_state.cfg_timeout = config.get("heartbeat_timeout", 3600)
 st.session_state.cfg_watchdog_delay = config.get("watchdog_initial_delay", 20)
 st.session_state.cfg_quota_cooldown_hrs = config.get("quota_cooldown_hours", 24)
 
-# Reload login rows from disk on every rerun.
-# Since all edits in the data_editor are saved to disk instantly,
-# reloading ensures the UI and JSON are always in perfect synchronization.
 st.session_state.login_rows = list(login_data)
 st.session_state._login_reload = False
 
 WATCHDOG_LOG_PATH = "watchdog.log"
 
 def get_watchdog_log():
-    if not os.path.exists(WATCHDOG_LOG_PATH):
-        return None
+    if not os.path.exists(WATCHDOG_LOG_PATH): return None
     try:
-        with open(WATCHDOG_LOG_PATH, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        return f"Error reading log: {e}"
+        with open(WATCHDOG_LOG_PATH, "r", encoding="utf-8") as f: return f.read()
+    except Exception as e: return f"Error reading log: {e}"
 
 def clear_watchdog_log():
     try:
-        # Open in write mode to clear contents, preventing conflict if watchdog is just appending
-        with open(WATCHDOG_LOG_PATH, "w", encoding="utf-8") as f:
-            f.write("")
-    except Exception as e:
-        st.error(f"Failed to clear log: {e}")
+        with open(WATCHDOG_LOG_PATH, "w", encoding="utf-8") as f: f.write("")
+    except Exception as e: st.error(f"Failed to clear log: {e}")
 
-# Section 1 & Watchdog Log: Split into two columns
-col_engine, col_watchdog = st.columns([1, 1])
+if menu_selection == "Settings & Credentials":
+    col_engine, col_watchdog = st.columns([1, 1])
+    with col_engine:
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ENGINE SETTINGS</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.toggle("Show Engine Console Window", key="cfg_show_console", on_change=on_change_console)
+            st.toggle("Run Browser Headless", key="cfg_headless", on_change=on_change_headless)
+            st.number_input("Heartbeat Timeout (seconds)", min_value=0, max_value=86400, key="cfg_timeout", on_change=on_change_timeout)
+            st.number_input("Watchdog Initial Delay (seconds)", min_value=5, max_value=120, step=5, key="cfg_watchdog_delay", on_change=on_change_watchdog_delay)
+            st.number_input("Quota Cooldown (hours)", min_value=0, max_value=168, step=1, key="cfg_quota_cooldown_hrs", on_change=on_change_quota_cooldown)
 
-# --- Section 1: Engine Settings ---
-with col_engine:
-    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ENGINE SETTINGS</p>", unsafe_allow_html=True)
-    with st.container(border=True):
-        st.toggle(
-            "Show Engine Console Window",
-            key="cfg_show_console",
-            on_change=on_change_console,
-            help="If enabled, the background service will run in a visible console window."
-        )
-
-        st.toggle(
-            "Run Browser Headless",
-            key="cfg_headless",
-            on_change=on_change_headless,
-            help="If enabled, the browser will run in the background."
-        )
-
-        st.number_input(
-            "Heartbeat Timeout (seconds)",
-            min_value=0,
-            max_value=86400,
-            key="cfg_timeout",
-            on_change=on_change_timeout,
-            help="0 = Always stays alive."
-        )
-
-        st.number_input(
-            "Watchdog Initial Delay (seconds)",
-            min_value=5,
-            max_value=120,
-            step=5,
-            key="cfg_watchdog_delay",
-            on_change=on_change_watchdog_delay,
-            help="How long the Watchdog waits after automation starts before its first session check. Increase if Gem pages take long to load."
-        )
-
-        st.number_input(
-            "Quota Cooldown (hours)",
-            min_value=0,
-            max_value=168,
-            step=1,
-            key="cfg_quota_cooldown_hrs",
-            on_change=on_change_quota_cooldown,
-            help="If > 0, accounts are locked for this many hours after hitting quota (unlock = quota_full_time + hours). 0 = disabled."
-        )
-
-# --- Watchdog Log ---
-with col_watchdog:
-    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>WATCHDOG LOG</p>", unsafe_allow_html=True)
-    with st.container(border=True):
-        log_content = get_watchdog_log()
-        
-        # Display Reload and Clear Log buttons side-by-side
-        btn_col1, btn_col2 = st.columns([1, 1])
-        with btn_col1:
-            if st.button("Reload Log", key="btn_reload_watchdog", icon="🔄", help="Reload the latest watchdog log", type="secondary", width='stretch'):
-                st.rerun()
-        with btn_col2:
-            if st.button("Clear Log", key="btn_clear_watchdog", icon="🗑️", help="Clear the watchdog log completely", type="secondary", width='stretch'):
-                clear_watchdog_log()
-                st.rerun()
-
-        st.markdown("") # Spacer
-        if log_content is None:
-            st.info("Watchdog log not found or no errors detected.")
-        elif not log_content.strip():
-            st.info("Watchdog log is empty.")
-        else:
-            st.text_area("Log Output", value=log_content, height=200, disabled=True, label_visibility="collapsed")
-
-
-# Layout for Quota & Credentials -> 1:3 ratio
-col_quota, col_cred = st.columns([1, 3])
-
-# --- Section 2: Quota Detection Settings ---
-with col_quota:
-    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>QUOTA FULL PHRASES</p>", unsafe_allow_html=True)
-    with st.container(border=True):
-        quota_phrases = config.get("quota_full", [])
-        quota_df = pd.DataFrame([{"phrase": p} for p in quota_phrases])
-
-        edited_quota_df = st.data_editor(
-            quota_df,
-            column_config={
-                "phrase": st.column_config.TextColumn("Identification Phrase", width="stretch"),
-            },
-            num_rows="dynamic",
-            width="stretch",
-            hide_index=True,
-            height=415,
-            key="quota_editor"
-        )
-        
-        # Spacer padding to visually align the bottom contour of this container with the taller right container
-        st.markdown("<div style='height: 85px;'></div>", unsafe_allow_html=True)
-
-        if st.button("Save Quota Phrases", icon="📝", width='stretch'):
-            new_phrases = edited_quota_df["phrase"].tolist()
-            new_phrases = [p.strip() for p in new_phrases if p is not None and p.strip()]
-            save_config({"quota_full": new_phrases})
-            st.success("Quota phrases updated!")
-            st.rerun()
-
-# --- Section 3: Credential Management ---
-with col_cred:
-    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>USER LOGIN CREDENTIALS</p>", unsafe_allow_html=True)
-    with st.container(border=True):
-        # login_rows is always reloaded from disk at the top of the script;
-        # no additional check needed here.
-
-        rows = st.session_state.login_rows
-        usernames = [r.get("username", "") for r in rows if r.get("username")]
-
-        active_index = 0
-        for i, r in enumerate(rows):
-            if r.get("active"):
-                active_index = i
-                break
-
-        if usernames:
-            sel_col, btn_col = st.columns([3, 1])
-            with sel_col:
-                selected_active = st.selectbox(
-                    "Active Account",
-                    options=usernames,
-                    index=min(active_index, len(usernames) - 1),
-                    help="Select the account to use for the current session",
-                    key="active_account_select"
-                )
-            with btn_col:
-                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                if st.button("Set Active Account", icon="🔒", type="primary", width="stretch"):
-                    current_rows = load_login_lookup()
-                    final = [
-                        {
-                            **r,
-                            "active": (r.get("username") == selected_active),
-                        }
-                        for r in current_rows
-                    ]
-                    save_login_lookup(final)
-                    st.session_state._login_reload = True
-                    if "active_account_select" in st.session_state:
-                        del st.session_state["active_account_select"]
-                    st.success("Active account updated!")
+    with col_watchdog:
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>WATCHDOG LOG</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            log_content = get_watchdog_log()
+            btn_col1, btn_col2 = st.columns([1, 1])
+            with btn_col1:
+                if st.button("Reload Log", key="btn_reload_watchdog", icon="🔄", width='stretch'): st.rerun()
+            with btn_col2:
+                if st.button("Clear Log", key="btn_clear_watchdog", icon="🗑️", width='stretch'):
+                    clear_watchdog_log()
                     st.rerun()
-        else:
-            selected_active = None
-            st.info("Add a new credential row below to get started.")
+            st.markdown("")
+            if log_content is None: st.info("Watchdog log not found.")
+            elif not log_content.strip(): st.info("Watchdog log is empty.")
+            else: st.text_area("Log Output", value=log_content, height=200, disabled=True, label_visibility="collapsed")
 
-        st.markdown("")
+    col_quota, col_cred = st.columns([1, 3])
+    with col_quota:
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>QUOTA FULL PHRASES</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            quota_phrases = config.get("quota_full", [])
+            quota_df = pd.DataFrame([{"phrase": p} for p in quota_phrases])
+            edited_quota_df = st.data_editor(quota_df, column_config={"phrase": st.column_config.TextColumn("Identification Phrase", width="stretch")}, num_rows="dynamic", width="stretch", hide_index=True, height=415, key="quota_editor")
+            st.markdown("<div style='height: 85px;'></div>", unsafe_allow_html=True)
+            if st.button("Save Quota Phrases", icon="📝", width='stretch'):
+                new_phrases = [p.strip() for p in edited_quota_df["phrase"].tolist() if p and p.strip()]
+                save_config({"quota_full": new_phrases})
+                st.success("Quota phrases updated!")
+                st.rerun()
 
-        editor_data = [
-            {
-                "active": r.get("active", False),
-                "bypass": r.get("bypass", False),
-                "username": r.get("username", ""), 
-                "auto_delete": r.get("auto_delete", False),
-                "delete_range": r.get("delete_range", "Last hour"),
-                "quota_full": r.get("quota_full", ""),
-                "last_switched_at": r.get("last_switched_at", ""),
-                "session_images":   r.get("session_images", ""),
-                "session_refused":  r.get("session_refused", ""),
-                "session_resets":   r.get("session_resets", ""),
-            }
-            for r in rows
-        ]
-        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
+    with col_cred:
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>USER LOGIN CREDENTIALS</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            rows = st.session_state.login_rows
+            usernames = [r.get("username", "") for r in rows if r.get("username")]
+            active_index = next((i for i, r in enumerate(rows) if r.get("active")), 0)
 
-        # 这里的 width 设为 "content" 以确保紧凑且不报错
-        edited_df = st.data_editor(
-            editor_df,
-            column_config={
-                "active": st.column_config.CheckboxColumn(
-                    "Active",
-                    help="Current active account",
+            if usernames:
+                sel_col, btn_col = st.columns([3, 1])
+                with sel_col:
+                    selected_active = st.selectbox("Active Account", options=usernames, index=min(active_index, len(usernames) - 1), key="active_account_select")
+                with btn_col:
+                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("Set Active Account", icon="🔒", type="primary", width="stretch"):
+                        current_rows = load_login_lookup()
+                        final = [{**r, "active": (r.get("username") == selected_active)} for r in current_rows]
+                        save_login_lookup(final)
+                        st.session_state._login_reload = True
+                        if "active_account_select" in st.session_state: del st.session_state["active_account_select"]
+                        st.success("Active account updated!")
+                        st.rerun()
+            else: st.info("Add a new credential row below.")
+
+            st.markdown("")
+            editor_data = [{"active": r.get("active", False), "bypass": r.get("bypass", False), "username": r.get("username", ""), "auto_delete": r.get("auto_delete", False), "delete_range": r.get("delete_range", "Last hour"), "quota_full": r.get("quota_full", ""), "last_switched_at": r.get("last_switched_at", ""), "session_images": r.get("session_images", ""), "session_refused": r.get("session_refused", ""), "session_resets": r.get("session_resets", "")} for r in rows]
+            editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
+
+            edited_df = st.data_editor(editor_df, column_config={"active": st.column_config.CheckboxColumn("Active", disabled=True, width="small"), "bypass": st.column_config.CheckboxColumn("Bypass", width="small"), "username": st.column_config.TextColumn("Username", width="medium"), "auto_delete": st.column_config.CheckboxColumn("Auto Delete", width="small"), "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], width="small"), "quota_full": st.column_config.TextColumn("Quota Full At", width="stretch"), "last_switched_at": st.column_config.TextColumn("Switched At", width="medium"), "session_images": st.column_config.NumberColumn("Images", width="small"), "session_refused": st.column_config.NumberColumn("Refused", width="small"), "session_resets": st.column_config.NumberColumn("Resets", width="small")}, num_rows="dynamic", width="stretch", hide_index=True, height=430, key="login_editor")
+
+            _INSTANT_COLS = ["bypass", "auto_delete", "delete_range", "username", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"]
+            if not editor_df.empty and not edited_df.empty and len(editor_df) == len(edited_df):
+                if not editor_df[_INSTANT_COLS].reset_index(drop=True).equals(edited_df[_INSTANT_COLS].reset_index(drop=True)):
+                    edited_records = edited_df.to_dict("records")
+                    patched = []
+                    for idx, disk_row in enumerate(rows):
+                        if idx < len(edited_records):
+                            e = edited_records[idx]
+                            patched.append({**disk_row, "bypass": bool(e.get("bypass", False)), "auto_delete": bool(e.get("auto_delete", False)), "delete_range": str(e.get("delete_range", "All time")), "username": str(e.get("username", disk_row.get("username", ""))).strip(), "quota_full": e.get("quota_full") if pd.notna(e.get("quota_full")) else "", "last_switched_at": e.get("last_switched_at") if pd.notna(e.get("last_switched_at")) else "", "session_images": e.get("session_images") if pd.notna(e.get("session_images")) else "", "session_refused": e.get("session_refused") if pd.notna(e.get("session_refused")) else "", "session_resets": e.get("session_resets") if pd.notna(e.get("session_resets")) else ""})
+                        else: patched.append(disk_row)
+                    save_login_lookup(patched); st.toast("Credentials updated.", icon="💾")
+            elif not edited_df.empty:
+                valid = [r for r in edited_df.to_dict("records") if str(r.get("username", "")).strip()]
+                if valid: save_login_lookup(valid); st.toast("Credentials updated.", icon="💾")
+
+            btn_reload, btn_clear, btn_clear_stats = st.columns([1, 1.2, 1.2])
+            with btn_reload:
+                if st.button("Reload Table", icon="🔄", width="stretch"): st.session_state._login_reload = True; st.rerun()
+            with btn_clear:
+                if st.button("Clear Quota", icon="🧹", width="stretch"):
+                    for r in rows: r["quota_full"] = ""
+                    save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
+            with btn_clear_stats:
+                if st.button("Reset Stats", icon="🧹", width="stretch"):
+                    for r in rows: r["last_switched_at"] = ""; r["session_images"] = r["session_refused"] = r["session_resets"] = ""
+                    save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
+
+elif menu_selection == "Account Health Analysis":
+    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
+    with st.container(border=True):
+        # Initial parse to get account list from logs
+        summary_all, _, log_accs = parse_account_health(login_data=login_data)
+        
+        # Merge with accounts from user_login_lookup.json to ensure ALL are selectable
+        # Preserve order from user_login_lookup.json
+        lookup_order = [u.get("username", "").lower() for u in login_data if u.get("username")]
+        log_accs_set = set(log_accs)
+        lookup_accs_set = set(lookup_order)
+        
+        # 1. Start with accounts from lookup table in their original order
+        final_dropdown_accs = [acc for acc in lookup_order]
+        # 2. Append any accounts found in logs but NOT in lookup table (at the end, alphabetically)
+        extra_accs = sorted(list(log_accs_set - lookup_accs_set))
+        final_dropdown_accs.extend(extra_accs)
+
+        col_sel, col_btn1, col_btn2 = st.columns([2, 0.6, 0.6])
+        with col_sel:
+            view_mode = st.selectbox(
+                "Select View Mode",
+                options=["Full Loading History (All Events)", "Latest Summary (All Accounts)"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs],
+                help="Choose between a complete history of all loading events, a summary of all accounts, or detailed history for a specific account."
+            )
+        
+        is_full_history = view_mode == "Full Loading History (All Events)"
+        is_latest_summary = view_mode == "Latest Summary (All Accounts)"
+        is_detailed = not (is_full_history or is_latest_summary)
+        
+        # Initialize graph toggle state if not exists
+        if "show_health_graph" not in st.session_state:
+            st.session_state.show_health_graph = False
+
+        with col_btn1:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("Refresh Log", icon="🔄", width="stretch"):
+                st.rerun()
+        
+        with col_btn2:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if is_detailed or is_full_history:
+                btn_label = "Show Table" if st.session_state.show_health_graph else "Plot Graph"
+                btn_icon = "📋" if st.session_state.show_health_graph else "📊"
+                if st.button(btn_label, icon=btn_icon, width="stretch", type="secondary"):
+                    st.session_state.show_health_graph = not st.session_state.show_health_graph
+                    st.rerun()
+            else:
+                # Placeholder to keep layout consistent
+                st.button("Plot Graph", icon="📊", width="stretch", disabled=True)
+
+        st.markdown("---")
+        
+        if is_full_history:
+            st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing every recorded loading event in chronological order (latest first).</p>", unsafe_allow_html=True)
+            _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
+            if not all_detailed:
+                st.info("No loading records found in engine.log.")
+            else:
+                if st.session_state.show_health_graph:
+                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>All Events</b></p>", unsafe_allow_html=True)
+                    chart_df = pd.DataFrame(all_detailed)
+                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                    chart_df = chart_df.sort_values("time")
+                    
+                    # Styled Altair to look exactly like native st.bar_chart
+                    chart = alt.Chart(chart_df).mark_bar().encode(
+                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                        y=alt.Y('Seconds:Q', title=None),
+                        color=alt.Color('status:N', scale=alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#a0a0ff']), legend=alt.Legend(title=None, orient='bottom')),
+                        tooltip=['time', 'account', 'health', 'artifact', 'status']
+                    ).properties(height=400)
+                    
+                    st.altair_chart(chart, width='stretch')
+                else:
+                    st.data_editor(
+                        pd.DataFrame(all_detailed),
+                        column_config={
+                            "account": st.column_config.TextColumn("Account", width="medium"),
+                            "time": st.column_config.TextColumn("Time", width="medium"),
+                            "health": st.column_config.TextColumn("Health", width="small"),
+                            "artifact": st.column_config.TextColumn("Artifact", width="stretch"),
+                            "status": st.column_config.TextColumn("Status", width="small")
+                        },
+                        disabled=True,
+                        width="stretch",
+                        hide_index=True,
+                        height=450,
+                        key="health_full_history_table"
+                    )
+        elif is_latest_summary:
+            st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
+            if not summary_all:
+                st.info("No loading records found in engine.log.")
+            else:
+                st.data_editor(
+                    pd.DataFrame(summary_all),
+                    column_config={
+                        "account": st.column_config.TextColumn("Account", width="medium"),
+                        "time": st.column_config.TextColumn("Time", width="medium"),
+                        "health": st.column_config.TextColumn("Health", width="small"),
+                        "artifact": st.column_config.TextColumn("Artifact", help="Last successful image filename", width="stretch"),
+                        "status": st.column_config.TextColumn("Status", width="small")
+                    },
                     disabled=True,
-                    width="small"
-                ),
-                "bypass": st.column_config.CheckboxColumn(
-                    "Bypass",
-                    help="Skip this account during automated looping",
-                    width="small"
-                ),
-                "username": st.column_config.TextColumn("Username", width="medium"),
-                "auto_delete": st.column_config.CheckboxColumn("Auto Delete", help="Auto delete history on switch", width="small"),
-                "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], help="Deletion time range", width="small"),
-                "quota_full": st.column_config.TextColumn("Quota Full At", help="Date/time when quota was hit", width="stretch"),
-                "last_switched_at": st.column_config.TextColumn("Switched At", help="Timestamp when this account was last switched away", width="medium"),
-                "session_images":   st.column_config.NumberColumn("Images",  help="Images downloaded during this account's last session", width="small"),
-                "session_refused":  st.column_config.NumberColumn("Refused", help="Refused count during this account's last session",   width="small"),
-                "session_resets":   st.column_config.NumberColumn("Resets",  help="Reset count during this account's last session",     width="small"),
-            },
-            num_rows="dynamic",
-            width="stretch",
-            hide_index=True,
-            height=430,
-            key="login_editor"
-        )
-
-        # --- Instant save for all editable columns ---
-        # st.data_editor has no per-column on_change; we compare before/after render.
-        # Index-based patching is used so username renames are handled correctly.
-        _INSTANT_COLS = [
-            "bypass", "auto_delete", "delete_range", "username",
-            "quota_full", "last_switched_at",
-            "session_images", "session_refused", "session_resets"
-        ]
-        _row_count_same = (
-            not editor_df.empty
-            and not edited_df.empty
-            and len(editor_df) == len(edited_df)
-        )
-        if _row_count_same:
-            # Row-count unchanged: index-based patch (handles username renames safely)
-            orig_check = editor_df[_INSTANT_COLS].reset_index(drop=True)
-            new_check  = edited_df[_INSTANT_COLS].reset_index(drop=True)
-            if not orig_check.equals(new_check):
-                edited_records = edited_df.to_dict("records")
-                patched = []
-                for idx, disk_row in enumerate(rows):
-                    if idx < len(edited_records):
-                        e = edited_records[idx]
-                        new_uname = str(e.get("username", disk_row.get("username", ""))).strip()
-                        patched.append({
-                            **disk_row,
-                            "bypass":           bool(e.get("bypass", False)),
-                            "auto_delete":      bool(e.get("auto_delete", False)),
-                            "delete_range":     str(e.get("delete_range", disk_row.get("delete_range", "All time"))),
-                            "username":         new_uname if new_uname else disk_row.get("username", ""),
-                            "quota_full":       e.get("quota_full") if pd.notna(e.get("quota_full")) and e.get("quota_full") is not None else "",
-                            "last_switched_at": e.get("last_switched_at") if pd.notna(e.get("last_switched_at")) and e.get("last_switched_at") is not None else "",
-                            "session_images":   e.get("session_images") if pd.notna(e.get("session_images")) and e.get("session_images") is not None else "",
-                            "session_refused":  e.get("session_refused") if pd.notna(e.get("session_refused")) and e.get("session_refused") is not None else "",
-                            "session_resets":   e.get("session_resets") if pd.notna(e.get("session_resets")) and e.get("session_resets") is not None else "",
-                        })
-                    else:
-                        patched.append(disk_row)
-                save_login_lookup(patched)
-                st.toast("Credentials updated.", icon="💾")
-        elif not edited_df.empty:
-            # Row count changed (row added or deleted): write full table immediately.
-            # Filter out blank rows (username empty) to avoid phantom entries.
-            records = edited_df.to_dict("records")
-            valid = [r for r in records if str(r.get("username", "")).strip()]
-            if valid:
-                save_login_lookup(valid)
-                st.toast("Credentials updated.", icon="💾")
-
-        btn_reload, btn_clear, btn_clear_stats = st.columns([1, 1.2, 1.2])
-
-        with btn_reload:
-            if st.button("Reload Credentials Table", icon="🔄", type="secondary", width="stretch"):
-                st.session_state._login_reload = True
-                if "active_account_select" in st.session_state:
-                    del st.session_state["active_account_select"]
-                st.success("Credentials reloaded!")
-                st.rerun()
-
-        with btn_clear:
-            if st.button("Clear Quota Full Recorded Date", icon="🧹", help="Manually reset all quota timestamps", type="secondary", width="stretch"):
-                for r in rows:
-                    r["quota_full"] = ""
-                save_login_lookup(rows)
-                st.session_state._login_reload = True
-                st.success("All quota timestamps cleared!")
-                st.rerun()
-
-        with btn_clear_stats:
-            if st.button("Reset Session Stats", icon="🧹", help="Clear all session statistics (Switched At, Images, Refused, Resets) for all accounts", type="secondary", width="stretch"):
-                for r in rows:
-                    r["last_switched_at"] = ""
-                    r["session_images"]   = ""
-                    r["session_refused"]  = ""
-                    r["session_resets"]   = ""
-                save_login_lookup(rows)
-                st.session_state._login_reload = True
-                st.success("All session stats cleared!")
-                st.rerun()
-
-        st.markdown("<p style='font-size: 0.8em; margin-bottom: 2px; margin-top: 10px; text-transform: uppercase;'>Batch Actions:</p>", unsafe_allow_html=True)
-        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
-
-        with b_col1:
-            if st.button("✓ All Bypass", type="secondary", width="stretch"):
-                for r in rows: r["bypass"] = True
-                save_login_lookup(rows)
-                st.session_state._login_reload = True
-                st.rerun()
-
-        with b_col2:
-            if st.button("✗ Clear Bypass", type="secondary", width="stretch"):
-                for r in rows: r["bypass"] = False
-                save_login_lookup(rows)
-                st.session_state._login_reload = True
-                st.rerun()
-
-        with b_col3:
-            if st.button("✓ All Auto Delete", type="secondary", width="stretch"):
-                for r in rows: r["auto_delete"] = True
-                save_login_lookup(rows)
-                st.session_state._login_reload = True
-                st.rerun()
-
-        with b_col4:
-            if st.button("✗ Clear Auto Delete", type="secondary", width="stretch"):
-                for r in rows: r["auto_delete"] = False
-                save_login_lookup(rows)
-                st.session_state._login_reload = True
-                st.rerun()
+                    width="stretch",
+                    hide_index=True,
+                    height=450,
+                    key="health_summary_table"
+                )
+        else:
+            # Detailed mode
+            target_acc = view_mode.replace("Detailed History: ", "")
+            _, detailed_list, _ = parse_account_health(target_account=target_acc, login_data=login_data)
+            
+            if not detailed_list:
+                st.info(f"No detailed records found for {target_acc}.")
+            else:
+                if st.session_state.show_health_graph:
+                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{target_acc}</b></p>", unsafe_allow_html=True)
+                    
+                    # Prepare data for chart
+                    chart_df = pd.DataFrame(detailed_list)
+                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                    chart_df = chart_df.sort_values("time")
+                    
+                    # Styled Altair to look exactly like native st.bar_chart
+                    chart = alt.Chart(chart_df).mark_bar().encode(
+                        x=alt.X('time:N', title=None, axis=alt.Axis(labelOverlap='parity')),
+                        y=alt.Y('Seconds:Q', title=None),
+                        color=alt.Color('status:N', scale=alt.Scale(domain=['Success', 'Normal'], range=['#2ecc71', '#a0a0ff']), legend=alt.Legend(title=None, orient='bottom')),
+                        tooltip=['time', 'account', 'health', 'artifact', 'status']
+                    ).properties(height=400)
+                    
+                    st.altair_chart(chart, width='stretch')
+                else:
+                    st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
+                    st.data_editor(
+                        pd.DataFrame(detailed_list),
+                        column_config={
+                            "account": st.column_config.TextColumn("Account", width="medium"),
+                            "time": st.column_config.TextColumn("Time", width="medium"),
+                            "health": st.column_config.TextColumn("Health", width="small"),
+                            "artifact": st.column_config.TextColumn("Artifact", help="Downloaded image filename", width="stretch"),
+                            "status": st.column_config.TextColumn("Status", width="small")
+                        },
+                        disabled=True,
+                        width="stretch",
+                        hide_index=True,
+                        height=450,
+                        key=f"health_detailed_{target_acc}"
+                    )
 
 # --- Technical Details ---
-with st.expander("Technical Details (config.json)"):
-    st.json(config)
-
-with st.expander("Technical Details (user_login_lookup.json)"):
-    st.json(load_login_lookup())
+with st.expander("Technical Details (config.json)"): st.json(config)
+with st.expander("Technical Details (user_login_lookup.json)"): st.json(load_login_lookup())

@@ -91,8 +91,22 @@ The automation engine now supports dynamically reloading prompts without interru
 - **UI Stability Enhancements**: Wrapped the chart in a rigid `st.container` to prevent DOM layout collapses during 1-second auto-refreshes. This ensures the background Image Gallery remains perfectly stable with zero jittering, while also strictly complying with Streamlit 1.40's new `width="stretch"` layout parameters to eliminate console warnings.
 
 
-### 10. Dashboard Layout Enhancements
-- Restructured the top layout of the Dashboard page (`00_Dashboard.py`) for a cleaner, unified presentation.
-- The **Account/Browser Status** and the **Automation Stats** (RUNNING | Cycles) are now displayed horizontally side-by-side.
-- Upgraded the text-based Account status into a styled container that precisely matches the aesthetics (height, border, background color) of the Automation Stats box.
-- Rebalanced the layout of the quick-action buttons below the status row to distribute evenly across the screen.
+### 11. Account Health Analysis (Performance Monitoring)
+- Introduced a dedicated **Account Health Analysis** tool within the System Config page to monitor Nano Banana 2 loading performance.
+- **Detailed History View**: Users can select a specific account to view its entire loading history from the logs, including exact timestamps, loading durations (in seconds), and success/normal status.
+- **Full Loading History (All Events)**: A comprehensive view that aggregates all loading events from all accounts in chronological order, allowing for system-wide performance auditing.
+- **Interactive Performance Graphs**: Added a "Plot Graph" feature that visualizes loading trends using color-coded bar charts (Success in green, Normal in purple).
+- **Intelligent Tooltips**: Hovering over graph bars reveals detailed metadata, including the specific **Artifact** (downloaded filename) and the associated account.
+- **Automatic Account Backfilling**: Implemented a multi-stage fallback logic to identify "Unknown" accounts in truncated logs by cross-referencing the explicitly marked "active" account from the login lookup table.
+
+### 12. Automated Quota Status Management
+- Enhanced the `engine_service.py` login sequence to automatically clear the `quota_full` status of an account upon a successful manual login check. This ensures that accounts are immediately returned to rotation if their quota has naturally expired or been reset.
+
+## 🐛 Critical Bug Fixes
+
+### 10. Normalization of Account Parsing
+- Fixed an issue where the Account Health parser was case-sensitive, causing email-based accounts to be misidentified. The system now treats all account identifiers as case-insensitive for consistent tracking.
+
+### 11. Migration to Streamlit Latest Layout Parameters
+- Standardized the use of `width='stretch'` instead of the deprecated `use_container_width=True` across the entire application (including Dashboard charts and System Config tables). 
+- Formally updated the project `rule.md` to ensure future compliance with Streamlit's 2026 API standards.

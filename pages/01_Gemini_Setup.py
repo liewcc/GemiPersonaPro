@@ -116,6 +116,10 @@ if "selected_files" not in st.session_state:
     st.session_state.selected_files = st.session_state.config.get("selected_files", [])
 if "initial_login_checked" not in st.session_state:
     st.session_state.initial_login_checked = False
+if "show_stop_confirmation_setup" not in st.session_state:
+    st.session_state.show_stop_confirmation_setup = False
+if "show_goal_reached_confirmation_setup" not in st.session_state:
+    st.session_state.show_goal_reached_confirmation_setup = False
 if "last_saved_paths" not in st.session_state:
     st.session_state.last_saved_paths = []
 if "is_busy" not in st.session_state:
@@ -540,6 +544,28 @@ def render_setup_automation_stats():
     </div>
     """, unsafe_allow_html=True)
 
+@st.dialog("⚠️ Cannot Continue")
+def show_goal_reached_dialog_setup():
+    st.write("The previously configured goal has already been reached.")
+    st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
+    if st.button("OK", width="stretch", key="gr_ok_setup"):
+        st.rerun()
+
+@st.dialog("Confirm Stop Automation")
+def confirm_stop_automation():
+    st.write("Are you sure you want to stop the looping process?")
+    col_y, col_n = st.columns(2)
+    if col_y.button("Yes, Stop", type="primary", width="stretch"):
+        async def do_stop_auto():
+            add_log("Stopping Automation Loop...")
+            resp = await st.session_state.client.stop_automation()
+            add_log(f"Auto Stop: {resp.get('message')}")
+        asyncio.run(do_stop_auto())
+        st.session_state.auto_stop_requested = True
+        st.rerun()
+    if col_n.button("Cancel", width="stretch"):
+        st.rerun()
+
 @st.fragment(run_every="5s")
 def render_setup_logs():
     # If a background thread (Submit/Redo) finished and set needs_rerun, pick it up here.
@@ -591,6 +617,15 @@ def render_setup_logs():
     # Optimization: only rerun if state macro-changed (active -> inactive).
     if _trigger_rerun:
         st.rerun()
+
+# --- Top-Level Dialog Triggers (Decoupled from layout) ---
+if st.session_state.get("show_stop_confirmation_setup"):
+    st.session_state.show_stop_confirmation_setup = False
+    confirm_stop_automation()
+
+if st.session_state.get("show_goal_reached_confirmation_setup"):
+    st.session_state.show_goal_reached_confirmation_setup = False
+    show_goal_reached_dialog_setup()
 
 # Always reload config on each rerun to pick up discovery updates
 config = load_config()
@@ -1196,34 +1231,13 @@ with col1:
             elif st.session_state.auto_mode == "images" and history_count >= st.session_state.auto_goal:
                 is_goal_reached = True
 
-            @st.dialog("⚠️ Cannot Continue")
-            def show_goal_reached_dialog_setup():
-                st.write("The previously configured goal has already been reached.")
-                st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
-                if st.button("OK", width="stretch", key="gr_ok_setup"):
-                    st.rerun()
-
-            @st.dialog("Confirm Stop Automation")
-            def confirm_stop_automation():
-                st.write("Are you sure you want to stop the looping process?")
-                col_y, col_n = st.columns(2)
-                if col_y.button("Yes, Stop", type="primary", width="stretch"):
-                    async def do_stop_auto():
-                        add_log("Stopping Automation Loop...")
-                        resp = await st.session_state.client.stop_automation()
-                        add_log(f"Auto Stop: {resp.get('message')}")
-                    asyncio.run(do_stop_auto())
-                    st.session_state.auto_stop_requested = True
-                    st.rerun()
-                if col_n.button("Cancel", width="stretch"):
-                    st.rerun()
-
             btn_col1, btn_col2 = st.columns(2)
 
             with btn_col1:
                 if not show_as_inactive:
                     if st.button("⏹️ Stop Looping Process", width="stretch"):
-                        confirm_stop_automation()
+                        st.session_state.show_stop_confirmation_setup = True
+                        st.rerun()
                 else:
                     start_disabled = not browser_active or st.session_state.get("is_busy", False) or not auto_enabled or st.session_state.auto_stop_requested
                     if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=start_disabled):
@@ -1258,7 +1272,8 @@ with col1:
                 _continue_disabled = not show_as_inactive or history_count == 0 or not browser_active or st.session_state.get("is_busy", False) or not auto_enabled or st.session_state.auto_stop_requested
                 if st.button("⏯️ Continue Session", key="continue_loop_setup", width="stretch", disabled=_continue_disabled):
                     if is_goal_reached:
-                        show_goal_reached_dialog_setup()
+                        st.session_state.show_goal_reached_confirmation_setup = True
+                        st.rerun()
                     else:
                         current_config = load_config()
                         current_config["selected_files"] = st.session_state.selected_files

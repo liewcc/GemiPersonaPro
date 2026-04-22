@@ -211,12 +211,12 @@ class EngineClient:
             return resp.json()
 
     async def get_automation_stats(self):
-        # Do NOT catch exceptions here — let callers handle timeouts/failures.
-        # The dashboard caches last-known stats and needs the exception to know
-        # when the API is blocked (e.g. during synchronous watermark processing).
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{self.base_url}/browser/automation/stats", timeout=5.0)
-            return resp.json()
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{self.base_url}/browser/automation/stats", timeout=5.0)
+                return resp.json()
+        except:
+            return {}
 
     async def clear_engine_logs(self):
         """Clears the physical engine.log file via API."""

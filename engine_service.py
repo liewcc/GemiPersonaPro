@@ -507,7 +507,13 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
 
     # --- [FIX BUG 1] Update persistence ONLY AFTER successful login verification ---
     for u in users:
-        u["active"] = (u["username"] == target_user["username"])
+        is_target = (u["username"] == target_user["username"])
+        u["active"] = is_target
+        # Clear quota_full timestamp if this is the target account and it was previously marked.
+        # If we reached this point, it means the account is usable (expired or cooldown is 0).
+        if is_target and u.get("quota_full"):
+            print(f"[ENGINE] Account {u['username']} is now active and usable. Clearing quota_full timestamp.")
+            u["quota_full"] = ""
     try:
         with open(lookup_path, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=4, ensure_ascii=False)
@@ -715,6 +721,13 @@ async def automation_manager(req: AutomationRequest):
                         )
                         await asyncio.sleep(5)
                         engine._stop_automation_event.clear()
+                        
+                        # Maintain pending stats across account switches (next_profile or re_login)
+                        # Only clear the Loop Control specific counters.
+                        engine._lc_pending_refused = 0
+                        engine._lc_pending_resets  = 0
+                        engine._lc_cycle_start_time = time.time()
+                        
                         engine._lc_pending_refused = 0
                         engine._lc_pending_resets  = 0
                         engine._lc_cycle_start_time = time.time()
@@ -776,11 +789,9 @@ async def automation_manager(req: AutomationRequest):
                             engine._stop_automation_event.clear()
                             if hasattr(engine, '_session_lost'): engine._session_lost = False
                             engine._automation_needs_new_chat = True
-                            # Reset cycle timer & pending counters so the switch window
-                            # is not misrecorded as a [Stopped/Interrupted] entry.
-                            engine._cycle_start_time = time.time()
-                            engine._pending_refused = 0
-                            engine._pending_resets = 0
+                            
+                            # Maintain pending stats across watchdog recovery
+                            pass
                             continue # Try next loop with new user
                         else:
                             print(f"[AUTO] Watchdog recovery failed: {switch_res.get('message')}. Stopping automation.")
@@ -801,9 +812,8 @@ async def automation_manager(req: AutomationRequest):
                     engine._stop_automation_event.clear()
                     if hasattr(engine, '_session_lost'): engine._session_lost = False
                     engine._automation_needs_new_chat = True
-                    # DO NOT reset global pending counters here! They should map to the final saved image.
-                    engine._lc_pending_refused = 0
-                    engine._lc_pending_resets = 0
+                    
+                    # Maintain pending stats across quota-triggered account switches
                     engine._lc_pending_refused = 0
                     engine._lc_pending_resets = 0
                     engine._lc_cycle_start_time = time.time()
@@ -860,10 +870,29 @@ async def automation_manager(req: AutomationRequest):
     finally:
         # Final cleanup: Write an [Interrupted] record if there's pending time/counts
         # This only triggers when the automation manager COMPLETELY exits.
-        if engine._cycle_start_time is not None:
+        if getattr(engine, '_cycle_start_time', None) is not None:
             final_dur = time.time() - engine._cycle_start_time
+            lc_dur = time.time() - getattr(engine, '_lc_cycle_start_time', engine._cycle_start_time)
+            
+            pending_data = {
+                "start_time": engine.automation_status.get("start_time"),
+                "pending_duration": final_dur,
+                "pending_refused": getattr(engine, '_pending_refused', 0),
+                "pending_resets": getattr(engine, '_pending_resets', 0),
+                "lc_pending_duration": lc_dur,
+                "lc_pending_refused": getattr(engine, '_lc_pending_refused', 0),
+                "lc_pending_resets": getattr(engine, '_lc_pending_resets', 0)
+            }
+            try:
+                import json, os
+                pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
+                with open(pending_file, "w", encoding="utf-8") as f:
+                    json.dump(pending_data, f)
+            except Exception as e:
+                engine._log_debug(f"API>> Failed to save pending stats: {e}")
+
             if final_dur > 1 or engine._pending_refused > 0 or engine._pending_resets > 0:
-                engine._log_debug(f"API>> Automation manager ending. Discarding trailing stats: dur={final_dur:.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
+                engine._log_debug(f"API>> Automation manager ending. Saved trailing stats: dur={final_dur:.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
 
         
         engine.automation_status["is_running"] = False
@@ -888,7 +917,7 @@ def _hydrate_automation_state_from_log():
             "successes": successes,
             "refusals": refusals,
             "resets": resets,
-            "cycles": successes
+            "cycles": successes + refusals + resets
         }
     except Exception as e:
         print(f"[AUTO] Failed to hydrate state from log: {e}")
@@ -922,25 +951,19 @@ async def start_automation(req: AutomationRequest):
         "initial_user": initial_user
     })
 
-    # --- [NEW] Reset all table stats to 0 at the start of a fresh run ---
-    try:
-        from config_utils import load_login_lookup, save_login_lookup
-        users = load_login_lookup()
-        for u in users:
-            u["session_images"] = "0"
-            u["session_refused"] = "0"
-            u["session_resets"] = "0"
-        save_login_lookup(users)
-    except Exception as e:
-        print(f"[AUTO] Warning: could not reset session stats in lookup table: {e}")
+
     engine._automation_needs_new_chat = True # Ensure first round starts with New Chat
 
     # Reset per-image reject stat log for the new session
     try:
         with open(engine._reject_log_path, "w", encoding="utf-8") as f:
             json.dump([], f)
+            
+        pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
+        if os.path.exists(pending_file):
+            os.remove(pending_file)
     except Exception as e:
-        print(f"[AUTO] Warning: could not reset reject_stat_log.json: {e}")
+        print(f"[AUTO] Warning: could not reset stats: {e}")
     engine._pending_refused = 0
     engine._pending_resets = 0
     engine._lc_pending_refused = 0
@@ -1002,14 +1025,45 @@ async def continue_automation(req: AutomationRequest):
             "resets": engine.automation_status.get("resets", 0)
         }
 
-    engine._pending_refused = 0
-    engine._pending_resets = 0
-    engine._lc_pending_refused = 0
-    engine._lc_pending_resets = 0
-    
-    # Reset timers so loop control doesn't instantly timeout
-    engine._cycle_start_time = time.time()
-    engine._lc_cycle_start_time = time.time()
+    # Load saved pending stats if they exist, so we can survive full engine restarts
+    pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
+    if os.path.exists(pending_file):
+        try:
+            with open(pending_file, "r", encoding="utf-8") as f:
+                pending_stats = json.load(f)
+            
+            engine._pending_refused = pending_stats.get("pending_refused", 0)
+            engine._pending_resets = pending_stats.get("pending_resets", 0)
+            engine._lc_pending_refused = pending_stats.get("lc_pending_refused", 0)
+            engine._lc_pending_resets = pending_stats.get("lc_pending_resets", 0)
+            
+            # Restore cumulative status values from pending counts
+            engine.automation_status["refusals"] += engine._pending_refused
+            engine.automation_status["resets"] += engine._pending_resets
+            engine.automation_status["cycles"] += (engine._pending_refused + engine._pending_resets)
+            
+            # Restore start_time if available
+            if pending_stats.get("start_time"):
+                engine.automation_status["start_time"] = pending_stats.get("start_time")
+
+            engine._cycle_start_time = time.time() - pending_stats.get("pending_duration", 0)
+            engine._lc_cycle_start_time = time.time() - pending_stats.get("lc_pending_duration", 0)
+            
+            # Remove it so we don't accidentally load it again later if we don't want to
+            os.remove(pending_file)
+            engine._log_debug(f"API>> Loaded and restored pending stats: dur={pending_stats.get('pending_duration'):.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
+        except Exception as e:
+            engine._log_debug(f"API>> Failed to load pending stats: {e}")
+            if not getattr(engine, '_cycle_start_time', None): engine._cycle_start_time = time.time()
+            if not getattr(engine, '_lc_cycle_start_time', None): engine._lc_cycle_start_time = time.time()
+    else:
+        # Do not clear pending counters (_pending_refused, _pending_resets) here.
+        # We want to resume the process and correctly attribute past refuses/resets to the next successful image.
+        if not getattr(engine, '_cycle_start_time', None):
+            engine._cycle_start_time = time.time()
+        if not getattr(engine, '_lc_cycle_start_time', None):
+            engine._lc_cycle_start_time = time.time()
+        
     engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
     
     engine.automation_status["is_running"] = True

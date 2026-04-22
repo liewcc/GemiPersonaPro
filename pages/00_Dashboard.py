@@ -137,6 +137,12 @@ if "selected_files" not in st.session_state:
     st.session_state.selected_files = config.get("selected_files", [])
 if "name_start" not in st.session_state: 
     st.session_state.name_start = config.get("name_start", 1)
+if "show_stop_confirmation" not in st.session_state:
+    st.session_state.show_stop_confirmation = False
+if "stop_confirmation_location" not in st.session_state:
+    st.session_state.stop_confirmation_location = "main"
+if "show_goal_reached_confirmation" not in st.session_state:
+    st.session_state.show_goal_reached_confirmation = False
 
 def add_log(msg):
     timestamp = time.strftime("%H:%M:%S")
@@ -239,11 +245,11 @@ def render_stats_body_fragment():
             "refused_count": p_refused,
             "reset_count": p_resets
         }
-        # Running: Newest first (Descending), with Processing row at the absolute top
-        display_records = [pending_record] + list(reversed(records))
+        filtered_records = [r for r in records if r.get("filename") not in ["[Stopped/Interrupted]", "[Account Switched]"]]
+        display_records = [pending_record] + list(reversed(filtered_records))
     else:
         # Stopped: Oldest first (Ascending) for the final summary view
-        display_records = records
+        display_records = [r for r in records if r.get("filename") not in ["[Stopped/Interrupted]", "[Account Switched]"]]
 
     # 4. Render Layout
     if not display_records:
@@ -263,12 +269,12 @@ def render_stats_body_fragment():
         """
         st.markdown(summary_html, unsafe_allow_html=True)
 
-        real_img_count = sum(1 for r in records if r.get("filename") != "[Stopped/Interrupted]")
+        real_img_count = sum(1 for r in records if r.get("filename") not in ["[Stopped/Interrupted]", "[Account Switched]"])
         st.markdown(f"**{real_img_count}** image(s) downloaded.")
         _render_reject_table(display_records)
     else:
         st.caption("🏁 Automation stopped. View final stats below.")
-        total_images = sum(1 for r in records if r.get("filename") != "[Stopped/Interrupted]")
+        total_images = sum(1 for r in records if r.get("filename") not in ["[Stopped/Interrupted]", "[Account Switched]"])
         total_dur = sum(r.get("duration_sec", 0) for r in records)
         avg_dur = total_dur / total_images if total_images else 0
         total_r = sum(int(r.get("refused_count", 0)) for r in records)
@@ -289,12 +295,35 @@ def render_stats_body_fragment():
         st.markdown("### Summary")
         st.markdown(sum_top_html, unsafe_allow_html=True)
 
-        _render_reject_table(records)
+        _render_reject_table(display_records)
 
 @st.dialog("📊 Reject Rate Stats", width="small")
 def show_reject_rate_stats():
     """Renders the stats with 1s auto-refresh if automation is running."""
     render_stats_body_fragment()
+
+@st.dialog("Confirm Stop Automation")
+def confirm_stop_automation_dash(location):
+    st.write("Are you sure you want to stop the looping process?")
+    col_y, col_n = st.columns(2)
+    if col_y.button("Yes, Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
+        async def do_stop_auto():
+            add_log("Stopping Automation Loop...")
+            resp = await st.session_state.client.stop_automation()
+            add_log(f"Auto Stop: {resp.get('message')}")
+        asyncio.run(do_stop_auto())
+        st.session_state.auto_stop_requested = True
+        st.session_state.ui_auto_looping_active = False
+        st.rerun()
+    if col_n.button("Cancel", width="stretch", key=f"dash_no_stop_{location}"):
+        st.rerun()
+
+@st.dialog("⚠️ Cannot Continue")
+def show_goal_reached_dialog(location):
+    st.write("The previously configured goal has already been reached.")
+    st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
+    if st.button("OK", width="stretch", key=f"gr_ok_{location}"):
+        st.rerun()
 
 @st.fragment(run_every=1)
 def render_chart_body_fragment():
@@ -317,7 +346,7 @@ def render_chart_body_fragment():
     except: pass
 
     # 3. Clean historical records
-    clean_records = [r for r in records if r.get("filename") and r.get("filename") != "[Stopped/Interrupted]"]
+    clean_records = [r for r in records if r.get("filename") and r.get("filename") not in ["[Stopped/Interrupted]", "[Account Switched]"]]
 
     # 4. Append live 'Processing' data intelligently
     if is_running:
@@ -422,7 +451,12 @@ def render_chart_body_fragment():
     ).encode(
         x=alt.X('Filename:N', title=None, axis=alt.Axis(labelAngle=-45)),
         y=alt.Y('Value:Q', title=None),
-        color=alt.Color('Data:N', legend=alt.Legend(title=None, orient="bottom", symbolType="stroke", symbolOpacity=1, symbolStrokeWidth=3)),
+        color=alt.Color('Data:N', 
+            scale=alt.Scale(
+                domain=['Duration (m)', 'Refused', 'Resets'],
+                range=['#2196F3', '#28a745', '#FF9800']
+            ),
+            legend=alt.Legend(title=None, orient="bottom", symbolType="stroke", symbolOpacity=1, symbolStrokeWidth=3)),
         tooltip=[
             alt.Tooltip('Filename:N', title="Filename"),
             alt.Tooltip(r'Duration (m\:s):N', title="Duration"),
@@ -556,7 +590,7 @@ def _render_reject_table(records):
         ref = int(r.get("refused_count", 0))
         rst = int(r.get("reset_count", 0))
         dur_str = _format_dur_str(dur)
-        ref_color = "#d73a49" if ref > 0 else "inherit"
+        ref_color = "#28a745" if ref > 0 else "inherit"
         rst_color = "#e36209" if rst > 0 else "inherit"
         rows_html += f"<tr><td style='text-align:center;'>{idx}</td><td style='font-family:monospace;'>{fname}</td><td style='text-align:right;'>{dur_str}</td><td style='text-align:center; color:{ref_color}; font-weight:{'700' if ref > 0 else 'normal'};'>{ref}</td><td style='text-align:center; color:{rst_color}; font-weight:{'700' if rst > 0 else 'normal'};'>{rst}</td></tr>"
     
@@ -621,6 +655,15 @@ if browser_active and not st.session_state.initial_login_checked:
 if st.session_state.needs_full_rerun:
     st.session_state.needs_full_rerun = False
     st.rerun()
+
+# --- Top-Level Dialog Triggers (Decoupled from Fragments) ---
+if st.session_state.show_stop_confirmation:
+    st.session_state.show_stop_confirmation = False
+    confirm_stop_automation_dash(st.session_state.stop_confirmation_location)
+
+if st.session_state.show_goal_reached_confirmation:
+    st.session_state.show_goal_reached_confirmation = False
+    show_goal_reached_dialog(st.session_state.stop_confirmation_location)
 
 try:
     auto_stats = asyncio.run(st.session_state.client.get_automation_stats())
@@ -762,29 +805,6 @@ def render_looping_button(location="sidebar"):
     elif st.session_state.auto_mode == "images" and history_count >= st.session_state.auto_goal:
         is_goal_reached = True
 
-    @st.dialog("Confirm Stop Automation")
-    def confirm_stop_automation_dash():
-        st.write("Are you sure you want to stop the looping process?")
-        col_y, col_n = st.columns(2)
-        if col_y.button("Yes, Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
-            async def do_stop_auto():
-                add_log("Stopping Automation Loop...")
-                resp = await st.session_state.client.stop_automation()
-                add_log(f"Auto Stop: {resp.get('message')}")
-            asyncio.run(do_stop_auto())
-            st.session_state.auto_stop_requested = True
-            st.session_state.ui_auto_looping_active = False
-            st.rerun()
-        if col_n.button("Cancel", width="stretch", key=f"dash_no_stop_{location}"):
-            st.rerun()
-
-    @st.dialog("⚠️ Cannot Continue")
-    def show_goal_reached_dialog():
-        st.write("The previously configured goal has already been reached.")
-        st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
-        if st.button("OK", width="stretch", key=f"gr_ok_{location}"):
-            st.rerun()
-
     btn_col1, btn_col2 = st.columns(2)
 
     with btn_col1:
@@ -817,13 +837,17 @@ def render_looping_button(location="sidebar"):
                 st.rerun()
         else:
             if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
-                confirm_stop_automation_dash()
+                st.session_state.show_stop_confirmation = True
+                st.session_state.stop_confirmation_location = location
+                st.rerun()
 
     with btn_col2:
         _continue_disabled = not _show_as_inactive or history_count == 0 or not _browser_active or _is_busy or not _auto_enabled or _stop_req
         if st.button("⏯️ Continue Session", key=f"continue_loop_{location}", width="stretch", disabled=_continue_disabled):
             if is_goal_reached:
-                show_goal_reached_dialog()
+                st.session_state.show_goal_reached_confirmation = True
+                st.session_state.stop_confirmation_location = location
+                st.rerun()
             else:
                 current_config = load_config()
                 current_config["selected_files"] = st.session_state.selected_files

@@ -599,8 +599,11 @@ class BrowserEngine:
             if os.path.exists(self._reject_log_path):
                 with open(self._reject_log_path, "r", encoding="utf-8") as f:
                     records = json.load(f)
+            image_count = sum(1 for r in records if not str(r.get("filename", "")).startswith("["))
+            idx_val = image_count + 1 if not filename.startswith("[") else "-"
+            
             records.append({
-                "index": len(records) + 1,
+                "index": idx_val,
                 "filename": filename,
                 "duration_sec": round(duration_sec, 2),
                 "refused_count": refused_count,
@@ -1715,16 +1718,14 @@ class BrowserEngine:
                         dl_resp = await self.download_images(cfg.get("save_dir"), naming, meta)
                         saved_paths = []
                         if dl_resp and dl_resp.get("status") == "success":
+                            saved_paths = dl_resp.get("saved_paths", [])
+                            
+                        if saved_paths:
                             new_start = dl_resp.get("next_start", cfg.get("name_start"))
                             cfg["name_start"] = new_start
-                            saved_paths = dl_resp.get("saved_paths", [])
                             self._update_config_start(new_start)
                             
-                            # Confirm files actually landed on disk before counting as a true success.
-                            if not saved_paths:
-                                self._log_debug("Download returned success but saved_paths is empty. Success NOT counted.")
-                            else:
-                                self.automation_status["successes"] += 1
+                            self.automation_status["successes"] += 1
                             
                             # Write per-image reject stat record
                             cycle_end = time.time()
