@@ -64,38 +64,17 @@ apply_premium_style()
 def apply_layout_fix():
     st.markdown("""
         <style>
-        .main {
-            overflow: hidden !important;
-        }
-        .block-container {
-            padding-top: 2rem !important;
-            padding-bottom: 0rem !important;
-        }
-        /* Target major containers to be viewport-bound */
-        /* Use a selector that targets columns in the main area */
-        [data-testid="stColumn"] > div > [data-testid="stVerticalBlockBorderWrapper"] > div > [data-testid="stVerticalBlock"] {
-            height: calc(100vh - 125px) !important;
-            overflow-y: auto !important;
-            padding-right: 15px;
-        }
-        /* Custom scrollbar */
-        [data-testid="stVerticalBlock"]::-webkit-scrollbar {
-            width: 8px;
-        }
-        [data-testid="stVerticalBlock"]::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb {
-            background: rgba(160, 160, 255, 0.2);
-            border-radius: 10px;
-        }
-        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb:hover {
-            background: rgba(160, 160, 255, 0.4);
-        }
+        .main { overflow: hidden !important; }
+        .block-container { padding-top: 2rem !important; padding-bottom: 0rem !important; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar { width: 8px; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-track { background: transparent; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb { background: rgba(160,160,255,0.2); border-radius: 10px; }
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb:hover { background: rgba(160,160,255,0.4); }
         </style>
     """, unsafe_allow_html=True)
 
 apply_layout_fix()
+
 
 # --- Initialize Session State & Sync with Disk ---
 if "config" not in st.session_state:
@@ -467,82 +446,89 @@ with st.sidebar:
 
 # --- Top Browser Status Bar ---
 @st.fragment(run_every="10s")
-def render_browser_status_bar():
-    # Auto-read health to check if engine is alive
+def render_setup_account_status():
+    """Account + browser status bar for the Setup main panel."""
     h_data = asyncio.run(st.session_state.client.check_health())
     active = h_data.get("engine_running", False) if h_data else False
-
-    # Fetch cached account from background automation loop (fast, no DOM check)
     stats = asyncio.run(st.session_state.client.get_automation_stats())
     cached_account = stats.get("current_account_id")
-
-    # Read account status from session_state (set on browser start and manual checks).
     result = st.session_state.login_status
-    
-    # If the background loop has a newer account cached (from switch_profile), override the display
+
     display_account = None
     is_logged_in = False
-    
     if cached_account:
         is_logged_in = True
         display_account = cached_account
     elif result and result.get("logged_in"):
         is_logged_in = True
         display_account = result.get("account_id", "Unknown")
-    
-    # Minimal status display
-    status_color = "#00ff00" if active else "#ff4444"
+
+    status_color = "#28a745" if active else "#d73a49"
     status_text = "ONLINE" if active else "OFFLINE"
     
-    col_status, col_account = st.columns([1, 5])
-    
-    with col_status:
-        st.markdown(f"<p style='margin: 0; font-size: 0.9em;'><span style='color:{status_color};'>●</span> <b>BROWSER:</b> {status_text}</p>", unsafe_allow_html=True)
-    
-    with col_account:
-        if not active:
-            st.markdown("<p style='margin: 0; font-size: 0.9em; color: #888;'>Account: Not Ready</p>", unsafe_allow_html=True)
-        elif result is None and not cached_account:
-            st.markdown("<p style='margin: 0; font-size: 0.9em; color: #aaa;'>Account: Scanning...</p>", unsafe_allow_html=True)
-        elif is_logged_in:
-            st.markdown(f"<p style='margin: 0; font-size: 0.9em;'><b>Account:</b> <span style='color:#a0a0ff;'>{display_account}</span></p>", unsafe_allow_html=True)
-        else:
-            st.markdown("<p style='margin: 0; font-size: 0.9em;'><b>Account:</b> <span style='color:#ff8888;'>GUEST / NOT LOGGED IN</span></p>", unsafe_allow_html=True)
-    st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+    if not active:
+        account_html = "<span style='color: #6a737d;'>Not Ready</span>"
+    elif result is None and not cached_account:
+        account_html = "<span style='color: #6a737d;'>Scanning...</span>"
+    elif is_logged_in:
+        account_html = f"<span style='color: #0366d6; font-weight: 600;'>{display_account}</span>"
+    else:
+        account_html = "<span style='color: #d73a49; font-weight: 600;'>GUEST / NOT LOGGED IN</span>"
 
-
-render_browser_status_bar()
+    bg_color = "#ffffff" if active else "#f6f8fa"
+    st.markdown(f"""
+    <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 0.9em; border: 1px solid #ddd; color: #24292e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+        <div style='flex: 1; display: flex; align-items: center; justify-content: space-between;'>
+            <div><b style='color: {status_color};'>●</b> <b>BROWSER:</b> {status_text}</div>
+            <div style='text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 10px;'><b>Account:</b> {account_html}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 @st.fragment(run_every="5s")
 def render_setup_automation_stats():
-    stats = asyncio.run(st.session_state.client.get_automation_stats())
-    is_active = stats.get("is_running", False)
-    
-    c = stats.get("cycles", 0)
-    s = stats.get("successes", 0)
-    r = stats.get("refusals", 0)
-    rs = stats.get("resets", 0)
+    _trigger_rerun = False
+    try:
+        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        is_active = stats.get("is_running", False)
+        if st.session_state.get("last_known_auto_active", False) and not is_active:
+            st.session_state.last_known_auto_active = False
+            _trigger_rerun = True
+        else:
+            st.session_state.last_known_auto_active = is_active
+        c, s, r, rs = stats.get("cycles", 0), stats.get("successes", 0), stats.get("refusals", 0), stats.get("resets", 0)
+        
+        # Check for switching status via health data
+        h_data = asyncio.run(st.session_state.client.check_health())
+        engine_on = h_data.get("engine_running", False) if h_data else False
+        
+        if is_active:
+            if not engine_on:
+                status_badge, bg_color = "<b style='color: #f39c12;'>● SWITCHING</b>", "#fff7e6"
+            else:
+                status_badge, bg_color = "<b style='color: #d73a49;'>● RUNNING</b>", "#ffffff"
+        elif c > 0:
+            status_badge, bg_color = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>", "#f6f8fa"
+        else:
+            st.caption("Automation Standby.")
+            return
 
-    # Status Badge
-    if is_active:
-        status_badge = "<b style='color: #d73a49;'>● RUNNING</b>"
-        bg_color = "#ffffff"
-    elif c > 0:
-        status_badge = "<b style='color: #6a737d;'>○ IDLE / FINISHED</b>"
-        bg_color = "#f6f8fa"
-    else:
-        st.caption("Automation Standby.")
-        return
+        st.markdown(f"""
+        <div style='background: {bg_color}; padding: 0 15px; height: 40px; display: flex; align-items: center; border-radius: 8px; font-family: monospace; font-size: 0.9em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-bottom: 15px;'>
+            <div>{status_badge} | Cycles: <b>{c}</b> | Images: <b>{s}</b> | Refused: <b>{r}</b> | Resets: <b>{rs}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
+    except: pass
+    if _trigger_rerun:
+        st.session_state.needs_rerun = True
 
-    st.markdown(f"""
-    <div style='background: {bg_color}; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.85em; border: 1px solid #ddd; color: #1e1e1e; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 10px;'>
-        {status_badge} | 
-        Cycles: <span style='color: #0366d6; font-weight: bold;'>{c}</span> | 
-        Images: <span style='color: #22863a; font-weight: bold;'>{s}</span> | 
-        Refused: <span style='color: #6f42c1; font-weight: bold;'>{r}</span> | 
-        Resets: <span style='color: #e36209; font-weight: bold;'>{rs}</span>
-    </div>
-    """, unsafe_allow_html=True)
+
+# Top status bar row
+col_account_status, col_auto_stats = st.columns(2)
+with col_account_status:
+    render_setup_account_status()
+with col_auto_stats:
+    render_setup_automation_stats()
 
 @st.dialog("⚠️ Cannot Continue")
 def show_goal_reached_dialog_setup():
@@ -632,12 +618,12 @@ config = load_config()
 
 col1, col2 = st.columns([2, 1])
 
-# Calculate shared height for "Browser-like" look
-# We keep this as a fallback/trigger for Streamlit's internal scrolling logic
-MAIN_HEIGHT = 800
+# Adjust these two values independently to fit your screen
+LEFT_HEIGHT = 770   # Left panel (main controls) — increase/decrease as needed
+RIGHT_HEIGHT = 770   # Right panel (live logs)    — increase/decrease as needed
 
 with col1:
-    with st.container(border=True, height=MAIN_HEIGHT):
+    with st.container(border=True, height=LEFT_HEIGHT):
         # --- Account Actions Section ---
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>ACCOUNT ACTIONS</p>", unsafe_allow_html=True)
         with st.container(border=True):
@@ -1154,8 +1140,7 @@ with col1:
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>GEMINI AUTOMATION</p>", unsafe_allow_html=True)
         with st.container(border=True):
-            # --- Automation Stats Fragment (Permanently Visible) ---
-            render_setup_automation_stats()
+            # --- Automation Stats Fragment (Moved to top) ---
 
             # Disable toggle if automation is running or stopping
             auto_status_pre = asyncio.run(st.session_state.client.get_automation_stats())
@@ -1303,7 +1288,7 @@ with col1:
                         st.rerun()
 
 with col2:
-    with st.container(border=True, height=MAIN_HEIGHT):
+    with st.container(border=True, height=RIGHT_HEIGHT):
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>ENGINE LIVE LOGS</p>", unsafe_allow_html=True)
         
         # --- Log Management Buttons ---
