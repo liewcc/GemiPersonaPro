@@ -18,7 +18,25 @@ _download_popup_open = False
 # Resolve icon path relative to this script's location
 _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 _TRAY_ICON_PATH = os.path.join(_SCRIPT_DIR, 'sys_img', 'icon_no_BG.png')
+_STATE_FILE = os.path.join(_SCRIPT_DIR, 'notifier_state.json')
 
+def load_notifier_state():
+    """Load the last acknowledged file list."""
+    if os.path.exists(_STATE_FILE):
+        try:
+            with open(_STATE_FILE, 'r', encoding='utf-8') as f:
+                return set(json.load(f).get('last_ack_files', []))
+        except:
+            pass
+    return set()
+
+def save_notifier_state(files_set):
+    """Save the current directory files as acknowledged."""
+    try:
+        with open(_STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'last_ack_files': list(files_set)}, f)
+    except:
+        pass
 
 def get_automation_stats():
     """Fetch full automation stats from the engine service."""
@@ -44,14 +62,15 @@ def is_gemipersona_running():
 # Shared helper: build and show a themed tkinter popup near the taskbar
 # ---------------------------------------------------------------------------
 
-def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
+def _build_popup(title_text, rows, folder_path, auto_close_ms=None, on_manual_close=None):
     """Construct and run a dark-themed borderless popup window.
 
     Args:
-        title_text   : string shown in the popup header
-        rows         : list of (label, value) tuples for the data card
-        folder_path  : path for the 'Open Folder' button, or None to hide it
-        auto_close_ms: if set, window auto-dismisses after this many milliseconds
+        title_text     : string shown in the popup header
+        rows           : list of (label, value) tuples for the data card
+        folder_path    : path for the 'Open Folder' button, or None to hide it
+        auto_close_ms  : if set, window auto-dismisses after this many milliseconds
+        on_manual_close: callback triggered when user explicitly clicks a button or X
     """
     C_BG      = '#0f1117'
     C_CARD    = '#1a1f2e'
@@ -72,6 +91,13 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
     root.attributes('-topmost', True)
     root.configure(bg=C_BORDER)
 
+    def _manual_exit(callback=None):
+        if on_manual_close:
+            on_manual_close()
+        if callback:
+            callback()
+        root.destroy()
+
     # 1-px accent border via outer frame
     outer = tk.Frame(root, bg=C_BORDER, padx=1, pady=1)
     outer.pack(fill='both', expand=True)
@@ -89,7 +115,7 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
     close_lbl = tk.Label(title_bar, text='  ✕  ', bg=C_BG, fg=C_MUTED,
                          font=('Segoe UI', 9), cursor='hand2')
     close_lbl.pack(side='right')
-    close_lbl.bind('<Button-1>', lambda e: root.destroy())
+    close_lbl.bind('<Button-1>', lambda e: _manual_exit())
     close_lbl.bind('<Enter>',    lambda e: close_lbl.config(fg=C_TEXT))
     close_lbl.bind('<Leave>',    lambda e: close_lbl.config(fg=C_MUTED))
 
@@ -103,10 +129,15 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
     for label, value in rows:
         row_frame = tk.Frame(card, bg=C_CARD)
         row_frame.pack(fill='x', pady=2)
+        
+        # Use a special red color for 'Unseen' count
+        val_color = '#ff5555' if label == "Unseen" else C_TEXT
+        val_font  = ('Segoe UI Bold', 9) if label == "Unseen" else FONT_VALUE
+        
         tk.Label(row_frame, text=label, width=8, anchor='w',
                  bg=C_CARD, fg=C_MUTED, font=FONT_LABEL).pack(side='left')
         tk.Label(row_frame, text=value, anchor='w',
-                 bg=C_CARD, fg=C_TEXT, font=FONT_VALUE,
+                 bg=C_CARD, fg=val_color, font=val_font,
                  wraplength=260, justify='left').pack(side='left', fill='x', expand=True)
 
     # -- Button row --
@@ -116,7 +147,7 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
     def _open_folder():
         if folder_path:
             os.startfile(folder_path)
-        root.destroy()
+        _manual_exit()
 
     if folder_path:
         tk.Button(
@@ -132,7 +163,7 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
         bg=C_BTN_SEC, fg=C_MUTED, font=FONT_BTN,
         padx=10, pady=4, cursor='hand2',
         activebackground='#363d52', activeforeground=C_TEXT,
-        command=root.destroy
+        command=_manual_exit
     ).pack(side='left', padx=(8 if folder_path else 0, 0))
 
     def _open_gemipersona():
@@ -143,7 +174,7 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
                 shell=False,
                 close_fds=True
             )
-        root.destroy()
+        _manual_exit()
 
     running = is_gemipersona_running()
 
@@ -178,9 +209,10 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None):
     root.geometry(f'{win_w}x{win_h}+{x_pos}+{y_pos}')
     root.deiconify()
 
-    root.bind('<Escape>', lambda e: root.destroy())
+    root.bind('<Escape>', lambda e: _manual_exit())
 
     if auto_close_ms:
+        # Note: auto-close uses root.destroy() directly, bypassing _manual_exit's callback
         root.after(auto_close_ms, lambda: root.destroy() if root.winfo_exists() else None)
 
     root.mainloop()
@@ -207,6 +239,14 @@ def _show_status_popup():
         else:
             stats       = get_automation_stats()
             active_acct = config_utils.load_config().get('active_user', 'N/A') or 'N/A'
+            
+            # Calculate total pending since LAST MANUAL ACK
+            current_files = set(os.listdir(current_dir_display))
+            last_ack_files = load_notifier_state()
+            image_pending = [f for f in (current_files - last_ack_files)
+                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
+            total_pending = len(image_pending)
+
             rows = [
                 ("Account", active_acct),
                 ("State",   "Running" if stats.get('is_running', False) else "Stopped"),
@@ -214,11 +254,19 @@ def _show_status_popup():
                 ("Saved",   str(stats.get('successes', 0))),
                 ("Refused", str(stats.get('refusals', 0))),
                 ("Resets",  str(stats.get('resets', 0))),
-                ("Path",    current_dir_display),
             ]
+            
+            if total_pending > 0:
+                rows.append(("Unseen", f"{total_pending} image{'s' if total_pending > 1 else ''} since last visit"))
+                
+            rows.append(("Path", current_dir_display))
             folder_path = current_dir_display
 
-        _build_popup("GemiPersona Notifier", rows, folder_path)
+        def on_manual_ack():
+            if current_dir_display and os.path.exists(current_dir_display):
+                save_notifier_state(set(os.listdir(current_dir_display)))
+
+        _build_popup("GemiPersona Notifier", rows, folder_path, on_manual_close=on_manual_ack)
 
     finally:
         _status_popup_open = False
@@ -229,7 +277,7 @@ def _show_status_popup():
 # ---------------------------------------------------------------------------
 
 def _show_new_files_popup(image_files, active_account, l_state,
-                          s_cycles, s_images, s_refused, s_resets, directory):
+                          s_cycles, s_images, s_refused, s_resets, directory, total_pending, current_files):
     """Show a new-download alert popup — bypasses Windows notification system entirely.
     Auto-dismisses after 8 seconds if the user takes no action.
     """
@@ -255,14 +303,22 @@ def _show_new_files_popup(image_files, active_account, l_state,
             ("Refused", str(s_refused)),
             ("Resets",  str(s_resets)),
             ("New",     file_summary),
-            ("Path",    directory),
         ]
+        
+        if total_pending > count:
+            rows.append(("Unseen", f"+{total_pending - count} more since last visit"))
+            
+        rows.append(("Path", directory))
+
+        def on_manual_ack():
+            save_notifier_state(current_files)
 
         _build_popup(
             f"GemiPersona — {count} New Image{'s' if count > 1 else ''}",
             rows,
             folder_path=directory,
-            auto_close_ms=8000          # Auto-dismiss after 8 seconds
+            auto_close_ms=8000,          # Auto-dismiss after 8 seconds
+            on_manual_close=on_manual_ack
         )
 
     finally:
@@ -307,16 +363,17 @@ def monitor_directory():
             if new_dir != current_dir:
                 current_dir = new_dir
                 last_files = set(os.listdir(current_dir))
+                # On dir change, mark existing as seen
+                save_notifier_state(last_files)
                 continue
 
             current_files = set(os.listdir(current_dir))
             new_files     = current_files - last_files
             image_files   = [f for f in new_files
-                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
 
             if image_files:
                 # Give the engine a short grace period to update its internal success counter
-                # after the file has appeared on disk to avoid 'Saved: 0' race conditions.
                 time.sleep(1.5)
                 
                 stats          = get_automation_stats()
@@ -327,11 +384,23 @@ def monitor_directory():
                 s_refused      = stats.get('refusals', 0)
                 s_resets       = stats.get('resets', 0)
 
-                # Launch tkinter popup in its own daemon thread (non-blocking)
+                # Calculate total pending since LAST MANUAL ACK
+                last_ack_files = load_notifier_state()
+                if not last_ack_files:
+                    # First time: treat last_files as acknowledged
+                    save_notifier_state(last_files)
+                    last_ack_files = last_files
+                
+                total_pending_set = current_files - last_ack_files
+                image_pending = [f for f in total_pending_set 
+                                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
+                total_pending_count = len(image_pending)
+
+                # Launch tkinter popup in its own daemon thread
                 threading.Thread(
                     target=_show_new_files_popup,
                     args=(image_files, active_account, l_state,
-                          s_cycles, s_images, s_refused, s_resets, current_dir),
+                          s_cycles, s_images, s_refused, s_resets, current_dir, total_pending_count, current_files),
                     daemon=True
                 ).start()
 

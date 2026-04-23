@@ -146,3 +146,14 @@ The automation engine now supports dynamically reloading prompts without interru
 - This normalization prevents the relatively large duration values (e.g., 180s) from overwhelming the smaller Refused/Reset counts (e.g., 1, 2, 3), making the efficiency trends and health events clearly visible on the same scale.
 - Maintained detailed precision in tooltips, which continue to display the exact time in `M:SS` format.
 - Standardized the graph legend to match the **Dashboard's** performance charts for a unified monitoring experience.
+
+### 17. Account Health Y-Axis Scale Persistence & Toggle
+- Implemented a **Y-Axis Scale** toggle (Linear vs. Logarithmic) in the Account Health Analysis module.
+- Used **Symmetrical Log (symlog)** for logarithmic mode to safely handle zero values (Refused/Reset counts), ensuring visibility for small counts alongside large durations.
+- Integrated the scale preference into `config.json`, allowing the system to remember and restore the user's preferred viewing mode across sessions.
+
+### 18. Smart Notifier Tracking & Cumulative Unseen Counts
+- Enhanced `image_notifier.py` with a persistent tracking system (`notifier_state.json`) that distinguishes between **Auto-Hide** and **Manual Dismissal**.
+- Added a **Cumulative Unseen Count** feature: the notifier now tracks and displays how many images have been downloaded since the user last manually acknowledged a popup.
+- High-visibility UI: The "Unseen" count is highlighted in **Bold Red** for immediate recognition of overnight or background download batches.
+- Synchronized Status: The manual "Show Status" popup now correctly calculates and displays the same unseen count, ensuring consistency between automatic alerts and manual checks.

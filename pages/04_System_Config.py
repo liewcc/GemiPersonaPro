@@ -40,6 +40,9 @@ def on_change_health_graph():
 def on_change_health_view():
     save_config({"health_view_mode": st.session_state.cfg_health_view_mode})
 
+def on_change_health_y_scale():
+    save_config({"health_y_scale": st.session_state.cfg_health_y_scale})
+
 def on_change_navigation():
     save_config({"system_navigation": st.session_state.cfg_system_nav})
 
@@ -330,9 +333,12 @@ st.session_state.cfg_timeout = int(config.get("heartbeat_timeout", 3600))
 st.session_state.cfg_watchdog_delay = int(config.get("watchdog_initial_delay", 20))
 st.session_state.cfg_quota_cooldown_hrs = int(config.get("quota_cooldown_hours", 24))
 st.session_state.cfg_quota_cooldown_min = config.get("quota_cooldown_minutes", 0)
-st.session_state.cfg_health_graph_type = config.get("health_graph_type", "Loading Duration")
-st.session_state.cfg_health_view_mode = config.get("health_view_mode", "Full Loading History (All Events)")
-st.session_state.cfg_system_nav = config.get("system_navigation", "Engine Settings")
+if "cfg_health_view_mode" not in st.session_state:
+    st.session_state.cfg_health_view_mode = config.get("health_view_mode", "Full Loading History (All Events)")
+if "cfg_health_y_scale" not in st.session_state:
+    st.session_state.cfg_health_y_scale = config.get("health_y_scale", "Linear")
+if "cfg_system_nav" not in st.session_state:
+    st.session_state.cfg_system_nav = config.get("system_navigation", "Engine Settings")
 
 st.session_state.cfg_browser_url = config.get("browser_url", "https://gemini.google.com/app")
 st.session_state.cfg_startup_redirect = config.get("startup_redirect", "dashboard")
@@ -625,7 +631,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                        y=alt.Y('Minutes:Q', title="Duration (m)"),
+                        y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
                                         legend=alt.Legend(title=None, orient='bottom')),
@@ -690,9 +696,11 @@ def _render_health_content(view_mode, login_data, graph_type):
                         # Map internal names to display names for the legend
                         plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
                         
+                        y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
+
                         main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
                             x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
-                            y=alt.Y('Value:Q', title=None),
+                            y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
                             color=alt.Color('Metric:N', scale=alt.Scale(
                                 domain=['Duration (m)','Rejects','Resets'],
                                 range=['#2ecc71','#a0a0ff','#f39c12']),
@@ -744,7 +752,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                         _chart_df["Duration"] = _chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                         _chart = alt.Chart(_chart_df).mark_bar().encode(
                             x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                            y=alt.Y('Minutes:Q', title="Duration (m)"),
+                            y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                             color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom')),
                             tooltip=['time', 'account', 'Duration', 'filename', 'status']
                         ).properties(height=400).interactive(bind_y=False)
@@ -802,9 +810,11 @@ def _render_health_content(view_mode, login_data, graph_type):
                             # Map internal names to display names for the legend
                             plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
                             
+                            y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
+
                             main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
                                 x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
-                                y=alt.Y('Value:Q', title=None),
+                                y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
                                 color=alt.Color('Metric:N', scale=alt.Scale(
                                     domain=['Duration (m)','Rejects','Resets'],
                                     range=['#2ecc71','#a0a0ff','#f39c12']),
@@ -873,7 +883,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                        y=alt.Y('Minutes:Q', title="Duration (m)"),
+                        y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
                                         legend=alt.Legend(title=None, orient='bottom')),
@@ -935,9 +945,11 @@ def _render_health_content(view_mode, login_data, graph_type):
                         # Map internal names to display names for the legend
                         plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
 
+                        y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
+
                         main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
                             x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
-                            y=alt.Y('Value:Q', title=None),
+                            y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
                             color=alt.Color('Metric:N', scale=alt.Scale(
                                 domain=['Duration (m)','Rejects','Resets'],
                                 range=['#2ecc71','#a0a0ff','#f39c12']),
@@ -1033,8 +1045,10 @@ if menu_selection == "Account Health Analysis":
 
         if st.session_state.show_health_graph and not is_latest_summary:
             st.markdown("<div style='margin-bottom: 5px;'></div>", unsafe_allow_html=True)
-            _, col_rad = st.columns([1.5, 1])
+            _, col_rad, col_scale = st.columns([1.5, 1, 1])
             with col_rad:
                 st.radio("Graph Mode", ["Loading Duration", "Reject Rates"], horizontal=True, key="cfg_health_graph_type", on_change=on_change_health_graph, label_visibility="collapsed")
+            with col_scale:
+                st.radio("Y-Axis Scale", ["Linear", "Logarithmic"], horizontal=True, key="cfg_health_y_scale", on_change=on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
 
         _render_health_content(view_mode, login_data, st.session_state.get("cfg_health_graph_type", "Loading Duration"))
