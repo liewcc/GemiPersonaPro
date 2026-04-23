@@ -11,6 +11,13 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - Implements strict **Goal Protection**: attempting to continue a session that has already reached its configured image/round target will automatically trigger an alert dialog, preventing accidental data pollution or instant-stop loops.
 - **UI Stabilization**: Refactored the control layout across both pages. The `Start / Stop` buttons now swap seamlessly in place, while the `Continue` button securely occupies the adjacent column, ensuring absolute layout stability and zero button-jumping during active automation.
 
+### 2. Interactive Wheel-Zoom for Dashboard Reject Rate Chart
+- Upgraded the Dashboard's **📈 Reject Rate Chart** to support smooth, mouse-wheel-based zooming and horizontal panning.
+- Migrated the X-axis from a string-based (Nominal) scale to a sequential quantitative scale (`order_index:Q`). This enables Altair's native interactive zooming capabilities, which are otherwise limited for nominal axes.
+- **Improved UX**: The chart now supports `bind_y=False`, allowing users to zoom and pan specifically along the timeline (X-axis) while keeping the metric values (Y-axis) stable and visible. This makes it significantly easier to analyze long automation sessions with dozens of processed images.
+- **Contextual Clarity**: Filenames remain clearly visible in the interactive tooltips, ensuring that per-image performance data is always accessible even when zoomed in.
+
+
 ### 2. Quota Cooldown — Automatic Account Lock After Quota Hit
 Accounts can now be automatically held out of the rotation for a configurable period after hitting their daily quota.
 - A new **Quota Cooldown (hours)** setting has been added to the **ENGINE SETTINGS** panel on the System Config page (default: **24 hours**).

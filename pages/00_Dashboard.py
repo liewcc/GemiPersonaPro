@@ -467,7 +467,7 @@ def render_chart_body_fragment():
     ).mark_line(
         point=alt.OverlayMarkDef(opacity=0.01, size=250)
     ).encode(
-        x=alt.X('Filename:N', title=None, axis=alt.Axis(labelAngle=-45), sort=alt.SortField(field='order_index', order='ascending')),
+        x=alt.X('order_index:Q', title="Image Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
         y=alt.Y('Value:Q', title=None),
         color=alt.Color('Data:N', 
             scale=alt.Scale(
@@ -483,7 +483,7 @@ def render_chart_body_fragment():
         ]
     ).properties(
         height=350
-    ).interactive()
+    ).interactive(bind_y=False)
 
     # CRITICAL FIX: We wrap the chart in a rigid Streamlit container.
     # This CSS lock prevents the dialog from collapsing during any split-second unmounts!
