@@ -47,7 +47,7 @@ DEFAULT_CONFIG = {
     "selected_files": [],
     "quota_cooldown_hours": 24,
     "health_view_mode": "Full Loading History (All Events)",
-    "system_navigation": "Settings & Credentials"
+    "system_navigation": "Engine Settings"
 }
 
 def load_config():
