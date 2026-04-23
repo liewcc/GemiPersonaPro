@@ -706,7 +706,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 range=['#2ecc71','#a0a0ff','#f39c12']),
                                 legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
                             tooltip=[
-                                alt.Tooltip('Image:N', title='Artifact'),
+                                alt.Tooltip('Image:N', title='Filename'),
                                 alt.Tooltip('account:N', title='Account'),
                                 alt.Tooltip('time:N', title='Time'),
                                 alt.Tooltip('t_dur_fmt:N', title='Duration'),
@@ -820,7 +820,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                     range=['#2ecc71','#a0a0ff','#f39c12']),
                                     legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
                                 tooltip=[
-                                    alt.Tooltip('Image:N', title='Artifact'),
+                                    alt.Tooltip('Image:N', title='Filename'),
                                     alt.Tooltip('account:N', title='Account'),
                                     alt.Tooltip('time:N', title='Time'),
                                     alt.Tooltip('t_dur_fmt:N', title='Duration'),
@@ -955,7 +955,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 range=['#2ecc71','#a0a0ff','#f39c12']),
                                 legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
                             tooltip=[
-                                alt.Tooltip('Image:N', title='Artifact'),
+                                alt.Tooltip('Image:N', title='Filename'),
                                 alt.Tooltip('account:N', title='Account'),
                                 alt.Tooltip('time:N', title='Time'),
                                 alt.Tooltip('t_dur_fmt:N', title='Duration'),
