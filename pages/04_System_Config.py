@@ -616,16 +616,16 @@ def _render_health_content(view_mode, login_data, graph_type):
                 if graph_type == "Loading Duration":
                     chart_df = pd.DataFrame(all_detailed[::-1]) # Chronological order
                     chart_df["Event"] = range(1, len(chart_df) + 1)
-                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                    chart_df["Minutes"] = chart_df["health"].str.replace("s", "").astype(float) / 60.0
                     chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
                     chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
                     legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                     legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                    chart_df["Duration"] = chart_df["Seconds"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                    chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                        y=alt.Y('Seconds:Q', title=None),
+                        y=alt.Y('Minutes:Q', title="Duration (m)"),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
                                         legend=alt.Legend(title=None, orient='bottom')),
@@ -682,16 +682,19 @@ def _render_health_content(view_mode, login_data, graph_type):
                             tooltip=['account:N', 'session_index:Q']
                         )
                         # Layer 2: line chart
-                        agg_df["t_dur"] = agg_df["Duration"]
+                        agg_df["t_dur"] = agg_df["Duration"] / 60.0
                         agg_df["t_rej"] = agg_df["Rejects"]
                         agg_df["t_res"] = agg_df["Resets"]
                         agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['Duration','Rejects','Resets'], var_name='Metric', value_name='Value')
+                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
+                        # Map internal names to display names for the legend
+                        plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
+                        
                         main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
                             x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Value:Q', title=None),
                             color=alt.Color('Metric:N', scale=alt.Scale(
-                                domain=['Duration','Rejects','Resets'],
+                                domain=['Duration (m)','Rejects','Resets'],
                                 range=['#2ecc71','#a0a0ff','#f39c12']),
                                 legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
                             tooltip=[
@@ -732,16 +735,16 @@ def _render_health_content(view_mode, login_data, graph_type):
                     if graph_type == "Loading Duration":
                         _chart_df = pd.DataFrame(_active_detailed[::-1])
                         _chart_df["Event"] = range(1, len(_chart_df) + 1)
-                        _chart_df["Seconds"] = _chart_df["health"].str.replace("s", "").astype(float)
+                        _chart_df["Minutes"] = _chart_df["health"].str.replace("s", "").astype(float) / 60.0
                         _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
                         _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
                         _ll = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                         _lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
                         _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                        _chart_df["Duration"] = _chart_df["Seconds"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                        _chart_df["Duration"] = _chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                         _chart = alt.Chart(_chart_df).mark_bar().encode(
                             x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                            y=alt.Y('Seconds:Q', title=None),
+                            y=alt.Y('Minutes:Q', title="Duration (m)"),
                             color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom')),
                             tooltip=['time', 'account', 'Duration', 'filename', 'status']
                         ).properties(height=400).interactive(bind_y=False)
@@ -791,16 +794,19 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 color=alt.Color('bg:N', scale=alt.Scale(domain=['A','B'], range=['#d0d0d0','#f5f5f5']), legend=None),
                                 tooltip=['account:N', 'session_index:Q']
                             )
-                            agg_df["t_dur"] = agg_df["Duration"]
+                            agg_df["t_dur"] = agg_df["Duration"] / 60.0
                             agg_df["t_rej"] = agg_df["Rejects"]
                             agg_df["t_res"] = agg_df["Resets"]
                             agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-                            plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['Duration','Rejects','Resets'], var_name='Metric', value_name='Value')
+                            plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
+                            # Map internal names to display names for the legend
+                            plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
+                            
                             main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
                                 x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
                                 y=alt.Y('Value:Q', title=None),
                                 color=alt.Color('Metric:N', scale=alt.Scale(
-                                    domain=['Duration','Rejects','Resets'],
+                                    domain=['Duration (m)','Rejects','Resets'],
                                     range=['#2ecc71','#a0a0ff','#f39c12']),
                                     legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
                                 tooltip=[
@@ -858,16 +864,16 @@ def _render_health_content(view_mode, login_data, graph_type):
                 if graph_type == "Loading Duration":
                     chart_df = pd.DataFrame(detailed_list[::-1])
                     chart_df["Event"] = range(1, len(chart_df) + 1)
-                    chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
+                    chart_df["Minutes"] = chart_df["health"].str.replace("s", "").astype(float) / 60.0
                     chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
                     chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
                     legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                     legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
-                    chart_df["Duration"] = chart_df["Seconds"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                    chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                        y=alt.Y('Seconds:Q', title=None),
+                        y=alt.Y('Minutes:Q', title="Duration (m)"),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
                                         legend=alt.Legend(title=None, orient='bottom')),
@@ -921,16 +927,19 @@ def _render_health_content(view_mode, login_data, graph_type):
                             tooltip=['account:N', 'session_index:Q']
                         )
                         # Use melt to reshape data for line chart
-                        agg_df["t_dur"] = agg_df["Duration"]
+                        agg_df["t_dur"] = agg_df["Duration"] / 60.0
                         agg_df["t_rej"] = agg_df["Rejects"]
                         agg_df["t_res"] = agg_df["Resets"]
                         agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['Duration','Rejects','Resets'], var_name='Metric', value_name='Value')
+                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
+                        # Map internal names to display names for the legend
+                        plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
+
                         main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
                             x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Value:Q', title=None),
                             color=alt.Color('Metric:N', scale=alt.Scale(
-                                domain=['Duration','Rejects','Resets'],
+                                domain=['Duration (m)','Rejects','Resets'],
                                 range=['#2ecc71','#a0a0ff','#f39c12']),
                                 legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
                             tooltip=[

@@ -1582,7 +1582,6 @@ class BrowserEngine:
     async def stop_automation(self):
         """Signals the automation loop to stop and attempts to stop current page activity."""
         self._stop_automation_event.set()
-        self.automation_status["is_running"] = False
         self._log_debug("Automation stop signaled. Attempting browser halt...")
         try:
             # Propagate stop to the actual browser button

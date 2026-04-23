@@ -135,3 +135,14 @@ The automation engine now supports dynamically reloading prompts without interru
 - **Navigation Reordering**: Reorganized the **SYSTEM NAVIGATION** menu in the System Config page. "Account Credentials" is now intuitively positioned directly above "Account Health Analysis".
 - **Chart Color Consistency**: Fixed a visual bug in the Account Health Analysis module where the Reject Rates line chart would render as gray for individual account views (`Detailed History: <account>`). This was resolved by properly separating color scales (`resolve_scale(color='independent')`) for the background bands and the metrics lines.
 - **Unified Alternating Colors**: Ensured that the "Base" and "Light" alternating bar chart colors for the "Full Loading History (All Events)" view correctly cycle on a per-account basis using dense ranking (`cycle`), perfectly aligning its visual presentation with the "Detailed History: Active Account" view.
+
+### 15. Automation Metric Persistence & Hydration Fix
+- Resolved a data loss issue where **'Refused'** and **'Reset'** counts were being lost when an automation session was stopped and subsequently continued.
+- Fixed a **Stop-Action Race Condition** in `browser_engine.py`: previously, the system would eagerly mark automation as stopped before the background manager had finished saving state. The manager now holds the `is_running` lock until state persistence is 100% complete.
+- Corrected **Snapshot Synchronization** in `continue_automation`: the system now intelligently detects whether it needs to account for pending stats in the first delta calculation, ensuring that `session_refused` and `session_resets` in the login lookup table are accurately incremented across pauses and restarts.
+
+### 16. Account Health Chart Unit Normalization
+- Converted the Y-axis units for all **Account Health Analysis** charts (both bar and line charts) from **Seconds** to **Minutes (Duration (m))**.
+- This normalization prevents the relatively large duration values (e.g., 180s) from overwhelming the smaller Refused/Reset counts (e.g., 1, 2, 3), making the efficiency trends and health events clearly visible on the same scale.
+- Maintained detailed precision in tooltips, which continue to display the exact time in `M:SS` format.
+- Standardized the graph legend to match the **Dashboard's** performance charts for a unified monitoring experience.

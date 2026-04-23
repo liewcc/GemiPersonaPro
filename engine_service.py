@@ -1081,16 +1081,24 @@ async def continue_automation(req: AutomationRequest):
         if not getattr(engine, '_lc_cycle_start_time', None):
             engine._lc_cycle_start_time = time.time()
         
+    # Restore internal pending counters to automation_status for UI visibility
+    engine.automation_status["pending_refused"] = getattr(engine, "_pending_refused", 0)
+    engine.automation_status["pending_resets"] = getattr(engine, "_pending_resets", 0)
+    
     engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
     if hasattr(engine, '_lc_cycle_start_time'):
         engine.automation_status["lc_cycle_start_ts"] = engine._lc_cycle_start_time
     
-    # Synchronize the snapshot to prevent double-counting deltas in the lookup table
-    engine._acct_snapshot = {
-        "successes": engine.automation_status.get("successes", 0),
-        "refusals": engine.automation_status.get("refusals", 0),
-        "resets": engine.automation_status.get("resets", 0)
-    }
+    # Synchronize the snapshot ONLY IF we didn't just load from a pending file.
+    # If we DID load from a file (engine restart), the snapshot was initialized to 0 (or hydrated stats), 
+    # and we WANT the first success to trigger a delta that includes these pending stats.
+    # If we didn't restart, the snapshot is already synced from the 'stop' event's finally block.
+    if not os.path.exists(pending_file):
+        engine._acct_snapshot = {
+            "successes": engine.automation_status.get("successes", 0),
+            "refusals": engine.automation_status.get("refusals", 0),
+            "resets": engine.automation_status.get("resets", 0)
+        }
     
     engine.automation_status["is_running"] = True
     asyncio.create_task(automation_manager(req))
