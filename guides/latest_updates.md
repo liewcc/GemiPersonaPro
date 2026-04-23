@@ -114,8 +114,10 @@ The automation engine now supports dynamically reloading prompts without interru
 - **Robust Data Attribution**: Optimized the log parser to automatically bypass manual accumulation when anchored `RejectStat` data is present, preventing double-counting while maintaining a reliable fallback for legacy logs.
 
 
-### 10. Normalization of Account Parsing
-- Fixed an issue where the Account Health parser was case-sensitive, causing email-based accounts to be misidentified. The system now treats all account identifiers as case-insensitive for consistent tracking.
+### 14. Synchronized 'Detailed History' Performance Logic
+- Fixed a logic omission in the **Account Health Analysis**'s "Detailed History: Active Account" view where it was not correctly utilizing the high-precision `RejectStat` markers from the log.
+- This view now correctly prioritizes anchored `true_rej`, `true_res`, and cumulative `Duration` data, ensuring that performance metrics for the currently active account are 100% consistent with the "Full History" and Dashboard views.
+- This resolves discrepancies where the active account's history might have shown fragmented stats after session resets.
 
 ### 11. Migration to Streamlit Latest Layout Parameters
 - Standardized the use of `width='stretch'` instead of the deprecated `use_container_width=True` across the entire application (including Dashboard charts and System Config tables). 

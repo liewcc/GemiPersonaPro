@@ -763,8 +763,14 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 curr_dur += row_dur
                             elif row["status"] == "Success":
                                 d = row.copy()
-                                d["Rejects"] = curr_rej; d["Resets"] = curr_res
-                                d["Duration"] = curr_dur + row_dur
+                                # Priority: Use anchored RejectStat if available (handles session resets correctly)
+                                if "true_rej" in d:
+                                    d["Rejects"] = d["true_rej"]
+                                    d["Resets"] = d["true_res"]
+                                    d["Duration"] = row_dur # RejectStat dur is already cumulative
+                                else:
+                                    d["Rejects"] = curr_rej; d["Resets"] = curr_res
+                                    d["Duration"] = curr_dur + row_dur
                                 d["Image"] = row["filename"].replace(".png", "")
                                 d["seg_id"] = seg_id; d["bg"] = 'A' if seg_id % 2 == 0 else 'B'
                                 d["Event"] = len(agg_data) + 1
