@@ -150,6 +150,10 @@ if "show_stop_confirmation" not in st.session_state:
     st.session_state.show_stop_confirmation = False
 if "stop_confirmation_location" not in st.session_state:
     st.session_state.stop_confirmation_location = "main"
+if "show_start_confirmation" not in st.session_state:
+    st.session_state.show_start_confirmation = False
+if "start_confirmation_location" not in st.session_state:
+    st.session_state.start_confirmation_location = "main"
 if "show_goal_reached_confirmation" not in st.session_state:
     st.session_state.show_goal_reached_confirmation = False
 
@@ -328,6 +332,40 @@ def confirm_stop_automation_dash(location):
         st.session_state.ui_auto_looping_active = False
         st.rerun()
     if col_n.button("Cancel", width="stretch", key=f"dash_no_stop_{location}"):
+        st.rerun()
+
+@st.dialog("⚠️ Confirm Session Reset")
+def confirm_start_automation_dash(location):
+    st.write("Are you sure you want to start a new looping process? This will reset your current session statistics.")
+    col_y, col_n = st.columns(2)
+    if col_y.button("OK", type="primary", width="stretch", key=f"dash_yes_start_{location}"):
+        current_config = load_config()
+        current_config["selected_files"] = st.session_state.selected_files
+        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
+
+        def trigger_automation():
+            async def do_start_auto():
+                add_log("API>> Triggering Automation Start...")
+                try:
+                    resp = await st.session_state.client.start_automation(
+                        mode=st.session_state.auto_mode,
+                        goal=st.session_state.auto_goal,
+                        config=current_config
+                    )
+                    add_log(f"API>> Start Result: {resp.get('message')}")
+                except Exception as e:
+                    add_log(f"API ERROR: {e}")
+            asyncio.run(do_start_auto())
+
+        t = threading.Thread(target=trigger_automation, daemon=True)
+        add_script_run_ctx(t)
+        t.start()
+        st.session_state.ui_auto_looping_active = True
+        st.session_state.auto_stop_requested = False
+        st.session_state.show_start_confirmation = False
+        st.rerun()
+    if col_n.button("Cancel", width="stretch", key=f"dash_no_start_{location}"):
+        st.session_state.show_start_confirmation = False
         st.rerun()
 
 @st.dialog("⚠️ Cannot Continue")
@@ -676,6 +714,10 @@ if st.session_state.show_stop_confirmation:
     st.session_state.show_stop_confirmation = False
     confirm_stop_automation_dash(st.session_state.stop_confirmation_location)
 
+if st.session_state.show_start_confirmation:
+    st.session_state.show_start_confirmation = False
+    confirm_start_automation_dash(st.session_state.start_confirmation_location)
+
 if st.session_state.show_goal_reached_confirmation:
     st.session_state.show_goal_reached_confirmation = False
     show_goal_reached_dialog(st.session_state.stop_confirmation_location)
@@ -826,30 +868,35 @@ def render_looping_button(location="sidebar"):
         if _show_as_inactive:
             _start_disabled = not _browser_active or _is_busy or not _auto_enabled or _stop_req
             if st.button("▶️ Start Looping Process", key=f"start_loop_{location}", width="stretch", type="primary", disabled=_start_disabled):
-                current_config = load_config()
-                current_config["selected_files"] = st.session_state.selected_files
-                current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
+                if history_count > 0:
+                    st.session_state.show_start_confirmation = True
+                    st.session_state.start_confirmation_location = location
+                    st.rerun()
+                else:
+                    current_config = load_config()
+                    current_config["selected_files"] = st.session_state.selected_files
+                    current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
 
-                def trigger_automation():
-                    async def do_start_auto():
-                        add_log("API>> Triggering Automation Start...")
-                        try:
-                            resp = await st.session_state.client.start_automation(
-                                mode=st.session_state.auto_mode,
-                                goal=st.session_state.auto_goal,
-                                config=current_config
-                            )
-                            add_log(f"API>> Start Result: {resp.get('message')}")
-                        except Exception as e:
-                            add_log(f"API ERROR: {e}")
-                    asyncio.run(do_start_auto())
+                    def trigger_automation():
+                        async def do_start_auto():
+                            add_log("API>> Triggering Automation Start...")
+                            try:
+                                resp = await st.session_state.client.start_automation(
+                                    mode=st.session_state.auto_mode,
+                                    goal=st.session_state.auto_goal,
+                                    config=current_config
+                                )
+                                add_log(f"API>> Start Result: {resp.get('message')}")
+                            except Exception as e:
+                                add_log(f"API ERROR: {e}")
+                        asyncio.run(do_start_auto())
 
-                t = threading.Thread(target=trigger_automation, daemon=True)
-                add_script_run_ctx(t)
-                t.start()
-                st.session_state.ui_auto_looping_active = True
-                st.session_state.auto_stop_requested = False
-                st.rerun()
+                    t = threading.Thread(target=trigger_automation, daemon=True)
+                    add_script_run_ctx(t)
+                    t.start()
+                    st.session_state.ui_auto_looping_active = True
+                    st.session_state.auto_stop_requested = False
+                    st.rerun()
         else:
             if st.button("⏹️ Stop Looping Process", key=f"stop_loop_{location}", width="stretch"):
                 st.session_state.show_stop_confirmation = True

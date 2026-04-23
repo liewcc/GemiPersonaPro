@@ -562,6 +562,42 @@ def confirm_stop_automation():
     if col_n.button("Cancel", width="stretch"):
         st.rerun()
 
+@st.dialog("⚠️ Confirm Session Reset")
+def confirm_start_automation_setup():
+    st.write("Are you sure you want to start a new looping process? This will reset your current session statistics.")
+    col_y, col_n = st.columns(2)
+    if col_y.button("OK", type="primary", width="stretch"):
+        current_config = load_config()
+        current_config["selected_files"] = st.session_state.selected_files
+        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
+        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
+        current_config["selected_model"] = st.session_state.get("model_selectbox")
+        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
+        
+        def trigger_automation():
+            async def do_start_auto():
+                add_log("API>> Triggering Automation Start...")
+                try:
+                    resp = await st.session_state.client.start_automation(
+                        mode=st.session_state.auto_mode,
+                        goal=st.session_state.auto_goal,
+                        config=current_config
+                    )
+                    add_log(f"API>> Start Result: {resp.get('message')}")
+                except Exception as e:
+                    add_log(f"API ERROR: {e}")
+            asyncio.run(do_start_auto())
+
+        t = threading.Thread(target=trigger_automation, daemon=True)
+        add_script_run_ctx(t)
+        t.start()
+        time.sleep(0.5)
+        st.session_state.show_start_confirmation_setup = False
+        st.rerun()
+    if col_n.button("Cancel", width="stretch"):
+        st.session_state.show_start_confirmation_setup = False
+        st.rerun()
+
 @st.fragment(run_every="5s")
 def render_setup_logs():
     # If a background thread (Submit/Redo) finished and set needs_rerun, pick it up here.
@@ -618,6 +654,10 @@ def render_setup_logs():
 if st.session_state.get("show_stop_confirmation_setup"):
     st.session_state.show_stop_confirmation_setup = False
     confirm_stop_automation()
+
+if st.session_state.get("show_start_confirmation_setup"):
+    st.session_state.show_start_confirmation_setup = False
+    confirm_start_automation_setup()
 
 if st.session_state.get("show_goal_reached_confirmation_setup"):
     st.session_state.show_goal_reached_confirmation_setup = False
@@ -1236,32 +1276,36 @@ with col1:
                 else:
                     start_disabled = not browser_active or st.session_state.get("is_busy", False) or not auto_enabled or st.session_state.auto_stop_requested
                     if st.button("▶️ Start Looping Process", width="stretch", type="primary", disabled=start_disabled):
-                        current_config = load_config()
-                        current_config["selected_files"] = st.session_state.selected_files
-                        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
-                        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
-                        current_config["selected_model"] = st.session_state.get("model_selectbox")
-                        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
-                        
-                        def trigger_automation():
-                            async def do_start_auto():
-                                add_log("API>> Triggering Automation Start...")
-                                try:
-                                    resp = await st.session_state.client.start_automation(
-                                        mode=st.session_state.auto_mode,
-                                        goal=st.session_state.auto_goal,
-                                        config=current_config
-                                    )
-                                    add_log(f"API>> Start Result: {resp.get('message')}")
-                                except Exception as e:
-                                    add_log(f"API ERROR: {e}")
-                            asyncio.run(do_start_auto())
+                        if history_count > 0:
+                            st.session_state.show_start_confirmation_setup = True
+                            st.rerun()
+                        else:
+                            current_config = load_config()
+                            current_config["selected_files"] = st.session_state.selected_files
+                            current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
+                            current_config["selected_tool"] = st.session_state.get("tool_selectbox")
+                            current_config["selected_model"] = st.session_state.get("model_selectbox")
+                            current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
+                            
+                            def trigger_automation():
+                                async def do_start_auto():
+                                    add_log("API>> Triggering Automation Start...")
+                                    try:
+                                        resp = await st.session_state.client.start_automation(
+                                            mode=st.session_state.auto_mode,
+                                            goal=st.session_state.auto_goal,
+                                            config=current_config
+                                        )
+                                        add_log(f"API>> Start Result: {resp.get('message')}")
+                                    except Exception as e:
+                                        add_log(f"API ERROR: {e}")
+                                asyncio.run(do_start_auto())
 
-                        t = threading.Thread(target=trigger_automation, daemon=True)
-                        add_script_run_ctx(t)
-                        t.start()
-                        time.sleep(0.5)
-                        st.rerun()
+                            t = threading.Thread(target=trigger_automation, daemon=True)
+                            add_script_run_ctx(t)
+                            t.start()
+                            time.sleep(0.5)
+                            st.rerun()
             
             with btn_col2:
                 _continue_disabled = not show_as_inactive or history_count == 0 or not browser_active or st.session_state.get("is_busy", False) or not auto_enabled or st.session_state.auto_stop_requested

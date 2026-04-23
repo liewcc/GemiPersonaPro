@@ -373,7 +373,7 @@ with st.sidebar:
     st.markdown("<p style='font-weight: bold; color: #a0a0ff; margin-bottom: 10px;'>SYSTEM NAVIGATION</p>", unsafe_allow_html=True)
     
     # Ensure value exists in options
-    nav_options = ["Engine Settings", "Automation Settings", "Account Credentials", "Quota Full Phrases", "Account Health Analysis"]
+    nav_options = ["Engine Settings", "Automation Settings", "Quota Full Phrases", "Account Credentials", "Account Health Analysis"]
     if st.session_state.cfg_system_nav not in nav_options:
         st.session_state.cfg_system_nav = nav_options[0]
 
@@ -617,7 +617,8 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df = pd.DataFrame(all_detailed[::-1]) # Chronological order
                     chart_df["Event"] = range(1, len(chart_df) + 1)
                     chart_df["Seconds"] = chart_df["health"].str.replace("s", "").astype(float)
-                    chart_df["variant"] = chart_df["session_index"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+                    chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
+                    chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
                     legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                     legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
@@ -941,7 +942,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 alt.Tooltip('t_res:Q', title='Reset Count')
                             ]
                         )
-                        st.altair_chart((bg_bands + main).properties(height=400).interactive(), width="stretch")
+                        st.altair_chart(alt.layer(bg_bands, main).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
             else:
                 st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
                 st.data_editor(

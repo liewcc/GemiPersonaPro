@@ -126,3 +126,12 @@ The automation engine now supports dynamically reloading prompts without interru
 - Resolved a visualization issue in the Dashboard's **Reject Rate Chart** where the X-axis (filenames) was being sorted alphabetically instead of chronologically.
 - Previously, filenames starting with "1" (e.g., "1000") would incorrectly appear before filenames starting with "8" (e.g., "825") due to string-based sorting.
 - The chart now uses a hidden sequential `order_index` to ensure that data points strictly follow the execution timeline, providing a true representation of performance trends over time.
+
+### 13. Session Reset Confirmation Dialog
+- Implemented a safety confirmation prompt when starting a new automation loop via the **"▶️ Start Looping Process"** button in both the Dashboard and Gemini Setup modules.
+- The system now intelligently checks for existing session records (`history_count`). If no records exist, automation begins immediately. If previous records exist, a warning dialog prompts the user to confirm the session reset, preventing accidental loss of active session statistics.
+
+### 14. System Configuration Navigation & UI Alignment
+- **Navigation Reordering**: Reorganized the **SYSTEM NAVIGATION** menu in the System Config page. "Account Credentials" is now intuitively positioned directly above "Account Health Analysis".
+- **Chart Color Consistency**: Fixed a visual bug in the Account Health Analysis module where the Reject Rates line chart would render as gray for individual account views (`Detailed History: <account>`). This was resolved by properly separating color scales (`resolve_scale(color='independent')`) for the background bands and the metrics lines.
+- **Unified Alternating Colors**: Ensured that the "Base" and "Light" alternating bar chart colors for the "Full Loading History (All Events)" view correctly cycle on a per-account basis using dense ranking (`cycle`), perfectly aligning its visual presentation with the "Detailed History: Active Account" view.
