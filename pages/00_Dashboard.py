@@ -1,5 +1,7 @@
 import streamlit as st
 import asyncio
+import send2trash
+
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 import sys
 import subprocess
@@ -221,14 +223,17 @@ def render_stats_body_fragment():
         except: pass
 
     if is_running:
-        total_api_refused = int(stats.get("refusals") or 0)
-        total_api_resets = int(stats.get("resets") or 0)
-        total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
-        total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
-        total_log_dur = sum(float(r.get("duration_sec", 0)) for r in records)
+        p_refused = int(stats.get("pending_refused", 0))
+        p_resets = int(stats.get("pending_resets", 0))
         
-        p_refused = max(0, total_api_refused - total_log_refused)
-        p_resets = max(0, total_api_resets - total_log_resets)
+        # Fallback for older engine versions
+        if "pending_refused" not in stats:
+            total_api_refused = int(stats.get("refusals") or 0)
+            total_api_resets = int(stats.get("resets") or 0)
+            total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
+            total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
+            p_refused = max(0, total_api_refused - total_log_refused)
+            p_resets = max(0, total_api_resets - total_log_resets)
 
         # Use current_cycle_start exposed by the engine — mirrors the exact same reference
         import time
@@ -357,13 +362,17 @@ def render_chart_body_fragment():
 
     # 4. Append live 'Processing' data intelligently
     if is_running:
-        total_api_refused = int(stats.get("refusals") or 0)
-        total_api_resets = int(stats.get("resets") or 0)
-        total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
-        total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
-        
-        p_refused = max(0, total_api_refused - total_log_refused)
-        p_resets = max(0, total_api_resets - total_log_resets)
+        p_refused = int(stats.get("pending_refused", 0))
+        p_resets = int(stats.get("pending_resets", 0))
+
+        # Fallback for older engine versions
+        if "pending_refused" not in stats:
+            total_api_refused = int(stats.get("refusals") or 0)
+            total_api_resets = int(stats.get("resets") or 0)
+            total_log_refused = sum(int(r.get("refused_count", 0)) for r in records)
+            total_log_resets = sum(int(r.get("reset_count", 0)) for r in records)
+            p_refused = max(0, total_api_refused - total_log_refused)
+            p_resets = max(0, total_api_resets - total_log_resets)
 
         cycle_start_ts = stats.get("current_cycle_start_ts")
         inter_cycle_ts = stats.get("inter_cycle_start_ts")
@@ -817,7 +826,7 @@ def render_looping_button(location="sidebar"):
             if st.button("▶️ Start Looping Process", key=f"start_loop_{location}", width="stretch", type="primary", disabled=_start_disabled):
                 current_config = load_config()
                 current_config["selected_files"] = st.session_state.selected_files
-                current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
 
                 def trigger_automation():
                     async def do_start_auto():
@@ -855,7 +864,7 @@ def render_looping_button(location="sidebar"):
             else:
                 current_config = load_config()
                 current_config["selected_files"] = st.session_state.selected_files
-                current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
 
                 def trigger_continue():
                     async def do_continue_auto():
@@ -925,14 +934,16 @@ with st.sidebar:
         if not toggles_disabled and (auto_enabled != st.session_state.auto_looping or remove_wm != st.session_state.auto_remove_wm):
             st.session_state.auto_looping = auto_enabled
             st.session_state.auto_remove_wm = remove_wm
-            save_config({
-                "automation": {
-                    "auto_looping": auto_enabled, 
-                    "mode": st.session_state.auto_mode, 
-                    "goal": st.session_state.auto_goal,
-                    "remove_watermark": remove_wm
-                }
+            
+            # Use careful update to avoid wiping loop_control or other settings
+            auto_cfg = load_config().get("automation", {})
+            auto_cfg.update({
+                "auto_looping": auto_enabled,
+                "mode": st.session_state.auto_mode,
+                "goal": st.session_state.auto_goal,
+                "remove_watermark": remove_wm
             })
+            save_config({"automation": auto_cfg})
 
         # Inputs are disabled if:
         # 1. Auto Looping toggle is OFF
@@ -957,7 +968,11 @@ with st.sidebar:
         if not inputs_disabled and (new_mode != st.session_state.auto_mode or new_goal != st.session_state.auto_goal):
             st.session_state.auto_mode = new_mode
             st.session_state.auto_goal = new_goal
-            save_config({"automation": {"auto_looping": True, "mode": new_mode, "goal": new_goal}})
+            
+            # Use careful update
+            auto_cfg = load_config().get("automation", {})
+            auto_cfg.update({"auto_looping": True, "mode": new_mode, "goal": new_goal})
+            save_config({"automation": auto_cfg})
 
 
 
@@ -1304,7 +1319,7 @@ def render_image_gallery():
                     with bt_c4:
                         if st.button("🗑️", key=f"d_{filename}", help="Delete image and generated files"):
                             for p in [os.path.join(save_dir, filename), os.path.join(save_dir, "processed", filename)]:
-                                if os.path.exists(p): os.remove(p)
+                                if os.path.exists(p): send2trash.send2trash(os.path.abspath(os.path.normpath(p)))
                             st.toast(f"Removed {filename}"); time.sleep(0.5); st.rerun()
 
 # --- Main Gallery Call ---

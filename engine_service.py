@@ -512,8 +512,11 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         # Clear quota_full timestamp if this is the target account and it was previously marked.
         # If we reached this point, it means the account is usable (expired or cooldown is 0).
         if is_target and u.get("quota_full"):
-            print(f"[ENGINE] Account {u['username']} is now active and usable. Clearing quota_full timestamp.")
+            print(f"[ENGINE] Account {u['username']} is now active and usable. Clearing quota_full timestamp and session stats.")
             u["quota_full"] = ""
+            u["session_images"] = "0"
+            u["session_refused"] = "0"
+            u["session_resets"] = "0"
     try:
         with open(lookup_path, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=4, ensure_ascii=False)
@@ -566,6 +569,13 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
             "refusals":  engine.automation_status.get("refusals",  0),
             "resets":    engine.automation_status.get("resets",    0),
         }
+        # Reset pending counters to prevent leakage from the outgoing account to the incoming one
+        engine._pending_refused = 0
+        engine._pending_resets = 0
+        if "pending_refused" in engine.automation_status:
+            engine.automation_status["pending_refused"] = 0
+        if "pending_resets" in engine.automation_status:
+            engine.automation_status["pending_resets"] = 0
 
     return {
         "status": "success",
@@ -650,7 +660,9 @@ async def automation_manager(req: AutomationRequest):
             # 2. Pre-load Watermark Removal Model if enabled
             cfg = req.config
             use_gpu_cfg = cfg.get("automation", {}).get("use_gpu", True)
-            if cfg.get("remove_watermark", False):
+            _wm_enabled = cfg.get("automation", {}).get("remove_watermark", False)
+            engine._log_debug(f"[AUTO] WM Gate: automation.remove_watermark={_wm_enabled} | top-level={cfg.get('remove_watermark', 'N/A')}")
+            if _wm_enabled:
                 try:
                     from processing_utils import get_shared_processor
                     # Singleton access (cached)
@@ -662,8 +674,9 @@ async def automation_manager(req: AutomationRequest):
             result = await engine.run_automation_loop(req.dict())
             
             # 4. Post-action: Remove Watermark if enabled (MIMIC Gemini Actions flow: Download -> Process)
-            if result.get("status") == "success" and cfg.get("remove_watermark", False):
+            if result.get("status") == "success" and _wm_enabled:
                 paths = result.get("saved_paths", [])
+                engine._log_debug(f"[AUTO] WM Post-action: status=success, paths={paths}")
                 if paths:
                     try:
                         from processing_utils import get_shared_processor, save_with_metadata
@@ -672,18 +685,18 @@ async def automation_manager(req: AutomationRequest):
                         p_dir = os.path.join(cfg.get("save_dir"), "processed")
                         os.makedirs(p_dir, exist_ok=True)
                         
-                        print(f"[AUTO] Refining {len(paths)} new images...")
+                        engine._log_debug(f"[AUTO] Refining {len(paths)} new images...")
                         await asyncio.sleep(0)  # Yield event loop so dashboard reads inter_cycle_since before blocking
                         for p in paths:
                             if os.path.exists(p):
                                 with Image.open(p) as img:
                                     final_img = processor.hybrid_process(img)
                                     p_path = os.path.join(p_dir, os.path.basename(p))
-                                    # save_with_metadata already fixed to NOT preserve unnecessary original info
                                     save_with_metadata(final_img, img, p_path)
-                        print("[AUTO] Refinement complete.")
+                        engine._log_debug("[AUTO] Refinement complete.")
                     except Exception as p_err:
-                        print(f"[AUTO] Refinement step failed: {p_err}")
+                        import traceback
+                        engine._log_debug(f"[AUTO] Refinement FAILED: {p_err}\n{traceback.format_exc()}")
 
             # --- [NEW] Real-time persistence of session stats ---
             _commit_session_stats_to_table()
@@ -724,10 +737,6 @@ async def automation_manager(req: AutomationRequest):
                         
                         # Maintain pending stats across account switches (next_profile or re_login)
                         # Only clear the Loop Control specific counters.
-                        engine._lc_pending_refused = 0
-                        engine._lc_pending_resets  = 0
-                        engine._lc_cycle_start_time = time.time()
-                        
                         engine._lc_pending_refused = 0
                         engine._lc_pending_resets  = 0
                         engine._lc_cycle_start_time = time.time()
@@ -884,7 +893,6 @@ async def automation_manager(req: AutomationRequest):
                 "lc_pending_resets": getattr(engine, '_lc_pending_resets', 0)
             }
             try:
-                import json, os
                 pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
                 with open(pending_file, "w", encoding="utf-8") as f:
                     json.dump(pending_data, f)

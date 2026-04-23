@@ -8,6 +8,8 @@ import re
 from tkinter import filedialog
 from PIL import Image, PngImagePlugin
 import asyncio
+import send2trash
+
 
 # --- Helper Functions & Nav Helpers ---
 import base64
@@ -911,35 +913,32 @@ def edit_asset_dialog(file_path):
         time.sleep(0.5)
 
 
-@st.dialog("Confirm Delete")
-def confirm_delete_dialog(file_path):
-    st.warning(f"Are you sure you want to delete this file?\n\n`{os.path.basename(file_path)}`")
-    if st.button("Yes, Delete Forever", type="primary", width="stretch"):
-        try:
-            # 1. Cascading delete for processed counterpart
-            folder_path = os.path.dirname(file_path)
-            filename = os.path.basename(file_path)
-            
-            # If current file is NOT in 'processed', look for its processed version
-            if os.path.basename(folder_path.rstrip("/\\")).lower() != "processed":
-                processed_file = os.path.join(folder_path, "processed", filename)
-                if os.path.exists(processed_file):
-                    try:
-                        os.remove(processed_file)
-                    except:
-                        pass # Fail silently as requested
+def perform_asset_delete(file_path):
+    try:
+        # 1. Cascading delete for processed counterpart
+        folder_path = os.path.dirname(file_path)
+        filename = os.path.basename(file_path)
+        
+        # If current file is NOT in 'processed', look for its processed version
+        if os.path.basename(folder_path.rstrip("/\\")).lower() != "processed":
+            processed_file = os.path.join(folder_path, "processed", filename)
+            if os.path.exists(processed_file):
+                try:
+                    send2trash.send2trash(os.path.abspath(os.path.normpath(processed_file)))
+                except:
+                    pass # Fail silently as requested
 
-            # 2. Main deletion
-            os.remove(file_path)
+        # 2. Main deletion
+        send2trash.send2trash(os.path.abspath(os.path.normpath(file_path)))
 
-            # 3. Handle reload state
-            if not st.session_state.get("sanitizer_is_dir", False):
-                st.session_state.sanitizer_path = "" # Clear view only in File Mode
-            st.toast("File deleted.")
-            time.sleep(0.5)
-            st.rerun()
-        except Exception as e:
-            st.error(f"Delete failed: {e}")
+        # 3. Handle reload state
+        if not st.session_state.get("sanitizer_is_dir", False):
+            st.session_state.sanitizer_path = "" # Clear view only in File Mode
+        st.toast("File moved to Recycle Bin.")
+        time.sleep(0.5)
+        st.rerun()
+    except Exception as e:
+        st.error(f"Delete failed: {e}")
 
 @st.dialog("Complete Metadata", width="large")
 def view_metadata_dialog(file_path):
@@ -1246,7 +1245,7 @@ if st.session_state.sanitizer_path and os.path.exists(st.session_state.sanitizer
                                 manual_watermark_removal_dialog(file_path)
                     with btn_col5:
                         if st.button("🗑️", key="d_btn", width="stretch", help="Delete asset"):
-                            confirm_delete_dialog(file_path)
+                            perform_asset_delete(file_path)
 
                 except Exception as e:
                     st.error(f"Failed to load image: {e}")
@@ -1305,7 +1304,7 @@ if st.session_state.sanitizer_path and os.path.exists(st.session_state.sanitizer
                                             manual_watermark_removal_dialog(fpath)
                                 with b5:
                                     if st.button("🗑️", key=f"d_{fname}", width="stretch", help="Delete asset"):
-                                        confirm_delete_dialog(fpath)
+                                        perform_asset_delete(fpath)
                             except Exception as e:
                                 st.caption(f"⚠️ {fname}")
 else:

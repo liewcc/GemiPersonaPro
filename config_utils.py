@@ -45,7 +45,9 @@ DEFAULT_CONFIG = {
         "十分抱歉"
     ],
     "selected_files": [],
-    "quota_cooldown_hours": 24
+    "quota_cooldown_hours": 24,
+    "health_view_mode": "Full Loading History (All Events)",
+    "system_navigation": "Settings & Credentials"
 }
 
 def load_config():
@@ -60,9 +62,17 @@ def load_config():
                 with open(config_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
-                        # Use update pattern to preserve non-default keys if any, 
-                        # but ensure all default keys exist.
-                        cfg.update(data)
+                        # Deep merge the 'automation' block to preserve defaults for missing sub-keys
+                        if "automation" in data and isinstance(data["automation"], dict):
+                            if "automation" not in cfg:
+                                cfg["automation"] = {}
+                            cfg["automation"].update(data["automation"])
+                            # Remove it from data so the top-level update doesn't overwrite the merged version
+                            data_copy = copy.deepcopy(data)
+                            del data_copy["automation"]
+                            cfg.update(data_copy)
+                        else:
+                            cfg.update(data)
         except Exception as e:
             print(f"[CONFIG] Read Error: {e}")
             # Fallback to DEFAULT_CONFIG is already in cfg

@@ -1241,7 +1241,7 @@ with col1:
                         current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
                         current_config["selected_tool"] = st.session_state.get("tool_selectbox")
                         current_config["selected_model"] = st.session_state.get("model_selectbox")
-                        current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
                         
                         def trigger_automation():
                             async def do_start_auto():
@@ -1275,7 +1275,7 @@ with col1:
                         current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
                         current_config["selected_tool"] = st.session_state.get("tool_selectbox")
                         current_config["selected_model"] = st.session_state.get("model_selectbox")
-                        current_config["remove_watermark"] = st.session_state.auto_remove_wm
+                        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
 
                         def trigger_continue():
                             async def do_continue_auto():

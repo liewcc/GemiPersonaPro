@@ -31,6 +31,8 @@ class BrowserEngine:
             "successes": 0,
             "refusals": 0,
             "resets": 0,
+            "pending_refused": 0,
+            "pending_resets": 0,
             "start_time": None,
             "initial_user": None
         }
@@ -1749,6 +1751,8 @@ class BrowserEngine:
                             # Reset global pending counters and mark cycle end cleanly.
                             self._pending_refused = 0
                             self._pending_resets = 0
+                            self.automation_status["pending_refused"] = 0
+                            self.automation_status["pending_resets"] = 0
                             self._cycle_start_time = None
                             self.automation_status["current_cycle_start_ts"] = None
                             # Mark the inter-cycle phase start (watermark / post-processing period)
@@ -1789,6 +1793,7 @@ class BrowserEngine:
                         self.automation_status["cycles"] += 1
                         self.automation_status["refusals"] += 1
                         self._pending_refused = getattr(self, '_pending_refused', 0) + 1
+                        self.automation_status["pending_refused"] = self._pending_refused
                         self._lc_pending_refused = getattr(self, '_lc_pending_refused', 0) + 1
                         return {"status": "refused"}
                         
@@ -1796,6 +1801,7 @@ class BrowserEngine:
                         self.automation_status["resets"] += 1
                         self.automation_status["cycles"] += 1
                         self._pending_resets = getattr(self, '_pending_resets', 0) + 1
+                        self.automation_status["pending_resets"] = self._pending_resets
                         self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
                         self._log_debug(f"Reset detected in Cycle #{self.automation_status['cycles']}. Counting and forcing New Chat.")
                         self._automation_needs_new_chat = True

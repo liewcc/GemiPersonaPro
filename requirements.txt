@@ -20,3 +20,5 @@ httpx
 psutil
 pystray
 win11toast
+send2trash
+
