@@ -631,11 +631,11 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
                     chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
-                        x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
+                        x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
                         y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
-                                        legend=alt.Legend(title=None, orient='bottom')),
+                                        legend=alt.Legend(title=None, orient='bottom', columns=4)),
                         tooltip=['time', 'account', 'Duration', 'filename', 'status']
                     ).properties(height=400).interactive(bind_y=False)
                     st.altair_chart(chart, width="stretch")
@@ -766,9 +766,9 @@ def _render_health_content(view_mode, login_data, graph_type):
                         _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
                         _chart_df["Duration"] = _chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                         _chart = alt.Chart(_chart_df).mark_bar().encode(
-                            x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
+                            x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
-                            color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom')),
+                            color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom', columns=4)),
                             tooltip=['time', 'account', 'Duration', 'filename', 'status']
                         ).properties(height=400).interactive(bind_y=False)
                         st.altair_chart(_chart, width="stretch")
@@ -910,11 +910,11 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
                     chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
-                        x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
+                        x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
                         y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
-                                        legend=alt.Legend(title=None, orient='bottom')),
+                                        legend=alt.Legend(title=None, orient='bottom', columns=4)),
                         tooltip=['time', 'account', 'Duration', 'filename', 'status']
                     ).properties(height=400).interactive(bind_y=False)
                     st.altair_chart(chart, width="stretch")

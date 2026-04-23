@@ -177,3 +177,7 @@ The automation engine now supports dynamically reloading prompts without interru
 - Removed the redundant "Metric" legend title from the right side of the Reject Rates charts by explicitly disabling legends for overlapping layers.
 - Removed the X-axis title "Image Sequence" across all Account Health charts to maximize screen real estate and provide a cleaner, more focused visualization.
 - Consolidated all chart legends to a consistent bottom-oriented layout.
+
+### 22. Legend Layout Optimization for Bar Charts
+- Implemented a two-row legend layout (`columns=4`) for Loading Duration bar charts.
+- This grouping ensures that core status categories (Base/Fail) are displayed on the first line, while secondary variants (Light) wrap to the second line, significantly improving readability and visual organization.
