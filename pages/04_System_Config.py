@@ -234,7 +234,8 @@ def parse_account_health(target_account=None, login_data=None):
                                 break
 
                     status = "Reject"
-                    if is_success: status = "Success"
+                    if is_success:
+                        status = "Success" if filename else "Fail"
                     else:
                         # Re-scan completion marker to distinguish Reject vs Reset
                         for j in range(i + 1, min(i + 200, len(lines))):
@@ -625,9 +626,9 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df["Minutes"] = chart_df["health"].str.replace("s", "").astype(float) / 60.0
                     chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
                     chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                    legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
-                    legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
-                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
+                    legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
+                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
                     chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
@@ -655,7 +656,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                         elif row["status"] == "Reset":
                             curr_res += 1
                             curr_dur += row_dur
-                        elif row["status"] == "Success":
+                        elif row["status"] == "Success" or row["status"] == "Fail":
                             d = row.copy()
                             # Priority: Use anchored RejectStat if available (handles session resets correctly)
                             if "true_rej" in d:
@@ -666,7 +667,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 d["Rejects"] = curr_rej; d["Resets"] = curr_res
                                 d["Duration"] = curr_dur + row_dur
                             
-                            d["Image"] = row["filename"].replace(".png", "")
+                            d["Image"] = row["filename"].replace(".png", "") if row["filename"] else "FAILED"
                             d["seg_id"] = seg_id; d["bg"] = 'A' if seg_id % 2 == 0 else 'B'
                             d["Event"] = len(agg_data) + 1
                             d["Display"] = f"{d['Image']} (#{d['Event']})"
@@ -692,29 +693,43 @@ def _render_health_content(view_mode, login_data, graph_type):
                         agg_df["t_rej"] = agg_df["Rejects"]
                         agg_df["t_res"] = agg_df["Resets"]
                         agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
+                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res','status'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
                         # Map internal names to display names for the legend
                         plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
                         
                         y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
 
-                        main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
+                        # Define common color scale to ensure synchronization
+                        health_color_scale = alt.Scale(
+                            domain=['Duration (m)', 'Rejects', 'Resets'],
+                            range=['#2ecc71', '#a0a0ff', '#f39c12']
+                        )
+
+                        base_chart = alt.Chart(plot_df).encode(
                             x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
-                            color=alt.Color('Metric:N', scale=alt.Scale(
-                                domain=['Duration (m)','Rejects','Resets'],
-                                range=['#2ecc71','#a0a0ff','#f39c12']),
-                                legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
+                            color=alt.Color('Metric:N', scale=health_color_scale, legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3))
+                        )
+
+                        lines = base_chart.mark_line()
+                        points = base_chart.mark_point(opacity=0.9, size=50, filled=True).encode(
+                            color=alt.condition(
+                                "datum.status == 'Fail'",
+                                alt.value("#ff3333"), # Bold Red for failures
+                                alt.Color('Metric:N', scale=health_color_scale)
+                            ),
                             tooltip=[
                                 alt.Tooltip('Image:N', title='Filename'),
                                 alt.Tooltip('account:N', title='Account'),
                                 alt.Tooltip('time:N', title='Time'),
                                 alt.Tooltip('t_dur_fmt:N', title='Duration'),
                                 alt.Tooltip('t_rej:Q', title='Reject Count'),
-                                alt.Tooltip('t_res:Q', title='Reset Count')
+                                alt.Tooltip('t_res:Q', title='Reset Count'),
+                                alt.Tooltip('status:N', title='Status')
                             ]
                         )
-                        st.altair_chart(alt.layer(bg_bands, main).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
+                        
+                        st.altair_chart(alt.layer(bg_bands, lines, points).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
             else:
                 st.data_editor(
                     pd.DataFrame(all_detailed),
@@ -746,9 +761,9 @@ def _render_health_content(view_mode, login_data, graph_type):
                         _chart_df["Minutes"] = _chart_df["health"].str.replace("s", "").astype(float) / 60.0
                         _chart_df["cycle"] = _chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
                         _chart_df["variant"] = _chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                        _ll = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
-                        _lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
-                        _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                        _ll = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
+                        _lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
+                        _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
                         _chart_df["Duration"] = _chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                         _chart = alt.Chart(_chart_df).mark_bar().encode(
                             x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
@@ -773,7 +788,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                             elif row["status"] == "Reset":
                                 curr_res += 1
                                 curr_dur += row_dur
-                            elif row["status"] == "Success":
+                            elif row["status"] == "Success" or row["status"] == "Fail":
                                 d = row.copy()
                                 # Priority: Use anchored RejectStat if available (handles session resets correctly)
                                 if "true_rej" in d:
@@ -783,7 +798,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 else:
                                     d["Rejects"] = curr_rej; d["Resets"] = curr_res
                                     d["Duration"] = curr_dur + row_dur
-                                d["Image"] = row["filename"].replace(".png", "")
+                                d["Image"] = row["filename"].replace(".png", "") if row["filename"] else "FAILED"
                                 d["seg_id"] = seg_id; d["bg"] = 'A' if seg_id % 2 == 0 else 'B'
                                 d["Event"] = len(agg_data) + 1
                                 d["Display"] = f"{d['Image']} (#{d['Event']})"
@@ -806,29 +821,42 @@ def _render_health_content(view_mode, login_data, graph_type):
                             agg_df["t_rej"] = agg_df["Rejects"]
                             agg_df["t_res"] = agg_df["Resets"]
                             agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-                            plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
+                            plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res','status'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
                             # Map internal names to display names for the legend
                             plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
                             
                             y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
 
-                            main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
+                            # Define common color scale to ensure synchronization
+                            health_color_scale = alt.Scale(
+                                domain=['Duration (m)', 'Rejects', 'Resets'],
+                                range=['#2ecc71', '#a0a0ff', '#f39c12']
+                            )
+
+                            base_chart = alt.Chart(plot_df).encode(
                                 x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
                                 y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
-                                color=alt.Color('Metric:N', scale=alt.Scale(
-                                    domain=['Duration (m)','Rejects','Resets'],
-                                    range=['#2ecc71','#a0a0ff','#f39c12']),
-                                    legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
+                                color=alt.Color('Metric:N', scale=health_color_scale, legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3))
+                            )
+
+                            lines = base_chart.mark_line()
+                            points = base_chart.mark_point(opacity=0.9, size=50, filled=True).encode(
+                                color=alt.condition(
+                                    "datum.status == 'Fail'",
+                                    alt.value("#ff3333"), # Bold Red for failures
+                                    alt.Color('Metric:N', scale=health_color_scale)
+                                ),
                                 tooltip=[
                                     alt.Tooltip('Image:N', title='Filename'),
                                     alt.Tooltip('account:N', title='Account'),
                                     alt.Tooltip('time:N', title='Time'),
                                     alt.Tooltip('t_dur_fmt:N', title='Duration'),
                                     alt.Tooltip('t_rej:Q', title='Reject Count'),
-                                    alt.Tooltip('t_res:Q', title='Reset Count')
+                                    alt.Tooltip('t_res:Q', title='Reset Count'),
+                                    alt.Tooltip('status:N', title='Status')
                                 ]
                             )
-                            st.altair_chart(alt.layer(bg_bands, main).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
+                            st.altair_chart(alt.layer(bg_bands, lines, points).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
                 else:
                     st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{_active_user}</b> (Active Account).</p>", unsafe_allow_html=True)
                     st.data_editor(
@@ -877,9 +905,9 @@ def _render_health_content(view_mode, login_data, graph_type):
                     chart_df["Minutes"] = chart_df["health"].str.replace("s", "").astype(float) / 60.0
                     chart_df["cycle"] = chart_df.groupby("account")["session_index"].rank(method="dense").astype(int)
                     chart_df["variant"] = chart_df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-                    legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
-                    legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#a0e6b5', '#d0d0ff', '#f9e79f']
-                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})", axis=1)
+                    legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
+                    legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
+                    chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
                     chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title="Event Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
@@ -906,7 +934,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                         elif row["status"] == "Reset":
                             curr_res += 1
                             curr_dur += row_dur
-                        elif row["status"] == "Success":
+                        elif row["status"] == "Success" or row["status"] == "Fail":
                             d = row.copy()
                             # Priority: Use anchored RejectStat if available
                             if "true_rej" in d:
@@ -917,7 +945,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 d["Rejects"] = curr_rej; d["Resets"] = curr_res
                                 d["Duration"] = curr_dur + row_dur
                             
-                            d["Image"] = row["filename"].replace(".png", "")
+                            d["Image"] = row["filename"].replace(".png", "") if row["filename"] else "FAILED"
                             d["seg_id"] = seg_id; d["bg"] = 'A' if seg_id % 2 == 0 else 'B'
                             d["Event"] = len(agg_data) + 1
                             d["Display"] = f"{d['Image']} (#{d['Event']})"
@@ -941,29 +969,43 @@ def _render_health_content(view_mode, login_data, graph_type):
                         agg_df["t_rej"] = agg_df["Rejects"]
                         agg_df["t_res"] = agg_df["Resets"]
                         agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
+                        plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res','status'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
                         # Map internal names to display names for the legend
                         plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
-
+                        
                         y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
 
-                        main = alt.Chart(plot_df).mark_line(point=alt.OverlayMarkDef(opacity=0.8, size=40)).encode(
+                        # Define common color scale to ensure synchronization
+                        health_color_scale = alt.Scale(
+                            domain=['Duration (m)', 'Rejects', 'Resets'],
+                            range=['#2ecc71', '#a0a0ff', '#f39c12']
+                        )
+
+                        base_chart = alt.Chart(plot_df).encode(
                             x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
-                            color=alt.Color('Metric:N', scale=alt.Scale(
-                                domain=['Duration (m)','Rejects','Resets'],
-                                range=['#2ecc71','#a0a0ff','#f39c12']),
-                                legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3)),
+                            color=alt.Color('Metric:N', scale=health_color_scale, legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3))
+                        )
+
+                        lines = base_chart.mark_line()
+                        points = base_chart.mark_point(opacity=0.9, size=50, filled=True).encode(
+                            color=alt.condition(
+                                "datum.status == 'Fail'",
+                                alt.value("#ff3333"), # Bold Red for failures
+                                alt.Color('Metric:N', scale=health_color_scale)
+                            ),
                             tooltip=[
                                 alt.Tooltip('Image:N', title='Filename'),
                                 alt.Tooltip('account:N', title='Account'),
                                 alt.Tooltip('time:N', title='Time'),
                                 alt.Tooltip('t_dur_fmt:N', title='Duration'),
                                 alt.Tooltip('t_rej:Q', title='Reject Count'),
-                                alt.Tooltip('t_res:Q', title='Reset Count')
+                                alt.Tooltip('t_res:Q', title='Reset Count'),
+                                alt.Tooltip('status:N', title='Status')
                             ]
                         )
-                        st.altair_chart(alt.layer(bg_bands, main).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
+                        
+                        st.altair_chart(alt.layer(bg_bands, lines, points).resolve_scale(color='independent').properties(height=400).interactive(), width="stretch")
             else:
                 st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing all loading performance records for <b>{target_acc}</b>.</p>", unsafe_allow_html=True)
                 st.data_editor(

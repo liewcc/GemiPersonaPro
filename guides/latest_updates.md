@@ -157,3 +157,18 @@ The automation engine now supports dynamically reloading prompts without interru
 - Added a **Cumulative Unseen Count** feature: the notifier now tracks and displays how many images have been downloaded since the user last manually acknowledged a popup.
 - High-visibility UI: The "Unseen" count is highlighted in **Bold Red** for immediate recognition of overnight or background download batches.
 - Synchronized Status: The manual "Show Status" popup now correctly calculates and displays the same unseen count, ensuring consistency between automatic alerts and manual checks.
+
+### 19. Ghost Success (Fail) Detection & Visualization
+- Implemented a new **Fail** status in Account Health Analysis to capture "Ghost Successes" (events reported as successful by the engine but failing to save a file).
+- Visual Highlighting:
+    - **Bar Charts**: Failed events are rendered in a distinct **Light Red (#ff9999)** with no depth variation, making them immediately stand out from normal Rejects/Resets.
+    - **Line Charts**: Critical failures are now plotted on the trend line with **Bold Red (#ff3333)** points for instant error identification.
+- Data Integrity: Added "FAILED" placeholders in the filename field for these events to maintain sequence integrity in trends.
+
+### 20. Chart Aesthetics & Point-Line Color Synchronization
+- Refined the Reject Rate trend charts to ensure all data points strictly follow their corresponding line colors:
+    - **Duration**: Green points on green lines.
+    - **Rejects**: Blue points on blue lines.
+    - **Resets**: Orange points on orange lines.
+- Improved tooltip detail by adding the `Status` field, allowing users to verify if a trend point represents a Success or a critical Fail.
+- Fixed an indentation syntax error in the health analysis module to ensure stability across all view modes.
