@@ -172,3 +172,8 @@ The automation engine now supports dynamically reloading prompts without interru
     - **Resets**: Orange points on orange lines.
 - Improved tooltip detail by adding the `Status` field, allowing users to verify if a trend point represents a Success or a critical Fail.
 - Fixed an indentation syntax error in the health analysis module to ensure stability across all view modes.
+
+### 21. Chart UI Decluttering & Legend Optimization
+- Removed the redundant "Metric" legend title from the right side of the Reject Rates charts by explicitly disabling legends for overlapping layers.
+- Removed the X-axis title "Image Sequence" across all Account Health charts to maximize screen real estate and provide a cleaner, more focused visualization.
+- Consolidated all chart legends to a consistent bottom-oriented layout.

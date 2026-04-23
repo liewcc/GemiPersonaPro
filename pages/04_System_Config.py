@@ -706,7 +706,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                         )
 
                         base_chart = alt.Chart(plot_df).encode(
-                            x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
+                            x=alt.X('Event:Q', title=None, axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
                             color=alt.Color('Metric:N', scale=health_color_scale, legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3))
                         )
@@ -716,7 +716,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                             color=alt.condition(
                                 "datum.status == 'Fail'",
                                 alt.value("#ff3333"), # Bold Red for failures
-                                alt.Color('Metric:N', scale=health_color_scale)
+                                alt.Color('Metric:N', scale=health_color_scale, legend=None)
                             ),
                             tooltip=[
                                 alt.Tooltip('Image:N', title='Filename'),
@@ -834,7 +834,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                             )
 
                             base_chart = alt.Chart(plot_df).encode(
-                                x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
+                                x=alt.X('Event:Q', title=None, axis=alt.Axis(format='d', tickMinStep=1)),
                                 y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
                                 color=alt.Color('Metric:N', scale=health_color_scale, legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3))
                             )
@@ -844,7 +844,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                                 color=alt.condition(
                                     "datum.status == 'Fail'",
                                     alt.value("#ff3333"), # Bold Red for failures
-                                    alt.Color('Metric:N', scale=health_color_scale)
+                                    alt.Color('Metric:N', scale=health_color_scale, legend=None)
                                 ),
                                 tooltip=[
                                     alt.Tooltip('Image:N', title='Filename'),
@@ -982,7 +982,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                         )
 
                         base_chart = alt.Chart(plot_df).encode(
-                            x=alt.X('Event:Q', title="Image Sequence", axis=alt.Axis(format='d', tickMinStep=1)),
+                            x=alt.X('Event:Q', title=None, axis=alt.Axis(format='d', tickMinStep=1)),
                             y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
                             color=alt.Color('Metric:N', scale=health_color_scale, legend=alt.Legend(title=None, orient='bottom', symbolType='stroke', symbolStrokeWidth=3))
                         )
@@ -992,7 +992,7 @@ def _render_health_content(view_mode, login_data, graph_type):
                             color=alt.condition(
                                 "datum.status == 'Fail'",
                                 alt.value("#ff3333"), # Bold Red for failures
-                                alt.Color('Metric:N', scale=health_color_scale)
+                                alt.Color('Metric:N', scale=health_color_scale, legend=None)
                             ),
                             tooltip=[
                                 alt.Tooltip('Image:N', title='Filename'),
