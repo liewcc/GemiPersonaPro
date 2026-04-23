@@ -99,10 +99,13 @@ The automation engine now supports dynamically reloading prompts without interru
 - **Intelligent Tooltips**: Hovering over graph bars reveals detailed metadata, including the specific **Artifact** (downloaded filename) and the associated account.
 - **Automatic Account Backfilling**: Implemented a multi-stage fallback logic to identify "Unknown" accounts in truncated logs by cross-referencing the explicitly marked "active" account from the login lookup table.
 
-### 12. Automated Quota Status Management
-- Enhanced the `engine_service.py` login sequence to automatically clear the `quota_full` status of an account upon a successful manual login check. This ensures that accounts are immediately returned to rotation if their quota has naturally expired or been reset.
+### 13. Account Health Metric Alignment & 'RejectStat' Integration
+- **Aligned Performance Metrics**: Synchronized the Account Health Analysis duration, reject, and reset counts with the Dashboard's logic by integrating with the engine's `RejectStat` logging.
+- **Engine-Anchored Success Data**: Success records in health charts now prioritize high-precision, cumulative metrics (Duration, Rejects, Resets) reported directly by the engine. This ensures that a single image (e.g., 1087.png) displays identical data in both the System Config and Dashboard views.
+- **MM:SS Duration Formatting**: Standardized all duration displays in health tooltips to a clean `Minutes:Seconds` (MM:SS) format for better readability.
+- **Integer X-Axis Scaling**: Enforced integer-only scaling for all health chart X-axes, eliminating confusing decimal artifacts in event sequences.
+- **Robust Data Attribution**: Optimized the log parser to automatically bypass manual accumulation when anchored `RejectStat` data is present, preventing double-counting while maintaining a reliable fallback for legacy logs.
 
-## 🐛 Critical Bug Fixes
 
 ### 10. Normalization of Account Parsing
 - Fixed an issue where the Account Health parser was case-sensitive, causing email-based accounts to be misidentified. The system now treats all account identifiers as case-insensitive for consistent tracking.
