@@ -110,3 +110,7 @@ The automation engine now supports dynamically reloading prompts without interru
 ### 11. Migration to Streamlit Latest Layout Parameters
 - Standardized the use of `width='stretch'` instead of the deprecated `use_container_width=True` across the entire application (including Dashboard charts and System Config tables). 
 - Formally updated the project `rule.md` to ensure future compliance with Streamlit's 2026 API standards.
+### 12. Reject Rate Chart Chronological Sorting
+- Resolved a visualization issue in the Dashboard's **Reject Rate Chart** where the X-axis (filenames) was being sorted alphabetically instead of chronologically.
+- Previously, filenames starting with "1" (e.g., "1000") would incorrectly appear before filenames starting with "8" (e.g., "825") due to string-based sorting.
+- The chart now uses a hidden sequential `order_index` to ensure that data points strictly follow the execution timeline, providing a true representation of performance trends over time.

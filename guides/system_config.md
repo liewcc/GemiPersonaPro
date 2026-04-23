@@ -65,7 +65,33 @@ A customizable list of phrases used by the engine to detect when an account has 
 ---
 
 ## 5. Account Health Analysis
-A diagnostic suite for monitoring loading performance and identifying problematic accounts through chronological logs and interactive bar charts.
+A powerful diagnostic suite that parses `engine.log` to visualize the performance and "health" of your account rotation. It helps identify problematic accounts that trigger frequent refusals or page resets.
+
+### View Modes
+- **Full Loading History (All Events)**: A chronological audit trail of every loading attempt across all accounts. Best for system-wide stability monitoring.
+- **Detailed History: Active Account**: Filters the data to show only events for the currently active profile. Useful for deep-diving into a single account's behavior.
+- **Latest Summary (All Accounts)**: A high-level overview showing the most recent loading status and duration for every account in the system.
+
+### Performance Visualizations
+Toggle **Plot Performance Graph** to access interactive Altair charts:
+- **Loading Duration (Bar Chart)**:
+    - **Y-Axis**: Time in seconds taken to load "Nano Banana 2".
+    - **Colors**: **Green** (Success), **Purple/Blue** (Reject), **Orange** (Reset).
+    - **Session Banding**: The chart uses alternating Base/Light colors for the background/bars to visually group events by account session, making it easy to see where account switches occurred.
+- **Reject Rates (Line Chart)**:
+    - **X-Axis**: Successful image downloads.
+    - **Y-Axis**: Cumulative count of Refusals or Resets encountered *before* that success.
+    - **Purpose**: A rising trend line indicates that an account is becoming "tired" or heavily filtered, suggesting it may need a longer cooldown.
+
+### Status Indicators
+- **Success**: The AI responded and a file was successfully saved to disk.
+- **Reject**: The AI refused the prompt (safety filter) or the response was empty/malformed.
+- **Reset**: The page failed to load, timed out, or was intentionally refreshed by the Watchdog due to a detected hang.
+
+### Interactive Features & Tips
+- **Auto-Refresh**: Enable the toggle to have the health data update every 5 seconds without reloading the entire page. This is ideal for "live" monitoring of an ongoing session.
+- **Tooltips**: Hover over any bar or point in the graph to see exact timestamps, durations, account IDs, and the specific **Artifact** (filename) associated with that event.
+- **Artifact Tracking**: Successful events are linked to their saved filenames (e.g., `1024.png`), allowing you to correlate log performance with specific outputs.
 
 ---
-*Tip: Navigation selections and all numerical settings are saved **instantly** to config.json. Numerical thresholds are strictly enforced as integers.*
+*Tip: If an account shows a consistent "Reject" pattern in the graphs, consider adding more variation to your prompt or increasing the **Quota Cooldown** hours in Engine Settings.*

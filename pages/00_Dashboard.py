@@ -449,15 +449,17 @@ def render_chart_body_fragment():
         "reset_count": "Resets"
     })
     
-    # Use filename as index for the X-axis (strip .png extension for cleaner display)
+    # 1. Create a sequential order column to ensure chronological sorting
+    df["order_index"] = range(1, len(df) + 1)
+    
+    # 2. Prepare display labels (strip .png)
     df["Filename"] = df["filename"].apply(lambda x: str(x).replace(".png", ""))
-    df.set_index("Filename", inplace=True)
     
     import altair as alt
     
     # Format duration as mm:ss for tooltip display
     df["Duration (m:s)"] = df["duration_sec"].apply(lambda x: f"{int(x // 60):02d}:{int(x % 60):02d}")
-    df_chart = df.reset_index()
+    df_chart = df.reset_index() # Keep original index if needed, but we'll use Filename for display
 
     chart = alt.Chart(df_chart).transform_fold(
         ['Duration (m)', 'Refused', 'Resets'],
@@ -465,7 +467,7 @@ def render_chart_body_fragment():
     ).mark_line(
         point=alt.OverlayMarkDef(opacity=0.01, size=250)
     ).encode(
-        x=alt.X('Filename:N', title=None, axis=alt.Axis(labelAngle=-45)),
+        x=alt.X('Filename:N', title=None, axis=alt.Axis(labelAngle=-45), sort=alt.SortField(field='order_index', order='ascending')),
         y=alt.Y('Value:Q', title=None),
         color=alt.Color('Data:N', 
             scale=alt.Scale(

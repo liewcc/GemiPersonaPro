@@ -896,9 +896,12 @@ async def automation_manager(req: AutomationRequest):
                 pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
                 with open(pending_file, "w", encoding="utf-8") as f:
                     json.dump(pending_data, f)
+                
+                # Commit latest deltas to the credentials table before exiting
+                _commit_session_stats_to_table()
             except Exception as e:
-                engine._log_debug(f"API>> Failed to save pending stats: {e}")
-
+                engine._log_debug(f"API>> Failed to save pending stats or commit: {e}")
+            
             if final_dur > 1 or engine._pending_refused > 0 or engine._pending_resets > 0:
                 engine._log_debug(f"API>> Automation manager ending. Saved trailing stats: dur={final_dur:.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
 
@@ -980,8 +983,8 @@ async def start_automation(req: AutomationRequest):
     engine._cycle_start_time = time.time()
     engine._lc_cycle_start_time = time.time()
     engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
-    # Snapshot the current stats baseline for the first account's session.
-    # Stats were just reset to 0 above, so this snapshot is always {0, 0, 0}.
+    
+    # Reset snapshot for the new session
     engine._acct_snapshot = {"successes": 0, "refusals": 0, "resets": 0}
 
     # Mark as running IMMEDIATELY (synchronous) to prevent race conditions.
@@ -1045,10 +1048,16 @@ async def continue_automation(req: AutomationRequest):
             engine._lc_pending_refused = pending_stats.get("lc_pending_refused", 0)
             engine._lc_pending_resets = pending_stats.get("lc_pending_resets", 0)
             
-            # Restore cumulative status values from pending counts
-            engine.automation_status["refusals"] += engine._pending_refused
-            engine.automation_status["resets"] += engine._pending_resets
-            engine.automation_status["cycles"] += (engine._pending_refused + engine._pending_resets)
+            # Restore transient status for UI display
+            engine.automation_status["pending_refused"] = engine._pending_refused
+            engine.automation_status["pending_resets"] = engine._pending_resets
+            
+            # Restore cumulative status values from pending counts ONLY if we just hydrated.
+            # If the service was already running, these counts were already incremented in real-time.
+            if "hydrated" in locals() and hydrated:
+                engine.automation_status["refusals"] += engine._pending_refused
+                engine.automation_status["resets"] += engine._pending_resets
+                engine.automation_status["cycles"] += (engine._pending_refused + engine._pending_resets)
             
             # Restore start_time if available
             if pending_stats.get("start_time"):
@@ -1073,6 +1082,15 @@ async def continue_automation(req: AutomationRequest):
             engine._lc_cycle_start_time = time.time()
         
     engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
+    if hasattr(engine, '_lc_cycle_start_time'):
+        engine.automation_status["lc_cycle_start_ts"] = engine._lc_cycle_start_time
+    
+    # Synchronize the snapshot to prevent double-counting deltas in the lookup table
+    engine._acct_snapshot = {
+        "successes": engine.automation_status.get("successes", 0),
+        "refusals": engine.automation_status.get("refusals", 0),
+        "resets": engine.automation_status.get("resets", 0)
+    }
     
     engine.automation_status["is_running"] = True
     asyncio.create_task(automation_manager(req))

@@ -1728,6 +1728,7 @@ class BrowserEngine:
                             self._update_config_start(new_start)
                             
                             self.automation_status["successes"] += 1
+                            self.automation_status["cycles"] += 1
                             
                             # Write per-image reject stat record
                             cycle_end = time.time()
