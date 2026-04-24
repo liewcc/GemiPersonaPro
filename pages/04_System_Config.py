@@ -190,40 +190,39 @@ def parse_account_health(target_account=None, login_data=None):
         # New State-based Parsing Approach
         current_session_id = 1
         active_event = None # {start_time, account, start_line_idx}
+        last_boundary_idx = -1
         
         for i, line in enumerate(lines):
             line_lower = line.lower()
             
+            # Extract potential account update first to check if it's a real switch
+            potential_new_acc = None
+            if "profile switched to" in line_lower:
+                try: potential_new_acc = line.split("switched to")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
+                except: pass
+            elif "re-login detected for" in line_lower:
+                try: potential_new_acc = line.split("detected for")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
+                except: pass
+            
             # 1. Detect Session Boundaries (Force reset and increment session)
             is_boundary = False
-            # We use a helper to avoid double-bumping session ID on adjacent boundary lines
             if "automation finished" in line_lower or "automation manager started" in line_lower:
                 is_boundary = True
-            elif "profile switched to" in line_lower or "re-login detected for" in line_lower:
+            elif potential_new_acc and potential_new_acc != current_account:
+                # Only treat as a boundary if the account actually changes
                 is_boundary = True
             
             if is_boundary:
-                # Only bump session if the last event was closed or this is a fresh start
-                # or if a significant amount of time/lines passed since last boundary
-                if not getattr(st.session_state, "_last_boundary_idx", -1) == i - 1:
+                # Only bump session if not immediately following another boundary
+                if last_boundary_idx != i - 1:
                     current_session_id += 1
-                st.session_state._last_boundary_idx = i
-                
-                # Update current account strictly from the switch/login line
-                new_acc = None
-                if "profile switched to" in line_lower:
-                    try: new_acc = line.split("switched to")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
-                    except: pass
-                elif "re-login detected for" in line_lower:
-                    try: new_acc = line.split("detected for")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
-                    except: pass
-                
-                if new_acc:
-                    current_account = new_acc
-                    found_accounts_set.add(new_acc)
-                
+                last_boundary_idx = i
                 active_event = None
-                # DO NOT continue; let the rest of the line be processed
+
+            # Always update account info if found
+            if potential_new_acc:
+                current_account = potential_new_acc
+                found_accounts_set.add(potential_new_acc)
 
 
             # 2. Track simple account updates (might happen inside session)
