@@ -48,12 +48,13 @@ Defines the "intelligence" of the account rotation engine:
 - **Infinite Loop**: Detects if the engine has been idling for too long and triggers recovery.
 - **Time-Based Rotation**: Forces a profile switch or re-login after a set duration.
 - **Refusal Threshold**: Automatically switches accounts if Gemini refuses to generate too many times consecutively.
-### Aspect Ratio Setting
-Manages how the AI handles image dimensions:
-- **Mode Selection**: Choose between **Fixed Aspect Ratio** (static) and **Dynamic Prefix Loop** (automated sequence).
-- **Fixed Ratio**: Select a specific aspect ratio from the dropdown (e.g., 16:9). This ratio is automatically prefixed to every prompt sent to the AI.
-- **Dynamic Prefix Dialog**: Configure a list of ratios and target counts. The engine will automatically cycle through this list during the automation loop.
-- **Edit Locking**: Settings are editable at all times when the automation is idle, but lock automatically during an active **Loop 进程** to ensure sequence integrity.
+- **Aspect Ratio Setting**:
+    - **Mode Selection**: Choose between **Fixed Aspect Ratio** (static) and **Dynamic Ratio Loop** (automated sequence).
+    - **Fixed Ratio**: Uses a single selected ratio. UI locks during active generation but syncs from disk before each cycle.
+    - **Dynamic Loop**: Automatically cycles through the checked items in the ratio list.
+    - **Progress Persistence**: Generation counts (Count) are **NEVER** automatically reset. Progress is preserved even when switching modes or restarting. Manual reset via the **Reset Progress** button is required.
+    - **Real-time Sync**: The engine performs a fresh config read from disk at the start of every image generation cycle.
+
 
 ---
 
@@ -89,14 +90,17 @@ Toggle **Plot Performance Graph** to access interactive Altair charts:
     - **Purpose**: A rising trend line indicates that an account is becoming "tired" or heavily filtered, suggesting it may need a longer cooldown.
 
 ### Status Indicators
-- **Success**: The AI responded and a file was successfully saved to disk.
-- **Reject**: The AI refused the prompt (safety filter) or the response was empty/malformed.
-- **Reset**: The page failed to load, timed out, or was intentionally refreshed by the Watchdog due to a detected hang.
+- **Success**: The AI responded and a file was successfully saved.
+- **Reject**: The AI refused the prompt (safety filter). Now captured as individual, non-cumulative segments in the duration chart.
+- **Reset**: The page failed or was refreshed.
+- **Fail**: A success event was detected but the filename was missing.
 
-### Interactive Features & Tips
-- **Auto-Refresh**: Enable the toggle to have the health data update every 5 seconds without reloading the entire page. This is ideal for "live" monitoring of an ongoing session.
-- **Tooltips**: Hover over any bar or point in the graph to see exact timestamps, durations, account IDs, and the specific **Artifact** (filename) associated with that event.
-- **Artifact Tracking**: Successful events are linked to their saved filenames (e.g., `1024.png`), allowing you to correlate log performance with specific outputs.
+### Physical Breakpoint Logic (New)
+The parser now uses a robust state-tracking mechanism:
+- **Session End**: Detected by `Automation Finished.` or manual stop signals.
+- **Identity Lock**: Triggered by `Profile switched to <username>`. This forces the current account ID for all subsequent events until the next breakpoint.
+- **Orphan Recovery**: The system captures `Saved:` events even if the initial `Loading` marker was missed (e.g., after a manual continue).
 
 ---
 *Tip: If an account shows a consistent "Reject" pattern in the graphs, consider adding more variation to your prompt or increasing the **Quota Cooldown** hours in Engine Settings.*
+
