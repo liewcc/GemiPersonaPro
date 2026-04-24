@@ -375,9 +375,23 @@ def show_goal_reached_dialog(location):
     if st.button("OK", width="stretch", key=f"gr_ok_{location}"):
         st.rerun()
 
+def on_dash_reject_y_scale_change():
+    save_config({"dash_reject_chart_y_scale": st.session_state.dash_reject_chart_y_scale})
+    if "config" in st.session_state:
+        st.session_state.config["dash_reject_chart_y_scale"] = st.session_state.dash_reject_chart_y_scale
+
 @st.fragment(run_every=1)
 def render_chart_body_fragment():
-    st.markdown("### Performance Trends")
+    col_t, col_r = st.columns([1, 1])
+    with col_t:
+        st.markdown("### Performance Trends")
+    with col_r:
+        cfg_scale = load_config().get("dash_reject_chart_y_scale", "Linear")
+        if "dash_reject_chart_y_scale" not in st.session_state:
+            st.session_state.dash_reject_chart_y_scale = cfg_scale
+            
+        opts = ["Linear", "Logarithmic"]
+        st.radio("Y-Axis Scale", opts, horizontal=True, key="dash_reject_chart_y_scale", on_change=on_dash_reject_y_scale_change, label_visibility="collapsed")
     
     # 1. Load historical records
     records = []
@@ -495,9 +509,11 @@ def render_chart_body_fragment():
     
     import altair as alt
     
-    # Format duration as mm:ss for tooltip display
-    df["Duration (m:s)"] = df["duration_sec"].apply(lambda x: f"{int(x // 60):02d}:{int(x % 60):02d}")
+    # Format duration dynamically (H:MM:SS if >1hr, M:SS otherwise)
+    df["Formatted Duration"] = df["duration_sec"].apply(_format_dur_str)
     df_chart = df.reset_index() # Keep original index if needed, but we'll use Filename for display
+
+    y_scale_type = 'symlog' if st.session_state.get("dash_reject_chart_y_scale", "Linear") == "Logarithmic" else 'linear'
 
     chart = alt.Chart(df_chart).transform_fold(
         ['Duration (m)', 'Refused', 'Resets'],
@@ -506,7 +522,7 @@ def render_chart_body_fragment():
         point=alt.OverlayMarkDef(opacity=0.01, size=250)
     ).encode(
         x=alt.X('order_index:Q', title="Image Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-        y=alt.Y('Value:Q', title=None),
+        y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
         color=alt.Color('Data:N', 
             scale=alt.Scale(
                 domain=['Duration (m)', 'Refused', 'Resets'],
@@ -515,7 +531,7 @@ def render_chart_body_fragment():
             legend=alt.Legend(title=None, orient="bottom", symbolType="stroke", symbolOpacity=1, symbolStrokeWidth=3)),
         tooltip=[
             alt.Tooltip('Filename:N', title="Filename"),
-            alt.Tooltip(r'Duration (m\:s):N', title="Duration"),
+            alt.Tooltip('Formatted Duration:N', title="Duration"),
             alt.Tooltip('Refused:Q', title="Refused"),
             alt.Tooltip('Resets:Q', title="Resets")
         ]

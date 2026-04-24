@@ -180,4 +180,18 @@ The automation engine now supports dynamically reloading prompts without interru
 
 ### 22. Legend Layout Optimization for Bar Charts
 - Implemented a two-row legend layout (`columns=4`) for Loading Duration bar charts.
-- This grouping ensures that core status categories (Base/Fail) are displayed on the first line, while secondary variants (Light) wrap to the second line, significantly improving readability and visual organization.
+### 23. Unified Aspect Ratio Setting Module
+- Standardized aspect ratio configuration across **Gemini Setup** and **System Config** by unifying the control logic and UI persistence.
+- **Aspect Ratio Setting (New Container)**: Replaced the legacy "Dynamic Prompt Prefix" toggle with a comprehensive management container featuring two distinct modes:
+    - **Fixed Aspect Ratio**: Injects a static, user-selected ratio (e.g., 16:9, 1:1) into every prompt.
+    - **Dynamic Prefix Loop**: Automatically cycles through a sequence of pre-configured ratios and target counts.
+- **Intelligent Prompt Injection**: The automation engine now automatically prefixes "Aspect Ratio: [Selected Ratio]" to the user's prompt. 
+- **Double-Injection Prevention**: Implemented a check to ensure the prefix is only added if not already present, preventing cluttered or corrupted prompts during recursive loops or manual edits.
+- **Cross-Mode Editing Freedom**: Updated the UI to allow configuration changes to both the Fixed Ratio and Dynamic List regardless of the active mode. This allows users to pre-configure their next automation sequence without switching tabs or modes.
+- **Intelligent UI Locking**: All aspect ratio controls (Radio buttons, Dropdowns, and Data Editors) are now strictly tied to the **Loop 进程 (Automation Loop)** status. Controls are locked only during active generation and automatically unlock when idle, even if the browser is open.
+- **Aesthetic Refinements**: Updated the Dynamic Prefix dialog to a responsive medium-width design and moved all titles to sentence-case for a more professional look.
+
+### 24. Account Health Analysis UI & Accuracy
+- **Y-Axis Unit Normalization**: Changed the Y-axis duration label from `(m)` to `(minite)` across all performance charts to provide a more descriptive unit label.
+- **Logarithmic Scale Integration**: Fixed chart rendering issues where logarithmic scales failed to persist correctly from `config.json`.
+- **Time Formatting**: Standardized all time durations in health charts to a high-precision `H:MM:SS` format.

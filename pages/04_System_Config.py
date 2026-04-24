@@ -35,13 +35,13 @@ def on_change_quota_cooldown():
     save_config({"quota_cooldown_hours": st.session_state.cfg_quota_cooldown_hrs})
 
 def on_change_health_graph():
-    save_config({"health_graph_type": st.session_state.cfg_health_graph_type})
+    save_config({"health_graph_type": st.session_state.widget_health_graph_type})
 
 def on_change_health_view():
-    save_config({"health_view_mode": st.session_state.cfg_health_view_mode})
+    save_config({"health_view_mode": st.session_state.widget_health_view_mode})
 
 def on_change_health_y_scale():
-    save_config({"health_y_scale": st.session_state.cfg_health_y_scale})
+    save_config({"health_y_scale": st.session_state.widget_health_y_scale})
 
 def on_change_navigation():
     save_config({"system_navigation": st.session_state.cfg_system_nav})
@@ -106,6 +106,19 @@ def on_change_auto_looping():
     if "automation" not in cfg: cfg["automation"] = {}
     cfg["automation"]["auto_looping"] = st.session_state.cfg_auto_looping
     save_config({"automation": cfg["automation"]})
+
+def on_change_prompt_matrix_toggle():
+    cfg = load_config()
+    if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
+    
+    # Reset progress when toggled ON
+    if st.session_state.cfg_matrix_enabled and not cfg["prompt_matrix"].get("enabled", False):
+        if "items" in cfg["prompt_matrix"]:
+            for it in cfg["prompt_matrix"]["items"]:
+                it["current"] = 0
+                
+    cfg["prompt_matrix"]["enabled"] = st.session_state.cfg_matrix_enabled
+    save_config({"prompt_matrix": cfg["prompt_matrix"]})
 
 def on_change_loop_control(key):
     def callback():
@@ -334,10 +347,7 @@ st.session_state.cfg_timeout = int(config.get("heartbeat_timeout", 3600))
 st.session_state.cfg_watchdog_delay = int(config.get("watchdog_initial_delay", 20))
 st.session_state.cfg_quota_cooldown_hrs = int(config.get("quota_cooldown_hours", 24))
 st.session_state.cfg_quota_cooldown_min = config.get("quota_cooldown_minutes", 0)
-if "cfg_health_view_mode" not in st.session_state:
-    st.session_state.cfg_health_view_mode = config.get("health_view_mode", "Full Loading History (All Events)")
-if "cfg_health_y_scale" not in st.session_state:
-    st.session_state.cfg_health_y_scale = config.get("health_y_scale", "Linear")
+
 if "cfg_system_nav" not in st.session_state:
     st.session_state.cfg_system_nav = config.get("system_navigation", "Engine Settings")
 
@@ -358,6 +368,9 @@ auto_c = config.get("automation", {})
 st.session_state.cfg_auto_mode = auto_c.get("mode", "rounds")
 st.session_state.cfg_auto_goal = int(auto_c.get("goal", 1))
 st.session_state.cfg_auto_looping = auto_c.get("auto_looping", False)
+
+pm = config.get("prompt_matrix", {})
+st.session_state.cfg_matrix_enabled = pm.get("enabled", False)
 
 lc = auto_c.get("loop_control", {})
 st.session_state.cfg_loop_infinite_loop_enabled = lc.get("infinite_loop_enabled", True)
@@ -463,6 +476,130 @@ elif menu_selection == "Automation Settings":
             discovery = config.get("discovery", {})
             st.selectbox("Default Tool", options=discovery.get("available_tools", []), key="cfg_selected_tool", on_change=on_change_tool)
             st.selectbox("Default Model", options=discovery.get("available_models", []), key="cfg_selected_model", on_change=on_change_model)
+
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>ASPECT RATIO SETTING</p>", unsafe_allow_html=True)
+        pm_config = config.get("prompt_matrix", {})
+        pm_enabled = pm_config.get("enabled", False)
+
+        # Pre-fetch status for UI locking
+        is_engine_running = False
+        is_auto_running = False
+        try:
+            import requests
+            r = requests.get("http://localhost:8000/health", timeout=1)
+            is_engine_running = r.json().get("engine_running", False)
+            is_auto_running = r.json().get("automation_running", False)
+        except:
+            pass
+        
+        with st.container(border=True):
+            mode_opts = ["Fixed Aspect Ratio", "Dynamic Prefix Loop"]
+            radio_idx = 1 if pm_enabled else 0
+            
+            c_ar1, c_ar2 = st.columns([1.5, 1])
+            with c_ar1:
+                ar_mode = st.radio("Mode Selection", options=mode_opts, index=radio_idx, horizontal=True, key="cfg_ar_mode_radio")
+            
+            if (ar_mode == "Dynamic Prefix Loop") != pm_enabled:
+                pm_config["enabled"] = (ar_mode == "Dynamic Prefix Loop")
+                if pm_config["enabled"]:
+                    for it in pm_config.get("items", []): it["current"] = 0
+                save_config({"prompt_matrix": pm_config})
+                st.rerun()
+
+            with c_ar2:
+                ratio_list = ["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None"]
+                saved_fixed = config.get("fixed_aspect_ratio", "16:9 (Landscape)")
+                try: f_idx = ratio_list.index(saved_fixed)
+                except: f_idx = 0
+                
+                # Fixed Ratio selection is always visible and editable
+                selected_fixed = st.selectbox("Fixed Ratio", options=ratio_list, index=f_idx, key="cfg_fixed_ar_select")
+                if selected_fixed != saved_fixed:
+                    save_config({"fixed_aspect_ratio": selected_fixed})
+                
+
+
+            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+            pm_items = pm_config.get("items", [
+                {"ratio": "16:9 (Landscape)", "target": 5, "current": 0},
+                {"ratio": "9:16 (Portrait)", "target": 5, "current": 0},
+                {"ratio": "1:1 (Square)", "target": 5, "current": 0},
+                {"ratio": "4:3 (Landscape)", "target": 5, "current": 0},
+                {"ratio": "3:4 (Portrait)", "target": 5, "current": 0},
+                {"ratio": "21:9 (Ultrawide)", "target": 5, "current": 0},
+                {"ratio": "3:2 (Landscape)", "target": 5, "current": 0},
+                {"ratio": "2:3 (Portrait)", "target": 5, "current": 0}
+            ])
+            
+            active_idx = -1
+            if pm_enabled:
+                for i, it in enumerate(pm_items):
+                    if it.get("current", 0) < it.get("target", 1):
+                        active_idx = i
+                        break
+
+            pm_data = []
+            for i, it in enumerate(pm_items):
+                is_active = (i == active_idx)
+                pm_data.append({
+                    "ratio": it.get("ratio", ""),
+                    "target": int(it.get("target", 0)),
+                    "current": int(it.get("current", 0)),
+                    "status": "▶ Executing" if is_active else ("✔ Done" if it.get("current", 0) >= it.get("target", 1) else "Pending")
+                })
+                
+            pm_df = pd.DataFrame(pm_data)
+            
+            edited_pm_df = st.data_editor(
+                pm_df,
+                column_config={
+                    "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
+                    "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
+                    "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
+                    "status": st.column_config.TextColumn("Status", disabled=True, width="small")
+                },
+                num_rows="dynamic",
+                hide_index=True,
+                width="stretch",
+                disabled=is_auto_running,
+                key="pm_editor"
+            )
+            
+            btn_disabled = is_auto_running and pm_enabled
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Save Setting", icon="💾", width="stretch", disabled=btn_disabled):
+                    new_items = []
+                    for r in edited_pm_df.to_dict("records"):
+                        new_items.append({
+                            "ratio": r.get("ratio") or "None (Master Prompt)",
+                            "target": int(r.get("target") or 1),
+                            "current": int(r.get("current") or 0)
+                        })
+                    
+                    cfg = load_config()
+                    if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
+                    cfg["prompt_matrix"]["items"] = new_items
+                    save_config({"prompt_matrix": cfg["prompt_matrix"]})
+                    st.success("Setting saved!")
+                    st.rerun()
+            with c2:
+                if st.button("Reset Progress", icon="🔄", width="stretch", disabled=btn_disabled):
+                    new_items = []
+                    for r in edited_pm_df.to_dict("records"):
+                        new_items.append({
+                            "ratio": r.get("ratio") or "None (Master Prompt)",
+                            "target": int(r.get("target") or 1),
+                            "current": 0
+                        })
+                    cfg = load_config()
+                    if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
+                    cfg["prompt_matrix"]["items"] = new_items
+                    save_config({"prompt_matrix": cfg["prompt_matrix"]})
+                    st.success("Progress reset!")
+                    st.rerun()
 
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>AUTOMATION GOALS</p>", unsafe_allow_html=True)
         with st.container(border=True):
@@ -629,10 +766,13 @@ def _render_health_content(view_mode, login_data, graph_type):
                     legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                     legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
-                    chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                    def _fmt_dur(x):
+                        h = int(x // 3600); m = int((x % 3600) // 60); s = int(x % 60)
+                        return f"{h}:{m:02d}:{s:02d}" if h > 0 else (f"{m}:{s:02d}" if m > 0 else f"{s}s")
+                    chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(_fmt_dur)
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                        y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
+                        y=alt.Y('Minutes:Q', title="Duration (minite)", scale=alt.Scale(type='symlog' if load_config().get("health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
                                         legend=alt.Legend(title=None, orient='bottom', columns=4)),
@@ -695,13 +835,13 @@ def _render_health_content(view_mode, login_data, graph_type):
                         agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                         plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res','status'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
                         # Map internal names to display names for the legend
-                        plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
+                        plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minite)'})
                         
-                        y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
+                        y_scale_type = 'symlog' if load_config().get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
 
                         # Define common color scale to ensure synchronization
                         health_color_scale = alt.Scale(
-                            domain=['Duration (m)', 'Rejects', 'Resets'],
+                            domain=['Duration (minite)', 'Rejects', 'Resets'],
                             range=['#2ecc71', '#a0a0ff', '#f39c12']
                         )
 
@@ -764,10 +904,13 @@ def _render_health_content(view_mode, login_data, graph_type):
                         _ll = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                         _lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
                         _chart_df['legend'] = _chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
-                        _chart_df["Duration"] = _chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                        def _fmt_dur(x):
+                            h = int(x // 3600); m = int((x % 3600) // 60); s = int(x % 60)
+                            return f"{h}:{m:02d}:{s:02d}" if h > 0 else (f"{m}:{s:02d}" if m > 0 else f"{s}s")
+                        _chart_df["Duration"] = _chart_df["health"].str.replace("s", "").astype(float).apply(_fmt_dur)
                         _chart = alt.Chart(_chart_df).mark_bar().encode(
                             x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                            y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
+                            y=alt.Y('Minutes:Q', title="Duration (minite)", scale=alt.Scale(type='symlog' if load_config().get("health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                             color=alt.Color('legend:N', scale=alt.Scale(domain=_ll, range=_lr), legend=alt.Legend(title=None, orient='bottom', columns=4)),
                             tooltip=['time', 'account', 'Duration', 'filename', 'status']
                         ).properties(height=400).interactive(bind_y=False)
@@ -823,13 +966,13 @@ def _render_health_content(view_mode, login_data, graph_type):
                             agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
                             plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res','status'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
                             # Map internal names to display names for the legend
-                            plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
+                            plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minite)'})
                             
-                            y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
+                            y_scale_type = 'symlog' if load_config().get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
 
                             # Define common color scale to ensure synchronization
                             health_color_scale = alt.Scale(
-                                domain=['Duration (m)', 'Rejects', 'Resets'],
+                                domain=['Duration (minite)', 'Rejects', 'Resets'],
                                 range=['#2ecc71', '#a0a0ff', '#f39c12']
                             )
 
@@ -908,10 +1051,13 @@ def _render_health_content(view_mode, login_data, graph_type):
                     legend_labels = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail', 'Success (Light)', 'Reject (Light)', 'Reset (Light)']
                     legend_colors = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
                     chart_df['legend'] = chart_df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
-                    chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                    def _fmt_dur(x):
+                        h = int(x // 3600); m = int((x % 3600) // 60); s = int(x % 60)
+                        return f"{h}:{m:02d}:{s:02d}" if h > 0 else (f"{m}:{s:02d}" if m > 0 else f"{s}s")
+                    chart_df["Duration"] = chart_df["health"].str.replace("s", "").astype(float).apply(_fmt_dur)
                     chart = alt.Chart(chart_df).mark_bar().encode(
                         x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-                        y=alt.Y('Minutes:Q', title="Duration (m)", scale=alt.Scale(type='symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear')),
+                        y=alt.Y('Minutes:Q', title="Duration (minite)", scale=alt.Scale(type='symlog' if load_config().get("health_y_scale", "Linear") == "Logarithmic" else 'linear')),
                         color=alt.Color('legend:N',
                                         scale=alt.Scale(domain=legend_labels, range=legend_colors),
                                         legend=alt.Legend(title=None, orient='bottom', columns=4)),
@@ -968,16 +1114,19 @@ def _render_health_content(view_mode, login_data, graph_type):
                         agg_df["t_dur"] = agg_df["Duration"] / 60.0
                         agg_df["t_rej"] = agg_df["Rejects"]
                         agg_df["t_res"] = agg_df["Resets"]
-                        agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
+                        def _fmt_dur(x):
+                            h = int(x // 3600); m = int((x % 3600) // 60); s = int(x % 60)
+                            return f"{h}:{m:02d}:{s:02d}" if h > 0 else (f"{m}:{s:02d}" if m > 0 else f"{s}s")
+                        agg_df["t_dur_fmt"] = agg_df["Duration"].apply(_fmt_dur)
                         plot_df = agg_df.melt(id_vars=['Event','Display','Image','account','time','session_index','t_dur_fmt','t_rej','t_res','status'], value_vars=['t_dur','Rejects','Resets'], var_name='Metric', value_name='Value')
                         # Map internal names to display names for the legend
-                        plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (m)'})
+                        plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minite)'})
                         
-                        y_scale_type = 'symlog' if st.session_state.get("cfg_health_y_scale", "Linear") == "Logarithmic" else 'linear'
+                        y_scale_type = 'symlog' if load_config().get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
 
                         # Define common color scale to ensure synchronization
                         health_color_scale = alt.Scale(
-                            domain=['Duration (m)', 'Rejects', 'Resets'],
+                            domain=['Duration (minite)', 'Rejects', 'Resets'],
                             range=['#2ecc71', '#a0a0ff', '#f39c12']
                         )
 
@@ -1048,13 +1197,17 @@ if menu_selection == "Account Health Analysis":
             # Ensure persistent view mode is valid for current options
             options = ["Full Loading History (All Events)", "Detailed History: Active Account", "Latest Summary (All Accounts)"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs]
             
-            if st.session_state.cfg_health_view_mode not in options:
-                st.session_state.cfg_health_view_mode = "Full Loading History (All Events)"
+            cfg_val = config.get("health_view_mode", "Full Loading History (All Events)")
+            try:
+                view_index = options.index(cfg_val)
+            except ValueError:
+                view_index = 0
 
             view_mode = st.selectbox(
                 "Select View Mode",
                 options=options,
-                key="cfg_health_view_mode",
+                index=view_index,
+                key="widget_health_view_mode",
                 on_change=on_change_health_view,
                 help="Choose between a complete history of all loading events, a summary of all accounts, or detailed history for a specific account."
             )
@@ -1088,9 +1241,25 @@ if menu_selection == "Account Health Analysis":
         if st.session_state.show_health_graph and not is_latest_summary:
             st.markdown("<div style='margin-bottom: 5px;'></div>", unsafe_allow_html=True)
             _, col_rad, col_scale = st.columns([1.5, 1, 1])
-            with col_rad:
-                st.radio("Graph Mode", ["Loading Duration", "Reject Rates"], horizontal=True, key="cfg_health_graph_type", on_change=on_change_health_graph, label_visibility="collapsed")
-            with col_scale:
-                st.radio("Y-Axis Scale", ["Linear", "Logarithmic"], horizontal=True, key="cfg_health_y_scale", on_change=on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
+            
+            graph_opts = ["Loading Duration", "Reject Rates"]
+            scale_opts = ["Linear", "Logarithmic"]
 
-        _render_health_content(view_mode, login_data, st.session_state.get("cfg_health_graph_type", "Loading Duration"))
+            cfg_graph = config.get("health_graph_type", "Loading Duration")
+            try:
+                graph_idx = graph_opts.index(cfg_graph)
+            except ValueError:
+                graph_idx = 0
+
+            cfg_scale = config.get("health_y_scale", "Linear")
+            try:
+                scale_idx = scale_opts.index(cfg_scale)
+            except ValueError:
+                scale_idx = 0
+
+            with col_rad:
+                st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=on_change_health_graph, label_visibility="collapsed")
+            with col_scale:
+                st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
+
+        _render_health_content(view_mode, login_data, config.get("health_graph_type", "Loading Duration"))

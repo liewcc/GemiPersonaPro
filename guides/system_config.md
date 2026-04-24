@@ -48,7 +48,12 @@ Defines the "intelligence" of the account rotation engine:
 - **Infinite Loop**: Detects if the engine has been idling for too long and triggers recovery.
 - **Time-Based Rotation**: Forces a profile switch or re-login after a set duration.
 - **Refusal Threshold**: Automatically switches accounts if Gemini refuses to generate too many times consecutively.
-- **Reset Threshold**: Triggers a recovery action (like re-login) if the page crashes or hangs repeatedly.
+### Aspect Ratio Setting
+Manages how the AI handles image dimensions:
+- **Mode Selection**: Choose between **Fixed Aspect Ratio** (static) and **Dynamic Prefix Loop** (automated sequence).
+- **Fixed Ratio**: Select a specific aspect ratio from the dropdown (e.g., 16:9). This ratio is automatically prefixed to every prompt sent to the AI.
+- **Dynamic Prefix Dialog**: Configure a list of ratios and target counts. The engine will automatically cycle through this list during the automation loop.
+- **Edit Locking**: Settings are editable at all times when the automation is idle, but lock automatically during an active **Loop 进程** to ensure sequence integrity.
 
 ---
 
@@ -75,8 +80,8 @@ A powerful diagnostic suite that parses `engine.log` to visualize the performanc
 ### Performance Visualizations
 Toggle **Plot Performance Graph** to access interactive Altair charts:
 - **Loading Duration (Bar Chart)**:
-    - **Y-Axis**: Time in seconds taken to load "Nano Banana 2".
-    - **Colors**: **Green** (Success), **Purple/Blue** (Reject), **Orange** (Reset).
+    - **Y-Axis**: Duration in **minutes (minite)**.
+    - **Colors**: **Green** (Success), **Purple/Blue** (Reject), **Orange** (Reset), **Light Red** (Fail).
     - **Session Banding**: The chart uses alternating Base/Light colors for the background/bars to visually group events by account session, making it easy to see where account switches occurred.
 - **Reject Rates (Line Chart)**:
     - **X-Axis**: Successful image downloads.

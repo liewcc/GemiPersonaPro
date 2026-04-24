@@ -598,6 +598,110 @@ def confirm_start_automation_setup():
         st.session_state.show_start_confirmation_setup = False
         st.rerun()
 
+@st.dialog("Dynamic prompt prefix", width="large")
+def show_prompt_prefix_dialog():
+    st.markdown("""
+        <style>
+            div[data-testid="stDialog"] div[role="dialog"] {
+                max-width: 700px !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    import pandas as pd
+    
+    pm_enabled = config.get("prompt_matrix", {}).get("enabled", False)
+    
+    pm_config = config.get("prompt_matrix", {})
+    pm_items = pm_config.get("items", [
+        {"ratio": "16:9 (Landscape)", "target": 5, "current": 0},
+        {"ratio": "9:16 (Portrait)", "target": 5, "current": 0},
+        {"ratio": "1:1 (Square)", "target": 5, "current": 0},
+        {"ratio": "4:3 (Landscape)", "target": 5, "current": 0},
+        {"ratio": "3:4 (Portrait)", "target": 5, "current": 0},
+        {"ratio": "21:9 (Ultrawide)", "target": 5, "current": 0},
+        {"ratio": "3:2 (Landscape)", "target": 5, "current": 0},
+        {"ratio": "2:3 (Portrait)", "target": 5, "current": 0}
+    ])
+    
+    active_idx = -1
+    if pm_enabled:
+        for i, it in enumerate(pm_items):
+            if it.get("current", 0) < it.get("target", 1):
+                active_idx = i
+                break
+
+    pm_data = []
+    for i, it in enumerate(pm_items):
+        is_active = (i == active_idx)
+        pm_data.append({
+            "ratio": it.get("ratio", ""),
+            "target": int(it.get("target", 0)),
+            "current": int(it.get("current", 0)),
+            "status": "▶ Executing" if is_active else ("✔ Done" if it.get("current", 0) >= it.get("target", 1) else "Pending")
+        })
+        
+    pm_df = pd.DataFrame(pm_data)
+    
+    is_auto_running = False
+    try:
+        import requests
+        r = requests.get("http://localhost:8000/health", timeout=1)
+        is_auto_running = r.json().get("automation_running", False)
+    except:
+        pass
+
+    edited_pm_df = st.data_editor(
+        pm_df,
+        column_config={
+            "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
+            "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
+            "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
+            "status": st.column_config.TextColumn("Status", disabled=True, width="small")
+        },
+        num_rows="dynamic",
+        hide_index=True,
+        width="stretch",
+        disabled=is_auto_running,
+        key="pm_editor_setup"
+    )
+    
+    btn_disabled = is_auto_running and pm_enabled
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Save Setting", icon="💾", use_container_width=True, disabled=btn_disabled, key="pm_save_setup"):
+            new_items = []
+            for r in edited_pm_df.to_dict("records"):
+                new_items.append({
+                    "ratio": r.get("ratio") or "None (Master Prompt)",
+                    "target": int(r.get("target") or 1),
+                    "current": int(r.get("current") or 0)
+                })
+            
+            cfg = load_config()
+            if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
+            cfg["prompt_matrix"]["items"] = new_items
+            save_config({"prompt_matrix": cfg["prompt_matrix"]})
+            st.success("Setting saved!")
+            time.sleep(0.5)
+            st.rerun()
+    with c2:
+        if st.button("Reset Progress", icon="🔄", use_container_width=True, disabled=btn_disabled, key="pm_reset_setup"):
+            new_items = []
+            for r in edited_pm_df.to_dict("records"):
+                new_items.append({
+                    "ratio": r.get("ratio") or "None (Master Prompt)",
+                    "target": int(r.get("target") or 1),
+                    "current": 0
+                })
+            cfg = load_config()
+            if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
+            cfg["prompt_matrix"]["items"] = new_items
+            save_config({"prompt_matrix": cfg["prompt_matrix"]})
+            st.success("Progress reset!")
+            time.sleep(0.5)
+            st.rerun()
+
 @st.fragment(run_every="5s")
 def render_setup_logs():
     # If a background thread (Submit/Redo) finished and set needs_rerun, pick it up here.
@@ -836,6 +940,62 @@ with col1:
                     asyncio.run(do_nav())
                     st.rerun()
 
+        # Pre-fetch status for UI locking
+        is_auto_running = False
+        try:
+            import requests
+            r = requests.get("http://localhost:8000/health", timeout=1)
+            is_auto_running = r.json().get("automation_running", False)
+        except:
+            pass
+
+        # --- Aspect Ratio Setting Section ---
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>ASPECT RATIO SETTING</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            # Load current state from config
+            cfg_pm = config.get("prompt_matrix", {})
+            pm_enabled = cfg_pm.get("enabled", False)
+            
+            mode_opts = ["Fixed Aspect Ratio", "Dynamic Prefix Loop"]
+            # Sync radio index with config
+            radio_idx = 1 if pm_enabled else 0
+            
+            ar_col1, ar_col2, ar_col3 = st.columns([1.8, 1.2, 1.2])
+            with ar_col1:
+                ar_mode = st.radio(
+                    "Aspect Ratio Mode", 
+                    options=mode_opts, 
+                    index=radio_idx,
+                    horizontal=True, 
+                    label_visibility="collapsed",
+                    key="setup_ar_mode_radio"
+                )
+            
+            # If mode changed, update config and rerun
+            if (ar_mode == "Dynamic Prefix Loop") != pm_enabled:
+                cfg_pm["enabled"] = (ar_mode == "Dynamic Prefix Loop")
+                if cfg_pm["enabled"]:
+                    for it in cfg_pm.get("items", []): it["current"] = 0
+                save_config({"prompt_matrix": cfg_pm})
+                st.rerun()
+
+            with ar_col2:
+                # Fixed ratio dropdown - always visible
+                ratio_list = ["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None"]
+                saved_fixed = config.get("fixed_aspect_ratio", "16:9 (Landscape)")
+                try: f_idx = ratio_list.index(saved_fixed)
+                except: f_idx = 0
+                
+                selected_fixed = st.selectbox("Ratio", options=ratio_list, index=f_idx, label_visibility="collapsed", key="setup_fixed_ar_select")
+                if selected_fixed != saved_fixed:
+                    save_config({"fixed_aspect_ratio": selected_fixed})
+
+            with ar_col3:
+                if ar_mode == "Dynamic Prefix Loop":
+                    # Dynamic mode: show the config button
+                    if st.button("Dynamic prompt prefix", key="btn_open_prefix_dialog", width="stretch"):
+                        show_prompt_prefix_dialog()
+
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
         
         # --- Prompt Section ---
@@ -873,6 +1033,7 @@ with col1:
                         resp = await st.session_state.client.send_prompt(p_text)
                     asyncio.run(do_prompt())
                     st.rerun()
+
 
         # --- Tool & Model Selection Section ---
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>TOOL & MODEL SELECTION</p>", unsafe_allow_html=True)

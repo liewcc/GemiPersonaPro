@@ -83,6 +83,7 @@ async def health():
     return {
         "status": "ok", 
         "engine_running": engine.is_running,
+        "automation_running": engine.automation_status.get("is_running", False),
         "service_pid": os.getpid(),
         "browser_pids": engine.browser_pids if engine.is_running else []
     }
@@ -670,6 +671,59 @@ async def automation_manager(req: AutomationRequest):
                 except Exception as p_err:
                     print(f"[AUTO] Model pre-load failed: {p_err}")
 
+            # 2.5 Handle Aspect Ratio (Dynamic Loop or Fixed)
+            pm_config = req.config.get("prompt_matrix", {})
+            pm_enabled = pm_config.get("enabled", False)
+            ratio_prefix = None
+
+            if pm_enabled:
+                pm_items = pm_config.get("items", [])
+                
+                # Check for exhaustion
+                all_done = True
+                for it in pm_items:
+                    if it.get("current", 0) < it.get("target", 1):
+                        all_done = False
+                        break
+                
+                if all_done and pm_items:
+                    # Reset all progress for infinite loop
+                    for it in pm_items:
+                        it["current"] = 0
+                    engine._log_debug("[AUTO] Prompt Matrix exhausted. Resetting for infinite loop.")
+                    req.config["prompt_matrix"]["items"] = pm_items
+                    save_config({"prompt_matrix": req.config["prompt_matrix"]})
+                
+                # Find active row
+                active_idx = -1
+                for i, it in enumerate(pm_items):
+                    if it.get("current", 0) < it.get("target", 1):
+                        active_idx = i
+                        break
+                
+                if active_idx != -1:
+                    active_item = pm_items[active_idx]
+                    ratio_prefix = active_item.get("ratio", "")
+                    
+                    # Force a new chat if we just switched to a new matrix index
+                    last_idx = getattr(engine, "_last_matrix_idx", -1)
+                    if last_idx != active_idx:
+                        engine._automation_needs_new_chat = True
+                        engine._last_matrix_idx = active_idx
+                        engine._log_debug(f"[AUTO] Dynamic Prefix switching to: {ratio_prefix}")
+            else:
+                # Fixed mode
+                fixed_ratio = req.config.get("fixed_aspect_ratio", "None")
+                if fixed_ratio and fixed_ratio != "None":
+                    ratio_prefix = fixed_ratio
+
+            # Inject the ratio prefix if applicable
+            if ratio_prefix and ratio_prefix not in ["None", "None (Master Prompt)"]:
+                base_prompt = req.config.get("prompt", "")
+                # Avoid double prefixing if the user already has it in the base prompt from a previous (cached) iteration
+                if not base_prompt.startswith(f"Aspect Ratio: {ratio_prefix}"):
+                    req.config["prompt"] = f"Aspect Ratio: {ratio_prefix}\n\n{base_prompt}"
+
             # 3. Execute ONE iteration
             result = await engine.run_automation_loop(req.dict())
             
@@ -697,6 +751,19 @@ async def automation_manager(req: AutomationRequest):
                     except Exception as p_err:
                         import traceback
                         engine._log_debug(f"[AUTO] Refinement FAILED: {p_err}\n{traceback.format_exc()}")
+
+            # 4.5 Increment Prompt Matrix on Success
+            pm_enabled = req.config.get("prompt_matrix", {}).get("enabled", False)
+            if pm_enabled and result.get("status") == "success":
+                saved_count = len(result.get("saved_paths", []))
+                if saved_count > 0:
+                    pm_items = req.config.get("prompt_matrix", {}).get("items", [])
+                    active_idx = getattr(engine, "_last_matrix_idx", -1)
+                    if 0 <= active_idx < len(pm_items):
+                        pm_items[active_idx]["current"] += 1
+                        engine._log_debug(f"[AUTO] Prompt Matrix: {pm_items[active_idx]['ratio']} progress -> {pm_items[active_idx]['current']}/{pm_items[active_idx]['target']}")
+                        req.config["prompt_matrix"]["items"] = pm_items
+                        save_config({"prompt_matrix": req.config["prompt_matrix"]})
 
             # --- [NEW] Real-time persistence of session stats ---
             _commit_session_stats_to_table()
