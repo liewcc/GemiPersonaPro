@@ -4,6 +4,16 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-04-24 - Aspect Ratio Stability & Health Parsing Refactor
+- **Engine Sync**: Implemented mandatory disk-sync for the automation engine before each cycle, ensuring UI settings take effect immediately.
+- **Health Analysis v2**:
+    - **Physical Breakpoints**: Implemented session-boundary tracking using physical log markers (`Automation Finished.`, `Profile switched to`).
+    - **Orphan Record Recovery**: Now captures successful image saves even when initial loading markers are missing due to manual interventions.
+    - **Refinement Duration Fix**: Resolved the "staircase effect" in Reject/Reset timing, ensuring each failure measures its own independent segment.
+- **Aspect Ratio Control**:
+    - **Progress Persistence**: Ensured generation counts are preserved across mode toggles and session restarts.
+    - **Interactive Loop Table**: Enabled real-time editing and "Force Start" functionality in the Dynamic Ratio Loop.
+
 ### 1. Continue Session (Resume Automation)
 - Added a highly requested **⏯️ Continue Session** functionality to both the Dashboard and Gemini Setup pages.
 - Allows users to pause an active automation loop and subsequently resume it without wiping the current session's Reject Rate statistics or counter metrics.
@@ -122,6 +132,7 @@ The automation engine now supports dynamically reloading prompts without interru
 ### 11. Migration to Streamlit Latest Layout Parameters
 - Standardized the use of `width='stretch'` instead of the deprecated `use_container_width=True` across the entire application (including Dashboard charts and System Config tables). 
 - Formally updated the project `rule.md` to ensure future compliance with Streamlit's 2026 API standards.
+
 ### 12. Reject Rate Chart Chronological Sorting
 - Resolved a visualization issue in the Dashboard's **Reject Rate Chart** where the X-axis (filenames) was being sorted alphabetically instead of chronologically.
 - Previously, filenames starting with "1" (e.g., "1000") would incorrectly appear before filenames starting with "8" (e.g., "825") due to string-based sorting.
@@ -180,6 +191,7 @@ The automation engine now supports dynamically reloading prompts without interru
 
 ### 22. Legend Layout Optimization for Bar Charts
 - Implemented a two-row legend layout (`columns=4`) for Loading Duration bar charts.
+
 ### 23. Unified Aspect Ratio Setting Module
 - Standardized aspect ratio configuration across **Gemini Setup** and **System Config** by unifying the control logic and UI persistence.
 - **Aspect Ratio Setting (New Container)**: Replaced the legacy "Dynamic Prompt Prefix" toggle with a comprehensive management container featuring two distinct modes:
