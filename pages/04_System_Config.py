@@ -533,11 +533,10 @@ elif menu_selection == "Automation Settings":
             ])
             
             active_idx = -1
-            if pm_enabled:
-                for i, it in enumerate(pm_items):
-                    if it.get("current", 0) < it.get("target", 1):
-                        active_idx = i
-                        break
+            for i, it in enumerate(pm_items):
+                if it.get("current", 0) < it.get("target", 1):
+                    active_idx = i
+                    break
 
             pm_data = []
             for i, it in enumerate(pm_items):
@@ -546,7 +545,7 @@ elif menu_selection == "Automation Settings":
                     "ratio": it.get("ratio", ""),
                     "target": int(it.get("target", 0)),
                     "current": int(it.get("current", 0)),
-                    "status": "▶ Executing" if is_active else ("✔ Done" if it.get("current", 0) >= it.get("target", 1) else "Pending")
+                    "status": "Active" if is_active else None
                 })
                 
             pm_df = pd.DataFrame(pm_data)
@@ -557,26 +556,40 @@ elif menu_selection == "Automation Settings":
                     "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
                     "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
                     "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
-                    "status": st.column_config.TextColumn("Status", disabled=True, width="small")
+                    "status": st.column_config.SelectboxColumn("Status", options=["Active"], width="small")
                 },
                 num_rows="dynamic",
                 hide_index=True,
                 width="stretch",
-                disabled=is_auto_running,
                 key="pm_editor"
             )
             
-            btn_disabled = is_auto_running and pm_enabled
-            
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("Save Setting", icon="💾", width="stretch", disabled=btn_disabled):
+                if st.button("Save Setting", icon="💾", width="stretch"):
+                    records = edited_pm_df.to_dict("records")
+                    
+                    new_active_idx = -1
+                    for i, r in enumerate(records):
+                        if r.get("status") == "Active" and i != active_idx:
+                            new_active_idx = i
+                            break
+                            
                     new_items = []
-                    for r in edited_pm_df.to_dict("records"):
+                    for i, r in enumerate(records):
+                        target = int(r.get("target") or 1)
+                        current = int(r.get("current") or 0)
+                        
+                        if new_active_idx != -1:
+                            if i < new_active_idx:
+                                current = target
+                            else:
+                                current = 0
+                                
                         new_items.append({
                             "ratio": r.get("ratio") or "None (Master Prompt)",
-                            "target": int(r.get("target") or 1),
-                            "current": int(r.get("current") or 0)
+                            "target": target,
+                            "current": current
                         })
                     
                     cfg = load_config()
@@ -586,7 +599,7 @@ elif menu_selection == "Automation Settings":
                     st.success("Setting saved!")
                     st.rerun()
             with c2:
-                if st.button("Reset Progress", icon="🔄", width="stretch", disabled=btn_disabled):
+                if st.button("Reset Progress", icon="🔄", width="stretch"):
                     new_items = []
                     for r in edited_pm_df.to_dict("records"):
                         new_items.append({

@@ -598,7 +598,7 @@ def confirm_start_automation_setup():
         st.session_state.show_start_confirmation_setup = False
         st.rerun()
 
-@st.dialog("Dynamic prompt prefix", width="large")
+@st.dialog("Aspect Ratio Looping Table", width="large")
 def show_prompt_prefix_dialog():
     st.markdown("""
         <style>
@@ -624,11 +624,10 @@ def show_prompt_prefix_dialog():
     ])
     
     active_idx = -1
-    if pm_enabled:
-        for i, it in enumerate(pm_items):
-            if it.get("current", 0) < it.get("target", 1):
-                active_idx = i
-                break
+    for i, it in enumerate(pm_items):
+        if it.get("current", 0) < it.get("target", 1):
+            active_idx = i
+            break
 
     pm_data = []
     for i, it in enumerate(pm_items):
@@ -637,56 +636,64 @@ def show_prompt_prefix_dialog():
             "ratio": it.get("ratio", ""),
             "target": int(it.get("target", 0)),
             "current": int(it.get("current", 0)),
-            "status": "▶ Executing" if is_active else ("✔ Done" if it.get("current", 0) >= it.get("target", 1) else "Pending")
+            "status": "Active" if is_active else None
         })
         
     pm_df = pd.DataFrame(pm_data)
     
-    is_auto_running = False
-    try:
-        import requests
-        r = requests.get("http://localhost:8000/health", timeout=1)
-        is_auto_running = r.json().get("automation_running", False)
-    except:
-        pass
-
     edited_pm_df = st.data_editor(
         pm_df,
         column_config={
             "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
             "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
             "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
-            "status": st.column_config.TextColumn("Status", disabled=True, width="small")
+            "status": st.column_config.SelectboxColumn("Status", options=["Active"], width="small")
         },
         num_rows="dynamic",
         hide_index=True,
         width="stretch",
-        disabled=is_auto_running,
         key="pm_editor_setup"
     )
     
-    btn_disabled = is_auto_running and pm_enabled
-    
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Save Setting", icon="💾", use_container_width=True, disabled=btn_disabled, key="pm_save_setup"):
+        if st.button("Save Setting", icon="💾", use_container_width=True, key="pm_save_setup"):
+            records = edited_pm_df.to_dict("records")
+            
+            new_active_idx = -1
+            for i, r in enumerate(records):
+                if r.get("status") == "Active" and i != active_idx:
+                    new_active_idx = i
+                    break
+                    
             new_items = []
-            for r in edited_pm_df.to_dict("records"):
+            for i, r in enumerate(records):
+                target = int(r.get("target") or 1)
+                current = int(r.get("current") or 0)
+                
+                if new_active_idx != -1:
+                    if i < new_active_idx:
+                        current = target
+                    else:
+                        current = 0
+                        
                 new_items.append({
                     "ratio": r.get("ratio") or "None (Master Prompt)",
-                    "target": int(r.get("target") or 1),
-                    "current": int(r.get("current") or 0)
+                    "target": target,
+                    "current": current
                 })
             
             cfg = load_config()
             if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
             cfg["prompt_matrix"]["items"] = new_items
             save_config({"prompt_matrix": cfg["prompt_matrix"]})
+            asyncio.run(st.session_state.client.request_new_chat())
             st.success("Setting saved!")
+            import time
             time.sleep(0.5)
             st.rerun()
     with c2:
-        if st.button("Reset Progress", icon="🔄", use_container_width=True, disabled=btn_disabled, key="pm_reset_setup"):
+        if st.button("Reset Progress", icon="🔄", use_container_width=True, key="pm_reset_setup"):
             new_items = []
             for r in edited_pm_df.to_dict("records"):
                 new_items.append({
@@ -698,7 +705,9 @@ def show_prompt_prefix_dialog():
             if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
             cfg["prompt_matrix"]["items"] = new_items
             save_config({"prompt_matrix": cfg["prompt_matrix"]})
+            asyncio.run(st.session_state.client.request_new_chat())
             st.success("Progress reset!")
+            import time
             time.sleep(0.5)
             st.rerun()
 
@@ -963,21 +972,25 @@ with col1:
             ar_col1, ar_col2, ar_col3 = st.columns([1.8, 1.2, 1.2])
             with ar_col1:
                 ar_mode = st.radio(
-                    "Aspect Ratio Mode", 
+                    "Mode Selection", 
                     options=mode_opts, 
                     index=radio_idx,
                     horizontal=True, 
                     label_visibility="collapsed",
                     key="setup_ar_mode_radio"
                 )
-            
-            # If mode changed, update config and rerun
-            if (ar_mode == "Dynamic Prefix Loop") != pm_enabled:
-                cfg_pm["enabled"] = (ar_mode == "Dynamic Prefix Loop")
-                if cfg_pm["enabled"]:
-                    for it in cfg_pm.get("items", []): it["current"] = 0
-                save_config({"prompt_matrix": cfg_pm})
-                st.rerun()
+                
+                # If mode changed, update config and rerun
+                if (ar_mode == "Dynamic Prefix Loop") != pm_enabled:
+                    cfg_pm["enabled"] = (ar_mode == "Dynamic Prefix Loop")
+                    if cfg_pm["enabled"]:
+                        for it in cfg_pm.get("items", []): it["current"] = 0
+                    save_config({"prompt_matrix": cfg_pm})
+                    
+                    if st.session_state.get("last_known_auto_active", False):
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log("Mode Selection updated. Will apply on next cycle.")
+                    st.rerun()
 
             with ar_col2:
                 # Fixed ratio dropdown - always visible
@@ -986,15 +999,17 @@ with col1:
                 try: f_idx = ratio_list.index(saved_fixed)
                 except: f_idx = 0
                 
-                selected_fixed = st.selectbox("Ratio", options=ratio_list, index=f_idx, label_visibility="collapsed", key="setup_fixed_ar_select")
+                selected_fixed = st.selectbox("Fixed Ratio", options=ratio_list, index=f_idx, label_visibility="collapsed", key="setup_fixed_ar_select")
                 if selected_fixed != saved_fixed:
                     save_config({"fixed_aspect_ratio": selected_fixed})
+                    if st.session_state.get("last_known_auto_active", False):
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log("Fixed Ratio updated. Will apply on next cycle.")
+                    st.rerun()
 
             with ar_col3:
-                if ar_mode == "Dynamic Prefix Loop":
-                    # Dynamic mode: show the config button
-                    if st.button("Dynamic prompt prefix", key="btn_open_prefix_dialog", width="stretch"):
-                        show_prompt_prefix_dialog()
+                if st.button("Looping Table", key="btn_open_prefix_dialog", width="stretch"):
+                    show_prompt_prefix_dialog()
 
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
         

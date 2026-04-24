@@ -717,6 +717,17 @@ async def automation_manager(req: AutomationRequest):
                 if fixed_ratio and fixed_ratio != "None":
                     ratio_prefix = fixed_ratio
 
+            # Detect ratio change (covers Dynamic→Fixed switch, Fixed ratio edit, Fixed→None, etc.)
+            # and force a new chat so Gemini receives the updated prompt instead of Redo-ing
+            # the previous conversation which carried a different ratio instruction.
+            last_ratio = getattr(engine, "_last_effective_ratio", None)
+            if ratio_prefix != last_ratio:
+                engine._automation_needs_new_chat = True
+                engine._last_effective_ratio = ratio_prefix
+                engine._log_debug(
+                    f"[AUTO] Effective ratio changed: '{last_ratio}' → '{ratio_prefix}'. Forcing New Chat."
+                )
+
             # Inject the ratio prefix if applicable
             if ratio_prefix and ratio_prefix not in ["None", "None (Master Prompt)"]:
                 base_prompt = req.config.get("prompt", "")

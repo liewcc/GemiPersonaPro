@@ -195,3 +195,10 @@ The automation engine now supports dynamically reloading prompts without interru
 - **Y-Axis Unit Normalization**: Changed the Y-axis duration label from `(m)` to `(minite)` across all performance charts to provide a more descriptive unit label.
 - **Logarithmic Scale Integration**: Fixed chart rendering issues where logarithmic scales failed to persist correctly from `config.json`.
 - **Time Formatting**: Standardized all time durations in health charts to a high-precision `H:MM:SS` format.
+
+### 25. Real-Time Aspect Ratio Updates & UX Refinements
+- **Instantaneous Application**: Modifying the Aspect Ratio Mode or changing the Fixed Ratio now behaves exactly like the Prompt "Save" button. If an automation cycle is active, the system automatically forces a **New Chat** on the next loop, instantly applying the new ratio instructions without relying on stale conversation contexts.
+- **Always Editable Looping Table**: Removed arbitrary UI restrictions that disabled the Aspect Ratio Looping Table during `Dynamic Prefix Loop` mode. Users can now freely edit the table (e.g., modifying target counts or ratios) in real-time, and the engine will seamlessly adopt the changes on the next generation cycle.
+- **Intuitive Status Control**: Transformed the table's `Status` column from read-only text into an interactive dropdown with a minimalist `["", "Active"]` toggle.
+- **Force Start Here (Jump-to-Row)**: Users can intuitively skip to any ratio in their sequence by manually setting its status to `"Active"`. The system intelligently detects this intervention, automatically marks previous sequences as complete, and resumes generating from the newly selected row.
+- **Consistent Visual State**: The mathematical `Active` indicator is now permanently visible across the Looping Table, even when the system is operating in `Fixed Aspect Ratio` mode. This ensures users always know where their dynamic sequence paused and where it will resume.
