@@ -61,6 +61,7 @@ class AutomationRequest(BaseModel):
     mode: str  # "rounds" or "images"
     goal: int
     config: dict
+    clear_pending: bool = False
 
 @app.on_event("startup")
 async def startup_event():
@@ -633,6 +634,7 @@ def _check_loop_control_thresholds(loop_ctrl: dict, result: dict):
 
 async def automation_manager(req: AutomationRequest):
     """Background task to manage loops and quota-restarts."""
+    engine._log_debug(f"[AUTO] Manager started with mode={req.mode}, goal={req.goal}, clear_pending={req.clear_pending}")
     try:
         while True:
             # Modified Check: If stop signal is set, ONLY break if it's NOT a session loss.
@@ -657,42 +659,35 @@ async def automation_manager(req: AutomationRequest):
                 if status["successes"] >= goal:
                     print(f"[AUTO] Goal reached: {goal} images.")
                     break
+            # --- [FIX] Reload config from disk at every iteration to sync with UI changes ---
+            cfg = load_config()
+            pm_config = cfg.get("prompt_matrix", {})
+            pm_enabled = pm_config.get("enabled", False)
+            ratio_prefix = None
 
             # 2. Pre-load Watermark Removal Model if enabled
-            cfg = req.config
             use_gpu_cfg = cfg.get("automation", {}).get("use_gpu", True)
             _wm_enabled = cfg.get("automation", {}).get("remove_watermark", False)
-            engine._log_debug(f"[AUTO] WM Gate: automation.remove_watermark={_wm_enabled} | top-level={cfg.get('remove_watermark', 'N/A')}")
+            
             if _wm_enabled:
                 try:
                     from processing_utils import get_shared_processor
-                    # Singleton access (cached)
                     get_shared_processor(use_gpu=use_gpu_cfg)
                 except Exception as p_err:
                     print(f"[AUTO] Model pre-load failed: {p_err}")
 
             # 2.5 Handle Aspect Ratio (Dynamic Loop or Fixed)
-            pm_config = req.config.get("prompt_matrix", {})
-            pm_enabled = pm_config.get("enabled", False)
-            ratio_prefix = None
-
             if pm_enabled:
                 pm_items = pm_config.get("items", [])
-                
-                # Check for exhaustion
-                all_done = True
-                for it in pm_items:
-                    if it.get("current", 0) < it.get("target", 1):
-                        all_done = False
-                        break
+                all_done = all(it.get("current", 0) >= it.get("target", 1) for it in pm_items)
                 
                 if all_done and pm_items:
                     # Reset all progress for infinite loop
                     for it in pm_items:
                         it["current"] = 0
                     engine._log_debug("[AUTO] Prompt Matrix exhausted. Resetting for infinite loop.")
-                    req.config["prompt_matrix"]["items"] = pm_items
-                    save_config({"prompt_matrix": req.config["prompt_matrix"]})
+                    pm_config["items"] = pm_items
+                    save_config({"prompt_matrix": pm_config})
                 
                 # Find active row
                 active_idx = -1
@@ -713,27 +708,31 @@ async def automation_manager(req: AutomationRequest):
                         engine._log_debug(f"[AUTO] Dynamic Prefix switching to: {ratio_prefix}")
             else:
                 # Fixed mode
-                fixed_ratio = req.config.get("fixed_aspect_ratio", "None")
+                fixed_ratio = cfg.get("fixed_aspect_ratio", "None")
                 if fixed_ratio and fixed_ratio != "None":
                     ratio_prefix = fixed_ratio
 
-            # Detect ratio change (covers Dynamic→Fixed switch, Fixed ratio edit, Fixed→None, etc.)
-            # and force a new chat so Gemini receives the updated prompt instead of Redo-ing
-            # the previous conversation which carried a different ratio instruction.
+            # Detect ratio change and force a new chat
             last_ratio = getattr(engine, "_last_effective_ratio", None)
             if ratio_prefix != last_ratio:
                 engine._automation_needs_new_chat = True
                 engine._last_effective_ratio = ratio_prefix
-                engine._log_debug(
-                    f"[AUTO] Effective ratio changed: '{last_ratio}' → '{ratio_prefix}'. Forcing New Chat."
-                )
+                engine._log_debug(f"[AUTO] Effective ratio changed: '{last_ratio}' -> '{ratio_prefix}'. Forcing New Chat.")
 
-            # Inject the ratio prefix if applicable
+            # Prepare final prompt for this iteration (Clean old prefixes first)
+            original_prompt = cfg.get("prompt", "")
+            # Remove any existing "Aspect Ratio: ..." line to prevent accumulation
+            import re
+            clean_prompt = re.sub(r"^Aspect Ratio:.*?\n\n", "", original_prompt, flags=re.DOTALL)
+            
             if ratio_prefix and ratio_prefix not in ["None", "None (Master Prompt)"]:
-                base_prompt = req.config.get("prompt", "")
-                # Avoid double prefixing if the user already has it in the base prompt from a previous (cached) iteration
-                if not base_prompt.startswith(f"Aspect Ratio: {ratio_prefix}"):
-                    req.config["prompt"] = f"Aspect Ratio: {ratio_prefix}\n\n{base_prompt}"
+                final_prompt = f"Aspect Ratio: {ratio_prefix}\n\n{clean_prompt}"
+            else:
+                final_prompt = clean_prompt
+            
+            # Sync back to the request object that engine.run_automation_loop uses
+            req.config = cfg # Update req.config with fresh disk data
+            req.config["prompt"] = final_prompt
 
             # 3. Execute ONE iteration
             result = await engine.run_automation_loop(req.dict())
@@ -764,17 +763,22 @@ async def automation_manager(req: AutomationRequest):
                         engine._log_debug(f"[AUTO] Refinement FAILED: {p_err}\n{traceback.format_exc()}")
 
             # 4.5 Increment Prompt Matrix on Success
-            pm_enabled = req.config.get("prompt_matrix", {}).get("enabled", False)
+            # Important: reload fresh config again before incrementing to avoid overwriting mid-loop UI saves
+            fresh_cfg = load_config()
+            pm_enabled = fresh_cfg.get("prompt_matrix", {}).get("enabled", False)
+            
             if pm_enabled and result.get("status") == "success":
                 saved_count = len(result.get("saved_paths", []))
                 if saved_count > 0:
-                    pm_items = req.config.get("prompt_matrix", {}).get("items", [])
+                    pm_data = fresh_cfg.get("prompt_matrix", {})
+                    pm_items = pm_data.get("items", [])
+                    # We use the index we targeted at the start of THIS iteration
                     active_idx = getattr(engine, "_last_matrix_idx", -1)
                     if 0 <= active_idx < len(pm_items):
                         pm_items[active_idx]["current"] += 1
                         engine._log_debug(f"[AUTO] Prompt Matrix: {pm_items[active_idx]['ratio']} progress -> {pm_items[active_idx]['current']}/{pm_items[active_idx]['target']}")
-                        req.config["prompt_matrix"]["items"] = pm_items
-                        save_config({"prompt_matrix": req.config["prompt_matrix"]})
+                        pm_data["items"] = pm_items
+                        save_config({"prompt_matrix": pm_data})
 
             # --- [NEW] Real-time persistence of session stats ---
             _commit_session_stats_to_table()
@@ -1079,7 +1083,8 @@ async def continue_automation(req: AutomationRequest):
         raise HTTPException(status_code=400, detail="Engine not running")
     if engine.automation_status.get("is_running"):
         return {"status": "error", "message": "Automation already running"}
-        
+    
+    engine._log_debug(f"API>> continue_automation called: mode={req.mode}, goal={req.goal}, clear_pending={req.clear_pending}")
     engine._stop_automation_event.clear()
     
     cfg = load_config()
@@ -1114,50 +1119,76 @@ async def continue_automation(req: AutomationRequest):
             "resets": engine.automation_status.get("resets", 0)
         }
 
-    # Load saved pending stats if they exist, so we can survive full engine restarts
-    pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
-    if os.path.exists(pending_file):
-        try:
-            with open(pending_file, "r", encoding="utf-8") as f:
-                pending_stats = json.load(f)
-            
-            engine._pending_refused = pending_stats.get("pending_refused", 0)
-            engine._pending_resets = pending_stats.get("pending_resets", 0)
-            engine._lc_pending_refused = pending_stats.get("lc_pending_refused", 0)
-            engine._lc_pending_resets = pending_stats.get("lc_pending_resets", 0)
-            
-            # Restore transient status for UI display
-            engine.automation_status["pending_refused"] = engine._pending_refused
-            engine.automation_status["pending_resets"] = engine._pending_resets
-            
-            # Restore cumulative status values from pending counts ONLY if we just hydrated.
-            # If the service was already running, these counts were already incremented in real-time.
-            if "hydrated" in locals() and hydrated:
-                engine.automation_status["refusals"] += engine._pending_refused
-                engine.automation_status["resets"] += engine._pending_resets
-                engine.automation_status["cycles"] += (engine._pending_refused + engine._pending_resets)
-            
-            # Restore start_time if available
-            if pending_stats.get("start_time"):
-                engine.automation_status["start_time"] = pending_stats.get("start_time")
-
-            engine._cycle_start_time = time.time() - pending_stats.get("pending_duration", 0)
-            engine._lc_cycle_start_time = time.time() - pending_stats.get("lc_pending_duration", 0)
-            
-            # Remove it so we don't accidentally load it again later if we don't want to
-            os.remove(pending_file)
-            engine._log_debug(f"API>> Loaded and restored pending stats: dur={pending_stats.get('pending_duration'):.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
-        except Exception as e:
-            engine._log_debug(f"API>> Failed to load pending stats: {e}")
-            if not getattr(engine, '_cycle_start_time', None): engine._cycle_start_time = time.time()
-            if not getattr(engine, '_lc_cycle_start_time', None): engine._lc_cycle_start_time = time.time()
+    if req.clear_pending:
+        # Clear the physical file if it exists
+        pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
+        if os.path.exists(pending_file):
+            try:
+                os.remove(pending_file)
+            except: pass
+        # Clear memory variables
+        engine._pending_refused = 0
+        engine._pending_resets = 0
+        engine._lc_pending_refused = 0
+        engine._lc_pending_resets = 0
+        engine.automation_status["pending_refused"] = 0
+        engine.automation_status["pending_resets"] = 0
+        
+        # Reset cycle timers since we don't want to attribute past duration
+        engine._cycle_start_time = time.time()
+        engine._lc_cycle_start_time = time.time()
+        
+        # Hydrate snapshot logic as there's no pending state anymore
+        engine._acct_snapshot = {
+            "successes": engine.automation_status.get("successes", 0),
+            "refusals": engine.automation_status.get("refusals", 0),
+            "resets": engine.automation_status.get("resets", 0)
+        }
     else:
-        # Do not clear pending counters (_pending_refused, _pending_resets) here.
-        # We want to resume the process and correctly attribute past refuses/resets to the next successful image.
-        if not getattr(engine, '_cycle_start_time', None):
-            engine._cycle_start_time = time.time()
-        if not getattr(engine, '_lc_cycle_start_time', None):
-            engine._lc_cycle_start_time = time.time()
+        # Load saved pending stats if they exist, so we can survive full engine restarts
+        pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json"))
+        if os.path.exists(pending_file):
+            try:
+                with open(pending_file, "r", encoding="utf-8") as f:
+                    pending_stats = json.load(f)
+                
+                engine._pending_refused = pending_stats.get("pending_refused", 0)
+                engine._pending_resets = pending_stats.get("pending_resets", 0)
+                engine._lc_pending_refused = pending_stats.get("lc_pending_refused", 0)
+                engine._lc_pending_resets = pending_stats.get("lc_pending_resets", 0)
+                
+                # Restore transient status for UI display
+                engine.automation_status["pending_refused"] = engine._pending_refused
+                engine.automation_status["pending_resets"] = engine._pending_resets
+                
+                # Restore cumulative status values from pending counts ONLY if we just hydrated.
+                # If the service was already running, these counts were already incremented in real-time.
+                if "hydrated" in locals() and hydrated:
+                    engine.automation_status["refusals"] += engine._pending_refused
+                    engine.automation_status["resets"] += engine._pending_resets
+                    engine.automation_status["cycles"] += (engine._pending_refused + engine._pending_resets)
+                
+                # Restore start_time if available
+                if pending_stats.get("start_time"):
+                    engine.automation_status["start_time"] = pending_stats.get("start_time")
+    
+                engine._cycle_start_time = time.time() - pending_stats.get("pending_duration", 0)
+                engine._lc_cycle_start_time = time.time() - pending_stats.get("lc_pending_duration", 0)
+                
+                # Remove it so we don't accidentally load it again later if we don't want to
+                os.remove(pending_file)
+                engine._log_debug(f"API>> Loaded and restored pending stats: dur={pending_stats.get('pending_duration'):.1f}s, refused={engine._pending_refused}, resets={engine._pending_resets}")
+            except Exception as e:
+                engine._log_debug(f"API>> Failed to load pending stats: {e}")
+                if not getattr(engine, '_cycle_start_time', None): engine._cycle_start_time = time.time()
+                if not getattr(engine, '_lc_cycle_start_time', None): engine._lc_cycle_start_time = time.time()
+        else:
+            # Do not clear pending counters (_pending_refused, _pending_resets) here.
+            # We want to resume the process and correctly attribute past refuses/resets to the next successful image.
+            if not getattr(engine, '_cycle_start_time', None):
+                engine._cycle_start_time = time.time()
+            if not getattr(engine, '_lc_cycle_start_time', None):
+                engine._lc_cycle_start_time = time.time()
         
     # Restore internal pending counters to automation_status for UI visibility
     engine.automation_status["pending_refused"] = getattr(engine, "_pending_refused", 0)
@@ -1167,17 +1198,17 @@ async def continue_automation(req: AutomationRequest):
     if hasattr(engine, '_lc_cycle_start_time'):
         engine.automation_status["lc_cycle_start_ts"] = engine._lc_cycle_start_time
     
-    # Synchronize the snapshot ONLY IF we didn't just load from a pending file.
-    # If we DID load from a file (engine restart), the snapshot was initialized to 0 (or hydrated stats), 
-    # and we WANT the first success to trigger a delta that includes these pending stats.
-    # If we didn't restart, the snapshot is already synced from the 'stop' event's finally block.
-    if not os.path.exists(pending_file):
+    # Synchronize the snapshot ONLY IF we didn't just load from a pending file AND we're not clearing.
+    # If we DID load from a file or we're clearing, the snapshot should remain as-is or be handled by the clear logic.
+    pending_exists = os.path.exists(os.path.abspath(os.path.join(os.path.dirname(__file__), "pending_stats.json")))
+    if not req.clear_pending and not pending_exists:
         engine._acct_snapshot = {
             "successes": engine.automation_status.get("successes", 0),
             "refusals": engine.automation_status.get("refusals", 0),
             "resets": engine.automation_status.get("resets", 0)
         }
     
+    engine._log_debug("API>> Starting automation manager task...")
     engine.automation_status["is_running"] = True
     asyncio.create_task(automation_manager(req))
     return {"status": "success", "message": "Automation continued in background"}

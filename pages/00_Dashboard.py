@@ -156,6 +156,8 @@ if "start_confirmation_location" not in st.session_state:
     st.session_state.start_confirmation_location = "main"
 if "show_goal_reached_confirmation" not in st.session_state:
     st.session_state.show_goal_reached_confirmation = False
+if "show_continue_confirmation" not in st.session_state:
+    st.session_state.show_continue_confirmation = False
 
 def add_log(msg):
     timestamp = time.strftime("%H:%M:%S")
@@ -373,6 +375,72 @@ def show_goal_reached_dialog(location):
     st.write("The previously configured goal has already been reached.")
     st.write("To continue, please increase the **Goal** in the settings, or click **Start Looping Process** to begin a fresh session.")
     if st.button("OK", width="stretch", key=f"gr_ok_{location}"):
+        st.rerun()
+
+@st.dialog("⏯️ Continue Session")
+def confirm_continue_automation_dash(location):
+    info_str = "No pending data found."
+    try:
+        pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pending_stats.json"))
+        if os.path.exists(pending_file):
+            with open(pending_file, "r", encoding="utf-8") as f:
+                pending_stats = json.load(f)
+            pending_dur = pending_stats.get("pending_duration", 0)
+            pending_ref = pending_stats.get("pending_refused", 0)
+            pending_res = pending_stats.get("pending_resets", 0)
+            dur_str = _format_dur_str(pending_dur)
+            info_str = f"Duration: {dur_str}, Refused: {pending_ref}, Resets: {pending_res}"
+        else:
+            pending_dur = 0
+            pending_ref = st.session_state.get("_last_known_stats", {}).get("pending_refused", 0)
+            pending_res = st.session_state.get("_last_known_stats", {}).get("pending_resets", 0)
+            info_str = f"Duration: 0s, Refused: {pending_ref}, Resets: {pending_res}"
+    except Exception:
+        pass
+
+    st.markdown(f"**Last record:** {info_str}")
+    st.write("How would you like to continue?")
+
+    opt = st.radio("Select continuation mode:", [
+        "Use last saved data and continue",
+        "Clear the above parameters and continue"
+    ], label_visibility="collapsed")
+    
+    col_y, col_n = st.columns(2)
+    if col_y.button("OK", type="primary", width="stretch", key=f"dash_yes_continue_{location}"):
+        clear_stats = "Clear" in opt
+        current_config = load_config()
+        current_config["selected_files"] = st.session_state.selected_files
+        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
+
+        # Capture values before thread start to avoid session_state thread-safety issues
+        mode_val = st.session_state.auto_mode
+        goal_val = st.session_state.auto_goal
+
+        def trigger_continue():
+            async def do_continue_auto():
+                add_log("API>> Triggering Automation Continue...")
+                try:
+                    resp = await st.session_state.client.continue_automation(
+                        mode=mode_val,
+                        goal=goal_val,
+                        config=current_config,
+                        clear_pending=clear_stats
+                    )
+                    add_log(f"API>> Continue Result: {resp.get('message')}")
+                except Exception as e:
+                    add_log(f"API ERROR: {e}")
+            asyncio.run(do_continue_auto())
+
+        t = threading.Thread(target=trigger_continue, daemon=True)
+        add_script_run_ctx(t)
+        t.start()
+        st.session_state.ui_auto_looping_active = True
+        st.session_state.auto_stop_requested = False
+        st.session_state.show_continue_confirmation = False
+        st.rerun()
+    if col_n.button("Cancel", width="stretch", key=f"dash_no_continue_{location}"):
+        st.session_state.show_continue_confirmation = False
         st.rerun()
 
 def on_dash_reject_y_scale_change():
@@ -738,6 +806,10 @@ if st.session_state.show_goal_reached_confirmation:
     st.session_state.show_goal_reached_confirmation = False
     show_goal_reached_dialog(st.session_state.stop_confirmation_location)
 
+if st.session_state.show_continue_confirmation:
+    st.session_state.show_continue_confirmation = False
+    confirm_continue_automation_dash(st.session_state.stop_confirmation_location)
+
 try:
     auto_stats = asyncio.run(st.session_state.client.get_automation_stats())
     is_auto_running = auto_stats.get("is_running", False)
@@ -927,29 +999,8 @@ def render_looping_button(location="sidebar"):
                 st.session_state.stop_confirmation_location = location
                 st.rerun()
             else:
-                current_config = load_config()
-                current_config["selected_files"] = st.session_state.selected_files
-                current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
-
-                def trigger_continue():
-                    async def do_continue_auto():
-                        add_log("API>> Triggering Automation Continue...")
-                        try:
-                            resp = await st.session_state.client.continue_automation(
-                                mode=st.session_state.auto_mode,
-                                goal=st.session_state.auto_goal,
-                                config=current_config
-                            )
-                            add_log(f"API>> Continue Result: {resp.get('message')}")
-                        except Exception as e:
-                            add_log(f"API ERROR: {e}")
-                    asyncio.run(do_continue_auto())
-
-                t = threading.Thread(target=trigger_continue, daemon=True)
-                add_script_run_ctx(t)
-                t.start()
-                st.session_state.ui_auto_looping_active = True
-                st.session_state.auto_stop_requested = False
+                st.session_state.show_continue_confirmation = True
+                st.session_state.stop_confirmation_location = location
                 st.rerun()
 
 # --- UI Layout ---

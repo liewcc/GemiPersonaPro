@@ -46,6 +46,20 @@ DEFAULT_CONFIG = {
     ],
     "selected_files": [],
     "quota_cooldown_hours": 24,
+    "fixed_aspect_ratio": "None",
+    "prompt_matrix": {
+        "enabled": False,
+        "items": [
+            {"ratio": "16:9 (Landscape)", "target": 5, "current": 0},
+            {"ratio": "9:16 (Portrait)", "target": 5, "current": 0},
+            {"ratio": "1:1 (Square)", "target": 5, "current": 0},
+            {"ratio": "4:3 (Landscape)", "target": 5, "current": 0},
+            {"ratio": "3:4 (Portrait)", "target": 5, "current": 0},
+            {"ratio": "21:9 (Ultrawide)", "target": 5, "current": 0},
+            {"ratio": "3:2 (Landscape)", "target": 5, "current": 0},
+            {"ratio": "2:3 (Portrait)", "target": 5, "current": 0}
+        ]
+    },
     "health_view_mode": "Full Loading History (All Events)",
     "system_navigation": "Engine Settings"
 }

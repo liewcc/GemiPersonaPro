@@ -598,6 +598,86 @@ def confirm_start_automation_setup():
         st.session_state.show_start_confirmation_setup = False
         st.rerun()
 
+def _format_dur_str(dur):
+    dur = max(0.0, float(dur or 0))
+    h = int(dur // 3600)
+    m = int((dur % 3600) // 60)
+    s = int(dur % 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    elif m > 0:
+        return f"{m}:{s:02d}"
+    else:
+        return f"{s}s"
+
+@st.dialog("⏯️ Continue Session")
+def confirm_continue_automation_setup():
+    info_str = "No pending data found."
+    try:
+        pending_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "pending_stats.json"))
+        if os.path.exists(pending_file):
+            with open(pending_file, "r", encoding="utf-8") as f:
+                pending_stats = json.load(f)
+            pending_dur = pending_stats.get("pending_duration", 0)
+            pending_ref = pending_stats.get("pending_refused", 0)
+            pending_res = pending_stats.get("pending_resets", 0)
+            dur_str = _format_dur_str(pending_dur)
+            info_str = f"Duration: {dur_str}, Refused: {pending_ref}, Resets: {pending_res}"
+        else:
+            pending_dur = 0
+            pending_ref = st.session_state.get("_last_known_stats", {}).get("pending_refused", 0)
+            pending_res = st.session_state.get("_last_known_stats", {}).get("pending_resets", 0)
+            info_str = f"Duration: 0s, Refused: {pending_ref}, Resets: {pending_res}"
+    except Exception:
+        pass
+
+    st.markdown(f"**Last record:** {info_str}")
+    st.write("How would you like to continue?")
+
+    opt = st.radio("Select continuation mode:", [
+        "Use last saved data and continue",
+        "Clear the above parameters and continue"
+    ], label_visibility="collapsed")
+    
+    col_y, col_n = st.columns(2)
+    if col_y.button("OK", type="primary", width="stretch"):
+        clear_stats = "Clear" in opt
+        current_config = load_config()
+        current_config["selected_files"] = st.session_state.selected_files
+        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
+        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
+        current_config["selected_model"] = st.session_state.get("model_selectbox")
+        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
+        
+        # Capture values before thread start to avoid session_state thread-safety issues
+        mode_val = st.session_state.auto_mode
+        goal_val = st.session_state.auto_goal
+
+        def trigger_continue():
+            async def do_continue_auto():
+                add_log("API>> Triggering Automation Continue...")
+                try:
+                    resp = await st.session_state.client.continue_automation(
+                        mode=mode_val,
+                        goal=goal_val,
+                        config=current_config,
+                        clear_pending=clear_stats
+                    )
+                    add_log(f"API>> Continue Result: {resp.get('message')}")
+                except Exception as e:
+                    add_log(f"API ERROR: {e}")
+            asyncio.run(do_continue_auto())
+
+        t = threading.Thread(target=trigger_continue, daemon=True)
+        add_script_run_ctx(t)
+        t.start()
+        time.sleep(0.5)
+        st.session_state.show_continue_confirmation_setup = False
+        st.rerun()
+    if col_n.button("Cancel", width="stretch"):
+        st.session_state.show_continue_confirmation_setup = False
+        st.rerun()
+
 @st.dialog("Aspect Ratio Looping Table", width="large")
 def show_prompt_prefix_dialog():
     st.markdown("""
@@ -609,74 +689,101 @@ def show_prompt_prefix_dialog():
     """, unsafe_allow_html=True)
     import pandas as pd
     
-    pm_enabled = config.get("prompt_matrix", {}).get("enabled", False)
-    
+    # --- 0. State initialization logic ---
+    if "pm_dialog_initialized" not in st.session_state:
+        # Clear any leftover state from previous sessions to ensure fresh start
+        for k in ["pm_df_work", "pm_editor_setup", "pm_rerender_idx"]:
+            if k in st.session_state: del st.session_state[k]
+        st.session_state.pm_dialog_initialized = True
+        st.session_state.pm_rerender_idx = 0
+
+    # 1. Load current items from config
     pm_config = config.get("prompt_matrix", {})
     pm_items = pm_config.get("items", [
         {"ratio": "16:9 (Landscape)", "target": 5, "current": 0},
         {"ratio": "9:16 (Portrait)", "target": 5, "current": 0},
-        {"ratio": "1:1 (Square)", "target": 5, "current": 0},
-        {"ratio": "4:3 (Landscape)", "target": 5, "current": 0},
-        {"ratio": "3:4 (Portrait)", "target": 5, "current": 0},
-        {"ratio": "21:9 (Ultrawide)", "target": 5, "current": 0},
-        {"ratio": "3:2 (Landscape)", "target": 5, "current": 0},
-        {"ratio": "2:3 (Portrait)", "target": 5, "current": 0}
+        {"ratio": "1:1 (Square)", "target": 5, "current": 0}
     ])
     
-    active_idx = -1
-    for i, it in enumerate(pm_items):
-        if it.get("current", 0) < it.get("target", 1):
-            active_idx = i
-            break
-
-    pm_data = []
-    for i, it in enumerate(pm_items):
-        is_active = (i == active_idx)
-        pm_data.append({
-            "ratio": it.get("ratio", ""),
-            "target": int(it.get("target", 0)),
-            "current": int(it.get("current", 0)),
-            "status": "Active" if is_active else None
-        })
+    # 2. Initialize working data in session state for callback support
+    if "pm_df_work" not in st.session_state:
+        active_idx = -1
+        for i, it in enumerate(pm_items):
+            if it.get("current", 0) < it.get("target", 1):
+                active_idx = i
+                break
+        if active_idx == -1: active_idx = 0
         
-    pm_df = pd.DataFrame(pm_data)
-    
+        pm_data = []
+        for i, it in enumerate(pm_items):
+            pm_data.append({
+                "ratio": it.get("ratio", ""),
+                "target": int(it.get("target", 0)),
+                "current": int(it.get("current", 0)),
+                "Active": (i == active_idx)
+            })
+        st.session_state.pm_df_work = pd.DataFrame(pm_data)
+
+    # 3. Callback to enforce mutual exclusivity and RESET BUFFER
+    def on_pm_change_v2():
+        editor_key = f"pm_editor_setup_{st.session_state.pm_rerender_idx}"
+        changes = st.session_state[editor_key].get("edited_rows", {})
+        if not changes: return
+        
+        target_row = -1
+        for row_idx, val in changes.items():
+            if val.get("Active") is True:
+                target_row = int(row_idx)
+                break
+        
+        if target_row != -1:
+            # Update data
+            for i in range(len(st.session_state.pm_df_work)):
+                st.session_state.pm_df_work.at[i, "Active"] = (i == target_row)
+            # Increment rerender index to force widget key change (clears buffer)
+            st.session_state.pm_rerender_idx += 1
+
+    # 4. Render Table with dynamic key to prevent buffer issues
+    editor_key = f"pm_editor_setup_{st.session_state.pm_rerender_idx}"
     edited_pm_df = st.data_editor(
-        pm_df,
+        st.session_state.pm_df_work,
         column_config={
             "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
             "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
             "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
-            "status": st.column_config.SelectboxColumn("Status", options=["Active"], width="small")
+            "Active": st.column_config.CheckboxColumn("Active", width="small")
         },
         num_rows="dynamic",
         hide_index=True,
         width="stretch",
-        key="pm_editor_setup"
+        key=editor_key,
+        on_change=on_pm_change_v2
     )
-    
+
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Save Setting", icon="💾", use_container_width=True, key="pm_save_setup"):
             records = edited_pm_df.to_dict("records")
             
-            new_active_idx = -1
+            # Find which row is active
+            new_active_idx = 0
             for i, r in enumerate(records):
-                if r.get("status") == "Active" and i != active_idx:
+                if r.get("Active"):
                     new_active_idx = i
                     break
-                    
+            
             new_items = []
             for i, r in enumerate(records):
                 target = int(r.get("target") or 1)
                 current = int(r.get("current") or 0)
                 
-                if new_active_idx != -1:
-                    if i < new_active_idx:
-                        current = target
-                    else:
-                        current = 0
-                        
+                if i < new_active_idx:
+                    current = target
+                elif i == new_active_idx:
+                    if current >= target: current = 0
+                else:
+                    current = 0
+                
                 new_items.append({
                     "ratio": r.get("ratio") or "None (Master Prompt)",
                     "target": target,
@@ -688,28 +795,27 @@ def show_prompt_prefix_dialog():
             cfg["prompt_matrix"]["items"] = new_items
             save_config({"prompt_matrix": cfg["prompt_matrix"]})
             asyncio.run(st.session_state.client.request_new_chat())
+            
+            # Cleanup
+            for k in ["pm_df_work", "pm_editor_setup", "pm_rerender_idx", "pm_dialog_initialized"]:
+                if k in st.session_state: del st.session_state[k]
+            # Also clear any keyed editor buffer
+            for k in list(st.session_state.keys()):
+                if k.startswith("pm_editor_setup_"): del st.session_state[k]
+                
             st.success("Setting saved!")
             import time
             time.sleep(0.5)
             st.rerun()
+            
     with c2:
-        if st.button("Reset Progress", icon="🔄", use_container_width=True, key="pm_reset_setup"):
-            new_items = []
-            for r in edited_pm_df.to_dict("records"):
-                new_items.append({
-                    "ratio": r.get("ratio") or "None (Master Prompt)",
-                    "target": int(r.get("target") or 1),
-                    "current": 0
-                })
-            cfg = load_config()
-            if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
-            cfg["prompt_matrix"]["items"] = new_items
-            save_config({"prompt_matrix": cfg["prompt_matrix"]})
-            asyncio.run(st.session_state.client.request_new_chat())
-            st.success("Progress reset!")
-            import time
-            time.sleep(0.5)
+        if st.button("Cancel", use_container_width=True):
+            for k in ["pm_df_work", "pm_editor_setup", "pm_rerender_idx", "pm_dialog_initialized"]:
+                if k in st.session_state: del st.session_state[k]
+            for k in list(st.session_state.keys()):
+                if k.startswith("pm_editor_setup_"): del st.session_state[k]
             st.rerun()
+
 
 @st.fragment(run_every="5s")
 def render_setup_logs():
@@ -775,6 +881,10 @@ if st.session_state.get("show_start_confirmation_setup"):
 if st.session_state.get("show_goal_reached_confirmation_setup"):
     st.session_state.show_goal_reached_confirmation_setup = False
     show_goal_reached_dialog_setup()
+
+if st.session_state.get("show_continue_confirmation_setup"):
+    st.session_state.show_continue_confirmation_setup = False
+    confirm_continue_automation_setup()
 
 # Always reload config on each rerun to pick up discovery updates
 config = load_config()
@@ -983,8 +1093,6 @@ with col1:
                 # If mode changed, update config and rerun
                 if (ar_mode == "Dynamic Prefix Loop") != pm_enabled:
                     cfg_pm["enabled"] = (ar_mode == "Dynamic Prefix Loop")
-                    if cfg_pm["enabled"]:
-                        for it in cfg_pm.get("items", []): it["current"] = 0
                     save_config({"prompt_matrix": cfg_pm})
                     
                     if st.session_state.get("last_known_auto_active", False):
@@ -1008,7 +1116,12 @@ with col1:
                     st.rerun()
 
             with ar_col3:
-                if st.button("Looping Table", key="btn_open_prefix_dialog", width="stretch"):
+                if st.button("Aspect Ratio Looping Table", key="btn_open_prefix_dialog", width="stretch"):
+                    # Force clean start by clearing initialized flags
+                    for k in ["pm_dialog_initialized", "pm_df_work", "pm_rerender_idx"]:
+                        if k in st.session_state: del st.session_state[k]
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("pm_editor_setup_"): del st.session_state[k]
                     show_prompt_prefix_dialog()
 
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
@@ -1490,31 +1603,7 @@ with col1:
                         st.session_state.show_goal_reached_confirmation_setup = True
                         st.rerun()
                     else:
-                        current_config = load_config()
-                        current_config["selected_files"] = st.session_state.selected_files
-                        current_config["prompt"] = st.session_state.get("prompt_input_widget", current_config.get("prompt", ""))
-                        current_config["selected_tool"] = st.session_state.get("tool_selectbox")
-                        current_config["selected_model"] = st.session_state.get("model_selectbox")
-                        current_config.setdefault("automation", {})["remove_watermark"] = st.session_state.auto_remove_wm
-
-                        def trigger_continue():
-                            async def do_continue_auto():
-                                add_log("API>> Triggering Automation Continue...")
-                                try:
-                                    resp = await st.session_state.client.continue_automation(
-                                        mode=st.session_state.auto_mode,
-                                        goal=st.session_state.auto_goal,
-                                        config=current_config
-                                    )
-                                    add_log(f"API>> Continue Result: {resp.get('message')}")
-                                except Exception as e:
-                                    add_log(f"API ERROR: {e}")
-                            asyncio.run(do_continue_auto())
-
-                        t = threading.Thread(target=trigger_continue, daemon=True)
-                        add_script_run_ctx(t)
-                        t.start()
-                        time.sleep(0.5)
+                        st.session_state.show_continue_confirmation_setup = True
                         st.rerun()
 
 with col2:

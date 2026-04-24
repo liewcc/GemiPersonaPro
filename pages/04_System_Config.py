@@ -45,6 +45,12 @@ def on_change_health_y_scale():
 
 def on_change_navigation():
     save_config({"system_navigation": st.session_state.cfg_system_nav})
+    # Clear aspect ratio initialization flag to force fresh reload when switching sections
+    for k in ["pm_sys_initialized", "pm_df_work_sys", "pm_rerender_idx_sys"]:
+        if k in st.session_state: del st.session_state[k]
+    # Also clear any editor buffers
+    for k in list(st.session_state.keys()):
+        if k.startswith("pm_editor_sys_"): del st.session_state[k]
 
 def on_change_url():
     save_config({"browser_url": st.session_state.cfg_browser_url})
@@ -110,13 +116,6 @@ def on_change_auto_looping():
 def on_change_prompt_matrix_toggle():
     cfg = load_config()
     if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
-    
-    # Reset progress when toggled ON
-    if st.session_state.cfg_matrix_enabled and not cfg["prompt_matrix"].get("enabled", False):
-        if "items" in cfg["prompt_matrix"]:
-            for it in cfg["prompt_matrix"]["items"]:
-                it["current"] = 0
-                
     cfg["prompt_matrix"]["enabled"] = st.session_state.cfg_matrix_enabled
     save_config({"prompt_matrix": cfg["prompt_matrix"]})
 
@@ -147,135 +146,170 @@ def parse_account_health(target_account=None, login_data=None):
         current_account = "Unknown"
         import re
         
-        # Pre-process lines to find all real accounts mentioned in logs in order
-        for line in lines:
-            acc_id = None
-            if "Re-login detected for" in line:
-                acc_id = line.split("Re-login detected for")[1].split()[0].strip().rstrip('.:')
-            elif "switched to" in line:
-                acc_id = line.split("switched to")[1].split()[0].strip().rstrip('.:')
-            elif "current_account_id" in line:
-                match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
-                if match: acc_id = match.group(1)
-            
-            if acc_id:
-                norm = acc_id.split('@')[0].lower().strip()
-                if norm not in found_accounts_set:
-                    found_accounts_set.add(norm)
-                    found_accounts_ordered.append(norm)
-
-        # Main parsing loop
-        session_index = 1
-        last_noted_account = None
-
+        # New State-based Parsing Approach
+        current_session_id = 1
+        active_event = None # {start_time, account, start_line_idx}
+        
         for i, line in enumerate(lines):
-            # Track account switches
-            acc_id = None
-            if "Re-login detected for" in line:
-                acc_id = line.split("Re-login detected for")[1].split()[0].strip().rstrip('.:')
-            elif "switched to" in line:
-                acc_id = line.split("switched to")[1].split()[0].strip().rstrip('.:')
-            elif "current_account_id" in line:
-                match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
-                if match: acc_id = match.group(1)
+            line_lower = line.lower()
             
-            if acc_id:
-                normalized = acc_id.split('@')[0].lower().strip()
-                # Only increment session if the account actually changed
-                if last_noted_account is not None and normalized != last_noted_account:
-                    session_index += 1
-                
-                last_noted_account = normalized
-                current_account = normalized
+            # 1. Detect Session Boundaries (Force reset and increment session)
+            is_boundary = False
+            # We use a helper to avoid double-bumping session ID on adjacent boundary lines
+            if "automation finished" in line_lower or "automation manager started" in line_lower:
+                is_boundary = True
+            elif "profile switched to" in line_lower or "re-login detected for" in line_lower:
+                is_boundary = True
             
-            # Detect loading events
-            if "正在加载 Nano Banana 2..." in line:
-                start_ts_str = line[1:9]
+            if is_boundary:
+                # Only bump session if the last event was closed or this is a fresh start
+                # or if a significant amount of time/lines passed since last boundary
+                if not getattr(st.session_state, "_last_boundary_idx", -1) == i - 1:
+                    current_session_id += 1
+                st.session_state._last_boundary_idx = i
                 
-                duration_secs = None
-                completion_idx = -1
-                is_success = False
-                filename = ""
+                # Update current account strictly from the switch/login line
+                new_acc = None
+                if "profile switched to" in line_lower:
+                    try: new_acc = line.split("switched to")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
+                    except: pass
+                elif "re-login detected for" in line_lower:
+                    try: new_acc = line.split("detected for")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
+                    except: pass
                 
-                # Look ahead for completion
-                for j in range(i + 1, min(i + 200, len(lines))): 
-                    next_line = lines[j]
-                    if any(marker in next_line for marker in ["Response successful", "Response failed", "Automation loop encountered an issue", "Gemini page was unexpectedly reset"]):
-                        end_ts_str = next_line[1:9]
-                        completion_idx = j
-                        if "Response successful" in next_line: is_success = True
-                        try:
-                            fmt = '%H:%M:%S'
-                            tdelta = datetime.strptime(end_ts_str, fmt) - datetime.strptime(start_ts_str, fmt)
-                            sec = int(tdelta.total_seconds())
-                            if sec < 0: sec += 86400
-                            duration_secs = sec
-                            break
-                        except: continue
-                    
-                    # Fallback completion: Any subsequent Gemini output
-                    if "API>> Gemini:" in next_line and "正在加载 Nano Banana 2..." not in next_line:
-                        end_ts_str = next_line[1:9]
-                        completion_idx = j
-                        try:
-                            fmt = '%H:%M:%S'
-                            tdelta = datetime.strptime(end_ts_str, fmt) - datetime.strptime(start_ts_str, fmt)
-                            sec = int(tdelta.total_seconds())
-                            if sec < 0: sec += 86400
-                            duration_secs = sec
-                            break
-                        except: continue
+                if new_acc:
+                    current_account = new_acc
+                    found_accounts_set.add(new_acc)
                 
-                if duration_secs is not None:
-                    if is_success and completion_idx != -1:
-                        for k in range(completion_idx + 1, min(completion_idx + 10, len(lines))):
-                            if "Saved: " in lines[k]:
-                                filename = lines[k].split("Saved: ")[1].strip()
-                                # Look a bit further for the RejectStat log which contains high-precision cumulative data
-                                for l in range(k + 1, min(k + 20, len(lines))):
-                                    if "RejectStat: Wrote record for" in lines[l] and filename in lines[l]:
-                                        stat_match = re.search(r"dur=([\d.]+)s, ref=(\d+), rst=(\d+)", lines[l])
-                                        if stat_match:
-                                            true_dur = float(stat_match.group(1))
-                                            true_rej = int(stat_match.group(2))
-                                            true_res = int(stat_match.group(3))
-                                            # We use these high-precision values for the success record
-                                            duration_secs = true_dur
-                                            # We also store them as metadata to bypass accumulation in charts
-                                            record_meta = {"true_rej": true_rej, "true_res": true_res}
-                                            break
-                                break
+                active_event = None
+                # DO NOT continue; let the rest of the line be processed
 
-                    status = "Reject"
-                    if is_success:
-                        status = "Success" if filename else "Fail"
-                    else:
-                        # Re-scan completion marker to distinguish Reject vs Reset
-                        for j in range(i + 1, min(i + 200, len(lines))):
-                            if "Gemini page was unexpectedly reset" in lines[j] or "Automation loop encountered an issue" in lines[j]:
-                                status = "Reset"; break
-                            if "Response failed" in lines[j]:
-                                status = "Reject"; break
+
+            # 2. Track simple account updates (might happen inside session)
+            if "current_account_id" in line:
+                match = re.search(r"['\"]current_account_id['\"]\s*:\s*['\"]([^'\"]+)['\"]", line)
+                if match: 
+                    current_account = match.group(1).split('@')[0].lower()
+                    found_accounts_set.add(current_account)
+
+            # 3. Detect Start of Image Generation
+            if "正在加载 Nano Banana 2..." in line or "API>> Gemini:" in line and "加载" in line:
+                # If we already have an active event that wasn't closed, it was likely a refusal cycle
+                # We keep the original start time to calculate total duration for the final image
+                if active_event is None:
+                    active_event = {
+                        "start_time": line[1:9],
+                        "account": current_account,
+                        "session_index": current_session_id,
+                        "line_idx": i,
+                        "closed": False
+                    }
+            
+            # 4. Detect Result (Success / Reject / Reset)
+            status = None
+            if "response successful" in line_lower: status = "Success"
+            elif "saved: " in line_lower and ".png" in line_lower: status = "Success" # Trigger Success directly from Saved line
+            elif "response failed (refused)" in line_lower: status = "Reject"
+            elif "gemini page was unexpectedly reset" in line_lower: status = "Reset"
+            elif "automation loop encountered an issue" in line_lower: status = "Reset"
+            
+            if status:
+                # Deduplicate: If we just saw a Success for this line, don't double count if it's the Saved line
+                # (Simple check: if last detailed record has same filename or time, skip)
+                
+                temp_start_time = active_event["start_time"] if active_event else line[1:9]
+                temp_session_idx = active_event["session_index"] if active_event else current_session_id
+                temp_account = active_event["account"] if active_event else current_account
+
+                if status == "Success":
+                    # Look AROUND (back and forth) for filename and RejectStat
+                    fname = ""
+                    if "saved: " in line_lower:
+                        try: fname = line.split("Saved: ")[1].strip()
+                        except: pass
+                    
+                    true_dur = None
+                    true_rej = 0
+                    true_res = 0
+                    
+                    # Search window for metadata (filenames, stats)
+                    search_range = range(max(0, i - 10), min(i + 50, len(lines)))
+                    for k in search_range:
+                        if not fname and "saved: " in lines[k].lower():
+                            fname = lines[k].split("Saved: ")[1].strip()
+                        if "rejectstat: wrote record for" in lines[k].lower() and fname and fname in lines[k]:
+                            stat_match = re.search(r"dur=([\d.]+)s, ref=(\d+), rst=(\d+)", lines[k])
+                            if stat_match:
+                                true_dur = float(stat_match.group(1))
+                                true_rej = int(stat_match.group(2))
+                                true_res = int(stat_match.group(3))
+                                break
+                    
+                    # Avoid double-counting if we already have this filename in this session
+                    is_dup = False
+                    if fname:
+                        for prev in detailed_results[-5:]:
+                            if prev.get("filename") == fname and prev.get("session_index") == temp_session_idx:
+                                is_dup = True; break
+                    
+                    if not is_dup and (true_dur is not None or active_event or fname):
+                        if true_dur is None and active_event:
+                            try:
+                                fmt = '%H:%M:%S'
+                                tdelta = datetime.strptime(line[1:9], fmt) - datetime.strptime(active_event["start_time"], fmt)
+                                true_dur = int(tdelta.total_seconds())
+                                if true_dur < 0: true_dur += 86400
+                            except: true_dur = 0
+                        
+                        if true_dur is None: true_dur = 0
+
+                        record = {
+                            "account": temp_account,
+                            "time": temp_start_time,
+                            "health": f"{true_dur}s",
+                            "filename": fname,
+                            "status": "Success" if fname else "Fail",
+                            "session_index": temp_session_idx,
+                            "true_rej": true_rej,
+                            "true_res": true_res
+                        }
+                        detailed_results.append(record)
+                        summary_results[record["account"]] = record
+                    
+                    # Only clear active event if we successfully processed a success
+                    if not is_dup: active_event = None
+                else:
+                    # For Reject/Reset
+                    try:
+                        fmt = '%H:%M:%S'
+                        tdelta = datetime.strptime(line[1:9], fmt) - datetime.strptime(temp_start_time, fmt)
+                        fail_dur = int(tdelta.total_seconds())
+                        if fail_dur < 0: fail_dur += 86400
+                    except: fail_dur = 0
                     
                     record = {
-                        "account": current_account,
-                        "time": start_ts_str,
-                        "health": f"{duration_secs}s",
-                        "filename": filename,
+                        "account": temp_account,
+                        "time": temp_start_time,
+                        "health": f"{fail_dur}s",
+                        "filename": "",
                         "status": status,
-                        "session_index": session_index
+                        "session_index": temp_session_idx
                     }
-                    if 'record_meta' in locals() and record_meta:
-                        record.update(record_meta)
-                        del record_meta
-                    
                     detailed_results.append(record)
-                    # Always keep the LATEST record for each account in summary
-                    summary_results[current_account] = record
+                    if record["account"] not in summary_results or summary_results[record["account"]]["status"] != "Success":
+                        summary_results[record["account"]] = record
+                    
+                    if active_event: active_event["start_time"] = line[1:9]
+
+
 
         # Smarter Backfill for "Unknown"
         # 1. Try first account encountered in log
-        first_real = found_accounts_ordered[0] if found_accounts_ordered else None
+        first_real = None
+        for r in detailed_results:
+            if r["account"] and r["account"] != "Unknown":
+                first_real = r["account"]
+                break
         
         # 2. Fallback: If no switches in logs, find the account marked as 'active' or with latest 'last_switched_at'
         if not first_real and login_data:
@@ -502,8 +536,7 @@ elif menu_selection == "Automation Settings":
             
             if (ar_mode == "Dynamic Prefix Loop") != pm_enabled:
                 pm_config["enabled"] = (ar_mode == "Dynamic Prefix Loop")
-                if pm_config["enabled"]:
-                    for it in pm_config.get("items", []): it["current"] = 0
+                # REMOVED: Automatic reset on toggle
                 save_config({"prompt_matrix": pm_config})
                 st.rerun()
 
@@ -520,48 +553,88 @@ elif menu_selection == "Automation Settings":
                 
 
 
-            st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
-            pm_items = pm_config.get("items", [
+
+            # --- 1. Load latest items from disk ---
+            if "pm_rerender_idx_sys" not in st.session_state:
+                st.session_state.pm_rerender_idx_sys = 0
+                
+            fresh_cfg = load_config()
+            pm_config_fresh = fresh_cfg.get("prompt_matrix", {})
+            pm_items = pm_config_fresh.get("items", [
                 {"ratio": "16:9 (Landscape)", "target": 5, "current": 0},
                 {"ratio": "9:16 (Portrait)", "target": 5, "current": 0},
-                {"ratio": "1:1 (Square)", "target": 5, "current": 0},
-                {"ratio": "4:3 (Landscape)", "target": 5, "current": 0},
-                {"ratio": "3:4 (Portrait)", "target": 5, "current": 0},
-                {"ratio": "21:9 (Ultrawide)", "target": 5, "current": 0},
-                {"ratio": "3:2 (Landscape)", "target": 5, "current": 0},
-                {"ratio": "2:3 (Portrait)", "target": 5, "current": 0}
+                {"ratio": "1:1 (Square)", "target": 5, "current": 0}
             ])
             
-            active_idx = -1
-            for i, it in enumerate(pm_items):
-                if it.get("current", 0) < it.get("target", 1):
-                    active_idx = i
-                    break
-
-            pm_data = []
-            for i, it in enumerate(pm_items):
-                is_active = (i == active_idx)
-                pm_data.append({
-                    "ratio": it.get("ratio", ""),
-                    "target": int(it.get("target", 0)),
-                    "current": int(it.get("current", 0)),
-                    "status": "Active" if is_active else None
-                })
-                
-            pm_df = pd.DataFrame(pm_data)
+            # 2. Logic: If user is NOT currently editing, force sync with disk data
+            editor_key_base = "pm_editor_sys"
+            # Get current rerender idx if exists
+            ridx = st.session_state.get("pm_rerender_idx_sys", 0)
+            curr_editor_key = f"{editor_key_base}_{ridx}"
             
+            # Check if there are active edits in the buffer
+            has_edits = False
+            if curr_editor_key in st.session_state:
+                edits = st.session_state[curr_editor_key]
+                if edits.get("edited_rows") or edits.get("added_rows") or edits.get("deleted_rows"):
+                    has_edits = True
+            
+            # If no edits, we can safely overwrite work data with fresh disk data
+            if not has_edits:
+                active_idx = -1
+                for i, it in enumerate(pm_items):
+                    if it.get("current", 0) < it.get("target", 1):
+                        active_idx = i
+                        break
+                if active_idx == -1: active_idx = 0
+                
+                pm_data = []
+                for i, it in enumerate(pm_items):
+                    pm_data.append({
+                        "ratio": it.get("ratio", ""),
+                        "target": int(it.get("target", 0)),
+                        "current": int(it.get("current", 0)),
+                        "Active": (i == active_idx)
+                    })
+                st.session_state.pm_df_work_sys = pd.DataFrame(pm_data)
+            
+
+            # 2. Callback to enforce mutual exclusivity (Radio behavior)
+            def on_pm_change_sys():
+                editor_key = f"pm_editor_sys_{st.session_state.pm_rerender_idx_sys}"
+                changes = st.session_state[editor_key].get("edited_rows", {})
+                if not changes: return
+                
+                target_row = -1
+                for row_idx, val in changes.items():
+                    if val.get("Active") is True:
+                        target_row = int(row_idx)
+                        break
+                
+                if target_row != -1:
+                    # Update data
+                    for i in range(len(st.session_state.pm_df_work_sys)):
+                        st.session_state.pm_df_work_sys.at[i, "Active"] = (i == target_row)
+                    # Force rerender to clear buffer
+                    st.session_state.pm_rerender_idx_sys += 1
+
+
+
+            # 3. Render Table with dynamic key
+            editor_key = f"pm_editor_sys_{st.session_state.pm_rerender_idx_sys}"
             edited_pm_df = st.data_editor(
-                pm_df,
+                st.session_state.pm_df_work_sys,
                 column_config={
                     "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
                     "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
                     "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
-                    "status": st.column_config.SelectboxColumn("Status", options=["Active"], width="small")
+                    "Active": st.column_config.CheckboxColumn("Active", width="small")
                 },
                 num_rows="dynamic",
                 hide_index=True,
                 width="stretch",
-                key="pm_editor"
+                key=editor_key,
+                on_change=on_pm_change_sys
             )
             
             c1, c2 = st.columns(2)
@@ -569,9 +642,10 @@ elif menu_selection == "Automation Settings":
                 if st.button("Save Setting", icon="💾", width="stretch"):
                     records = edited_pm_df.to_dict("records")
                     
-                    new_active_idx = -1
+                    # Find which row is active
+                    new_active_idx = 0
                     for i, r in enumerate(records):
-                        if r.get("status") == "Active" and i != active_idx:
+                        if r.get("Active"):
                             new_active_idx = i
                             break
                             
@@ -580,11 +654,12 @@ elif menu_selection == "Automation Settings":
                         target = int(r.get("target") or 1)
                         current = int(r.get("current") or 0)
                         
-                        if new_active_idx != -1:
-                            if i < new_active_idx:
-                                current = target
-                            else:
-                                current = 0
+                        if i < new_active_idx:
+                            current = target
+                        elif i == new_active_idx:
+                            if current >= target: current = 0
+                        else:
+                            current = 0
                                 
                         new_items.append({
                             "ratio": r.get("ratio") or "None (Master Prompt)",
@@ -596,6 +671,14 @@ elif menu_selection == "Automation Settings":
                     if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
                     cfg["prompt_matrix"]["items"] = new_items
                     save_config({"prompt_matrix": cfg["prompt_matrix"]})
+                    
+                    # Cleanup session state
+                    for k in ["pm_df_work_sys", "pm_editor_sys", "pm_rerender_idx_sys", "pm_sys_initialized"]:
+                        if k in st.session_state: del st.session_state[k]
+                    # Clear keyed buffers
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("pm_editor_sys_"): del st.session_state[k]
+                        
                     st.success("Setting saved!")
                     st.rerun()
             with c2:
@@ -611,6 +694,13 @@ elif menu_selection == "Automation Settings":
                     if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
                     cfg["prompt_matrix"]["items"] = new_items
                     save_config({"prompt_matrix": cfg["prompt_matrix"]})
+                    
+                    # Cleanup session state
+                    for k in ["pm_df_work_sys", "pm_editor_sys", "pm_rerender_idx_sys", "pm_sys_initialized"]:
+                        if k in st.session_state: del st.session_state[k]
+                    for k in list(st.session_state.keys()):
+                        if k.startswith("pm_editor_sys_"): del st.session_state[k]
+                        
                     st.success("Progress reset!")
                     st.rerun()
 
