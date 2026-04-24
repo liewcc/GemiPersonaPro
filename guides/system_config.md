@@ -102,5 +102,19 @@ The parser now uses a robust state-tracking mechanism:
 - **Orphan Recovery**: The system captures `Saved:` events even if the initial `Loading` marker was missed (e.g., after a manual continue).
 
 ---
+
+## 6. Automation Cycle Management
+A utility designed to audit and maintain the `engine.log` file by identifying and managing historical automation sessions.
+
+### Cycle Identification
+- **Log Parsing**: Automatically scans the system log to identify unique automation "Cycles" (defined from a fresh start of Round 1 until a stop signal).
+- **Continue Session Grouping**: Intelligent logic ensures that "Continue Session" events are correctly attributed to their original parent cycle, rather than appearing as fragmented entries.
+
+### Log Maintenance & Decluttering
+- **Data Selection**: Provides an interactive table listing every identified cycle with its Start Time and total Log Lines.
+- **Selective Deletion**: Users can check specific historical cycles for removal. This permanently deletes the associated lines from `engine.log`.
+- **Performance Optimization**: Use this tool to remove "stale" or "failed" early test data, preventing it from cluttering the performance charts in **Account Health Analysis** and reducing overall log file size.
+
+---
 *Tip: If an account shows a consistent "Reject" pattern in the graphs, consider adding more variation to your prompt or increasing the **Quota Cooldown** hours in Engine Settings.*
 
