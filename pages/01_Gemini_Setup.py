@@ -803,9 +803,6 @@ def show_prompt_prefix_dialog():
             for k in list(st.session_state.keys()):
                 if k.startswith("pm_editor_setup_"): del st.session_state[k]
                 
-            st.success("Setting saved!")
-            import time
-            time.sleep(0.5)
             st.rerun()
             
     with c2:

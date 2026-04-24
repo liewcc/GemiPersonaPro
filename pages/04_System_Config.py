@@ -129,6 +129,47 @@ def on_change_loop_control(key):
     return callback
 
 # --- Health Analysis Logic ---
+def parse_engine_cycles():
+    LOG_PATH = "engine.log"
+    if not os.path.exists(LOG_PATH):
+        return []
+    
+    cycles = []
+    current_cycle = None
+    
+    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+        for i, line in enumerate(f):
+            if "--- [AUTO] RUNNING ROUND: 1 ---" in line:
+                if current_cycle is not None:
+                    current_cycle['end_idx'] = i - 1
+                    cycles.append(current_cycle)
+                
+                import re
+                match = re.search(r"\[(\d{2}:\d{2}:\d{2})\]", line)
+                ts = match.group(1) if match else "Unknown"
+                
+                current_cycle = {
+                    'start_idx': i,
+                    'start_time_str': ts,
+                    'end_idx': None,
+                    'lines_count': 0
+                }
+            
+            if current_cycle is not None:
+                current_cycle['lines_count'] += 1
+                
+                if "Final Stats:" in line and "'start_time': '" in line:
+                    import re
+                    match = re.search(r"'start_time': '([^']+)'", line)
+                    if match:
+                        current_cycle['full_start_time'] = match.group(1)
+        
+        if current_cycle is not None:
+            current_cycle['end_idx'] = i
+            cycles.append(current_cycle)
+            
+    return cycles
+
 def parse_account_health(target_account=None, login_data=None):
     LOG_PATH = "engine.log"
     if not os.path.exists(LOG_PATH):
@@ -427,7 +468,7 @@ with st.sidebar:
     st.markdown("<p style='font-weight: bold; color: #a0a0ff; margin-bottom: 10px;'>SYSTEM NAVIGATION</p>", unsafe_allow_html=True)
     
     # Ensure value exists in options
-    nav_options = ["Engine Settings", "Automation Settings", "Quota Full Phrases", "Account Credentials", "Account Health Analysis"]
+    nav_options = ["Engine Settings", "Automation Settings", "Quota Full Phrases", "Account Credentials", "Account Health Analysis", "Automation Cycle Management"]
     if st.session_state.cfg_system_nav not in nav_options:
         st.session_state.cfg_system_nav = nav_options[0]
 
@@ -554,8 +595,11 @@ elif menu_selection == "Automation Settings":
 
 
 
-            # --- 1. Load latest items from disk ---
-            if "pm_rerender_idx_sys" not in st.session_state:
+            # --- 1. State initialization logic ---
+            if "pm_sys_initialized" not in st.session_state:
+                for k in ["pm_df_work_sys", "pm_editor_sys", "pm_rerender_idx_sys"]:
+                    if k in st.session_state: del st.session_state[k]
+                st.session_state.pm_sys_initialized = True
                 st.session_state.pm_rerender_idx_sys = 0
                 
             fresh_cfg = load_config()
@@ -566,21 +610,8 @@ elif menu_selection == "Automation Settings":
                 {"ratio": "1:1 (Square)", "target": 5, "current": 0}
             ])
             
-            # 2. Logic: If user is NOT currently editing, force sync with disk data
-            editor_key_base = "pm_editor_sys"
-            # Get current rerender idx if exists
-            ridx = st.session_state.get("pm_rerender_idx_sys", 0)
-            curr_editor_key = f"{editor_key_base}_{ridx}"
-            
-            # Check if there are active edits in the buffer
-            has_edits = False
-            if curr_editor_key in st.session_state:
-                edits = st.session_state[curr_editor_key]
-                if edits.get("edited_rows") or edits.get("added_rows") or edits.get("deleted_rows"):
-                    has_edits = True
-            
-            # If no edits, we can safely overwrite work data with fresh disk data
-            if not has_edits:
+            # 2. Initialize working data in session state for callback support
+            if "pm_df_work_sys" not in st.session_state:
                 active_idx = -1
                 for i, it in enumerate(pm_items):
                     if it.get("current", 0) < it.get("target", 1):
@@ -1366,3 +1397,71 @@ if menu_selection == "Account Health Analysis":
                 st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
 
         _render_health_content(view_mode, login_data, config.get("health_graph_type", "Loading Duration"))
+
+elif menu_selection == "Automation Cycle Management":
+    st.markdown("### 🔄 Automation Cycle Management")
+    st.write("This tool analyzes `engine.log` for complete automation cycles (Start -> Stop). **Continue Session** triggers are grouped within their original parent cycle.")
+    
+    cycles = parse_engine_cycles()
+    
+    if not cycles:
+        st.info("No complete cycles found in the log.")
+    else:
+        st.write(f"Found **{len(cycles)}** complete cycle(s).")
+        
+        cycle_data = []
+        for idx, c in enumerate(cycles):
+            display_time = c.get('full_start_time', c['start_time_str'])
+            cycle_data.append({
+                "Select": False,
+                "Cycle ID": idx + 1,
+                "Start Time": display_time,
+                "Log Lines": c['lines_count'],
+                "_start_idx": c['start_idx'],
+                "_end_idx": c['end_idx']
+            })
+            
+        df = pd.DataFrame(cycle_data)
+        
+        edited_df = st.data_editor(
+            df,
+            column_config={
+                "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
+                "_start_idx": None,
+                "_end_idx": None
+            },
+            disabled=["Cycle ID", "Start Time", "Log Lines"],
+            hide_index=True,
+        )
+        
+        selected_rows = edited_df[edited_df["Select"] == True]
+        
+        if not selected_rows.empty:
+            st.warning(f"You have selected {len(selected_rows)} cycle(s) to delete. This action will permanently remove their associated logs from `engine.log`.")
+            if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
+                cycles_to_delete = []
+                for _, row in selected_rows.iterrows():
+                    cycles_to_delete.append({
+                        'start_idx': row["_start_idx"],
+                        'end_idx': row["_end_idx"]
+                    })
+                
+                LOG_PATH = "engine.log"
+                with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                
+                to_keep = []
+                for i, line in enumerate(lines):
+                    deleted = False
+                    for c in cycles_to_delete:
+                        if c['start_idx'] <= i <= c['end_idx']:
+                            deleted = True
+                            break
+                    if not deleted:
+                        to_keep.append(line)
+                        
+                with open(LOG_PATH, "w", encoding="utf-8") as f:
+                    f.writelines(to_keep)
+                
+                st.success(f"Successfully deleted {len(cycles_to_delete)} cycle(s).")
+                st.rerun()
