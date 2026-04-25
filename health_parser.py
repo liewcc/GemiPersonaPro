@@ -13,30 +13,57 @@ def parse_engine_cycles():
         return []
     cycles = []
     current_cycle = None
+    pending_boundary = False
+    boundary_account = None
+
     with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
         for i, line in enumerate(f):
             line = line.strip()
+            
+            # --- JSON PARSING ---
             if line.startswith("{"):
                 try:
                     rec = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if rec.get("event") == "START":
-                    if current_cycle is not None:
-                        current_cycle['end_idx'] = i - 1
-                        cycles.append(current_cycle)
-                    try:
-                        dt = datetime.fromisoformat(rec.get("ts", ""))
-                        ts = dt.strftime("%H:%M:%S")
-                    except:
-                        ts = "Unknown"
-                    current_cycle = {
-                        'start_idx': i, 'start_time_str': ts,
-                        'end_idx': None, 'lines_count': 0
-                    }
+                
+                event = rec.get("event", "")
+                acct = rec.get("account", "unknown")
+                round_id = rec.get("round", 1)
+                
+                if event == "BOUNDARY":
+                    pending_boundary = True
+                    boundary_account = acct
+                    
+                if event == "START":
+                    is_new_cycle = False
+                    if pending_boundary:
+                        if round_id == 1 or acct != boundary_account:
+                            is_new_cycle = True
+                        pending_boundary = False
+                        boundary_account = None
+                    else:
+                        if round_id == 1:
+                            is_new_cycle = True
+                            
+                    if is_new_cycle:
+                        if current_cycle is not None:
+                            current_cycle['end_idx'] = i - 1
+                            cycles.append(current_cycle)
+                        try:
+                            dt = datetime.fromisoformat(rec.get("ts", ""))
+                            ts = dt.strftime("%H:%M:%S")
+                        except:
+                            ts = "Unknown"
+                        current_cycle = {
+                            'start_idx': i, 'start_time_str': ts,
+                            'end_idx': None, 'lines_count': 0
+                        }
                 if current_cycle is not None:
                     current_cycle['lines_count'] += 1
                 continue
+                
+            # --- TEXT PARSING (Legacy) ---
             if "--- [AUTO] RUNNING ROUND: 1 ---" in line:
                 if current_cycle is not None:
                     current_cycle['end_idx'] = i - 1
@@ -53,9 +80,7 @@ def parse_engine_cycles():
                     match = re.search(r"'start_time': '([^']+)'", line)
                     if match:
                         current_cycle['full_start_time'] = match.group(1)
-        if current_cycle is not None:
-            current_cycle['end_idx'] = i
-            cycles.append(current_cycle)
+    
     return cycles
 
 

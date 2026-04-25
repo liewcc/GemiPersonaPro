@@ -349,7 +349,8 @@ elif menu_selection == "Automation Settings":
             # 2. Callback to enforce mutual exclusivity (Radio behavior)
             def on_pm_change_sys():
                 editor_key = f"pm_editor_sys_{st.session_state.pm_rerender_idx_sys}"
-                changes = st.session_state[editor_key].get("edited_rows", {})
+                editor_state = st.session_state.get(editor_key, {})
+                changes = editor_state.get("edited_rows", {})
                 if not changes: return
                 
                 target_row = -1
@@ -374,7 +375,7 @@ elif menu_selection == "Automation Settings":
                 column_config={
                     "ratio": st.column_config.SelectboxColumn("Aspect Ratio", options=["16:9 (Landscape)", "9:16 (Portrait)", "1:1 (Square)", "4:3 (Landscape)", "3:4 (Portrait)", "21:9 (Ultrawide)", "3:2 (Landscape)", "2:3 (Portrait)", "None (Master Prompt)"], required=True, width="medium"),
                     "target": st.column_config.NumberColumn("Repeat", min_value=1, step=1, required=True, width="small"),
-                    "current": st.column_config.NumberColumn("Count", disabled=True, width="small"),
+                    "current": st.column_config.NumberColumn("Count", min_value=0, step=1, width="small"),
                     "Active": st.column_config.CheckboxColumn("Active", width="small")
                 },
                 num_rows="dynamic",
@@ -400,10 +401,6 @@ elif menu_selection == "Automation Settings":
                     for i, r in enumerate(records):
                         target = int(r.get("target") or 1)
                         current = int(r.get("current") or 0)
-                        
-                        if i == new_active_idx:
-                            current = 0
-                                
                         new_items.append({
                             "ratio": r.get("ratio") or "None (Master Prompt)",
                             "target": target,

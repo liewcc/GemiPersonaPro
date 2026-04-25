@@ -165,6 +165,9 @@ def _on_change_health_view():
 def _on_change_health_y_scale():
     save_config({"health_y_scale": st.session_state.widget_health_y_scale})
 
+def _on_change_health_n_rounds():
+    save_config({"health_n_rounds": st.session_state.widget_health_n_rounds})
+
 
 # ── Render Logic ─────────────────────────────────────────────────────────────
 
@@ -215,29 +218,42 @@ with tab1:
             else:
                 st.button("Plot Graph", icon="📊", width="stretch", disabled=True)
 
-        if st.session_state.show_health_graph and not is_summary:
+        if not is_summary:
             st.markdown("<div style='margin-bottom: 5px;'></div>", unsafe_allow_html=True)
-            _, col_rad, col_scale = st.columns([1.5, 1, 1])
-            graph_opts = ["Loading Duration", "Reject Rates"]
-            scale_opts = ["Linear", "Logarithmic"]
-            cfg_graph = config.get("health_graph_type", "Loading Duration")
-            try:
-                graph_idx = graph_opts.index(cfg_graph)
-            except ValueError:
-                graph_idx = 0
-            cfg_scale = config.get("health_y_scale", "Linear")
-            try:
-                scale_idx = scale_opts.index(cfg_scale)
-            except ValueError:
-                scale_idx = 0
-            with col_rad:
-                st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph, label_visibility="collapsed")
-            with col_scale:
-                st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
+            cfg_n_rounds = config.get("health_n_rounds", 100)
+            
+            if st.session_state.show_health_graph:
+                col_slider, col_rad, col_scale = st.columns([1.5, 1.5, 1])
+                graph_opts = ["Loading Duration", "Reject Rates"]
+                scale_opts = ["Linear", "Logarithmic"]
+                cfg_graph = config.get("health_graph_type", "Loading Duration")
+                try:
+                    graph_idx = graph_opts.index(cfg_graph)
+                except ValueError:
+                    graph_idx = 0
+                cfg_scale = config.get("health_y_scale", "Linear")
+                try:
+                    scale_idx = scale_opts.index(cfg_scale)
+                except ValueError:
+                    scale_idx = 0
+                
+                with col_slider:
+                    st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
+                with col_rad:
+                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                    st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph, label_visibility="collapsed")
+                with col_scale:
+                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                    st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
+            else:
+                col_slider, _ = st.columns([1.5, 2.5])
+                with col_slider:
+                    st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
 
-        # Read y_scale once for the fragment
+        # Read settings once for the fragment
         y_scale_type = 'symlog' if config.get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
         graph_type = config.get("health_graph_type", "Loading Duration")
+        n_rounds = config.get("health_n_rounds", 100)
 
         # Fragment for auto-refreshing content
         auto_refresh = st.session_state.get("health_auto_refresh", True)
@@ -246,16 +262,16 @@ with tab1:
         def _health_fragment():
             show_graph = st.session_state.get("show_health_graph", True)
             if is_full:
-                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing every recorded loading event in chronological order (latest first).</p>", unsafe_allow_html=True)
+                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing recorded loading events in chronological order (latest first).</p>", unsafe_allow_html=True)
                 _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
-                _render_chart_or_table(all_detailed, graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table")
+                _render_chart_or_table(all_detailed[:n_rounds], graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table")
             elif is_active:
                 _active_user = next((u.get("username", "") for u in login_data if u.get("active")), None)
                 if not _active_user:
                     st.info("No active account is currently set.")
                 else:
                     _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=login_data)
-                    _render_chart_or_table(det, graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table")
+                    _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table")
             elif is_summary:
                 _summary_all, _, _ = parse_account_health(login_data=login_data)
                 st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
@@ -277,7 +293,7 @@ with tab1:
             else:
                 target_acc = view_mode.replace("Detailed History: ", "")
                 _, det, _ = parse_account_health(target_account=target_acc, login_data=login_data)
-                _render_chart_or_table(det, graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}")
+                _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}")
 
         _health_fragment()
 
