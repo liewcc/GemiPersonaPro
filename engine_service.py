@@ -789,10 +789,8 @@ async def automation_manager(req: AutomationRequest):
                 loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
                 lc_trigger, lc_action = False, "next_profile"
                 
-                if loop_ctrl:
-                    # Modified to align Time Threshold strictly with the Reject Rate Stats global duration.
-                    # This ensures time keeps accumulating even if re-login actions reset the lc counters.
-                    v_dur = result.get("cycle_duration_sec", (time.time() - getattr(engine, '_cycle_start_time', time.time())) if getattr(engine, '_cycle_start_time', None) else 0)
+                if loop_ctrl and result.get("status") != "success":
+                    v_dur = result.get("lc_cycle_duration_sec", (time.time() - getattr(engine, '_lc_cycle_start_time', time.time())) if getattr(engine, '_lc_cycle_start_time', None) else 0)
                     v_ref = result.get("lc_cycle_refused", getattr(engine, '_lc_pending_refused', 0))
                     v_rst = result.get("lc_cycle_resets", getattr(engine, '_lc_pending_resets', 0))
                     

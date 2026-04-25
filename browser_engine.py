@@ -1817,6 +1817,7 @@ class BrowserEngine:
                             self._log_debug("Download failed after image detected. Success NOT counted. Forcing New Chat.")
                             self.automation_status["resets"] += 1
                             self._pending_resets = getattr(self, '_pending_resets', 0) + 1
+                            self.automation_status["pending_resets"] = self._pending_resets
                             self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
                             self._automation_needs_new_chat = True
                             
@@ -1869,6 +1870,7 @@ class BrowserEngine:
                             self.automation_status["cycles"] += 1
                             self.automation_status["resets"] += 1
                             self._pending_resets += 1
+                            self.automation_status["pending_resets"] = self._pending_resets
                             self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
                             self._automation_needs_new_chat = True
                             return {"status": status, "message": resp.get("message", "Unknown issue occurred")}
@@ -1892,6 +1894,7 @@ class BrowserEngine:
                     self.automation_status["cycles"] += 1
                     self.automation_status["resets"] += 1
                     self._pending_resets = getattr(self, '_pending_resets', 0) + 1
+                    self.automation_status["pending_resets"] = self._pending_resets
                     self._lc_pending_resets = getattr(self, '_lc_pending_resets', 0) + 1
                     self._automation_needs_new_chat = True
                     self._log_debug("Recoverable error â€” will retry with New Chat on next round.")
