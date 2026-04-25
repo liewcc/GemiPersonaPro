@@ -516,6 +516,7 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         if is_target and u.get("quota_full"):
             print(f"[ENGINE] Account {u['username']} is now active and usable. Clearing quota_full timestamp and session stats.")
             u["quota_full"] = ""
+            u["last_switched_at"] = ""
             u["session_images"] = "0"
             u["session_refused"] = "0"
             u["session_resets"] = "0"
