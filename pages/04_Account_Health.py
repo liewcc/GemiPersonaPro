@@ -244,7 +244,6 @@ with tab1:
 
         @st.fragment(run_every=5 if auto_refresh else None)
         def _health_fragment():
-            st.markdown("---")
             show_graph = st.session_state.get("show_health_graph", True)
             if is_full:
                 st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing every recorded loading event in chronological order (latest first).</p>", unsafe_allow_html=True)
