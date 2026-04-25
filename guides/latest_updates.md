@@ -19,6 +19,12 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - **Root Cause**: All JSON log entries written by `browser_engine.py` used `automation_status["initial_user"]` as the `account` field. `initial_user` is set once at automation start and never updated, so after any account switch, every subsequent log record was still stamped with the original (first) account name.
 - **Fix**: The `_log_debug` method now resolves the account field with: `current_account_id → initial_user → "unknown"`. `current_account_id` is updated in real-time by `get_account_info()` after each profile switch, ensuring all log entries are correctly attributed to the account that actually produced them. The value is also normalized to lowercase username-only (stripping the `@domain` part) for consistency with the parser.
 
+#### Fix 4: Re-Login No Longer Creates a New Session Color
+- **Root Cause**: After any profile switch (including re-login to the same account), `engine_service.py` logs `"API>> Profile switched to {user}. Restarting loop flow..."`. Because this message contains `"switched to"`, `_log_debug` classifies it as `event_type = "ACCOUNT_SWITCH"`. The parser then unconditionally incremented `session_id` on every `ACCOUNT_SWITCH` event — even when the account didn't actually change.
+- **Fix**: In `health_parser.py`, `prev_account` is now captured before `current_account` is updated. In the `ACCOUNT_SWITCH` branch, a new session is only created when `acct != prev_account` (genuine account change). `BOUNDARY` events (deliberate stop) still always create a new session. Re-login to the same account now keeps the same session color.
+
+
+
 ### Update: 2026-04-25 - Modular Architecture & Log Consistency
 - **Module Decoupling**: Extracted the Account Health Analysis and Automation Cycle Management features from the monolithic System Config page into a dedicated standalone page (`04_account_health.py`). This massive reduction in script complexity eliminates the "Loading Duration" instability and data disappearance bugs during view-mode switches.
 - **Log Parsing Engine**: Migrated the complex `engine.log` parsing algorithms into an independent backend utility (`health_parser.py`) to improve data throughput and isolate logic from UI rendering.

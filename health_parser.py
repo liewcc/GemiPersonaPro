@@ -86,6 +86,7 @@ def parse_account_health(target_account=None, login_data=None):
                 if acct == "system":
                     continue
                 found_accounts_set.add(acct)
+                prev_account = current_account  # Capture before update for re-login detection
                 current_account = acct
                 event = rec.get("event", "").upper()
                 round_id = rec.get("round", 0)
@@ -95,7 +96,11 @@ def parse_account_health(target_account=None, login_data=None):
                 except:
                     ts = "00:00:00"
                 if event in ("BOUNDARY", "ACCOUNT_SWITCH"):
-                    if last_boundary_idx != i - 1:
+                    # BOUNDARY always starts a new session (deliberate stop).
+                    # ACCOUNT_SWITCH only starts a new session if the account actually changed.
+                    # Same account → re-login → keep the same session.
+                    is_real_switch = (event == "BOUNDARY") or (acct != prev_account)
+                    if is_real_switch and last_boundary_idx != i - 1:
                         current_session_id += 1
                     last_boundary_idx = i
                     active_event = None
