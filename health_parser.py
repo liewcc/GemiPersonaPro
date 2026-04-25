@@ -69,6 +69,7 @@ def parse_account_health(target_account=None, login_data=None):
         with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
         current_account = "Unknown"
+        last_stable_account = "Unknown"  # Tracks account established by major events
         current_session_id = 1
         active_event = None
         last_boundary_idx = -1
@@ -88,7 +89,6 @@ def parse_account_health(target_account=None, login_data=None):
                 if acct == "system":
                     continue
                 found_accounts_set.add(acct)
-                prev_account = current_account  # Capture before update for re-login detection
                 current_account = acct
                 event = rec.get("event", "").upper()
                 round_id = rec.get("round", 0)
@@ -101,7 +101,7 @@ def parse_account_health(target_account=None, login_data=None):
                     if event == "ACCOUNT_SWITCH":
                         # Same account → re-login → keep the same session.
                         # Different account → immediate new session.
-                        if acct != prev_account and last_boundary_idx != i - 1:
+                        if acct != last_stable_account and last_boundary_idx != i - 1:
                             current_session_id += 1
                             pending_new_session = False  # Account switch supersedes any pending bump
                             boundary_account = None
@@ -111,6 +111,7 @@ def parse_account_health(target_account=None, login_data=None):
                         pending_new_session = True
                         boundary_account = acct
                     last_boundary_idx = i
+                    last_stable_account = acct
                     active_event = None
                     continue
                 if event == "START":
@@ -121,6 +122,7 @@ def parse_account_health(target_account=None, login_data=None):
                             current_session_id += 1
                         pending_new_session = False
                         boundary_account = None
+                    last_stable_account = acct
                     active_event = {
                         "start_time": ts, "account": acct,
                         "session_index": current_session_id,
