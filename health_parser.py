@@ -72,6 +72,8 @@ def parse_account_health(target_account=None, login_data=None):
         current_session_id = 1
         active_event = None
         last_boundary_idx = -1
+        pending_new_session = False   # True after BOUNDARY, resolved on next START
+        boundary_account = None       # Account that triggered the pending BOUNDARY
         for i, line in enumerate(lines):
             line_raw = line
             line = line.strip()
@@ -96,16 +98,29 @@ def parse_account_health(target_account=None, login_data=None):
                 except:
                     ts = "00:00:00"
                 if event in ("BOUNDARY", "ACCOUNT_SWITCH"):
-                    # BOUNDARY always starts a new session (deliberate stop).
-                    # ACCOUNT_SWITCH only starts a new session if the account actually changed.
-                    # Same account → re-login → keep the same session.
-                    is_real_switch = (event == "BOUNDARY") or (acct != prev_account)
-                    if is_real_switch and last_boundary_idx != i - 1:
-                        current_session_id += 1
+                    if event == "ACCOUNT_SWITCH":
+                        # Same account → re-login → keep the same session.
+                        # Different account → immediate new session.
+                        if acct != prev_account and last_boundary_idx != i - 1:
+                            current_session_id += 1
+                            pending_new_session = False  # Account switch supersedes any pending bump
+                            boundary_account = None
+                    else:  # BOUNDARY (deliberate stop)
+                        # Don't increment yet — defer to next START so that
+                        # "continue session" (round_id > 1) stays in the same session.
+                        pending_new_session = True
+                        boundary_account = acct
                     last_boundary_idx = i
                     active_event = None
                     continue
                 if event == "START":
+                    if pending_new_session:
+                        # Fresh start (round 1) or different account → genuine new session.
+                        # Continue session (round_id > 1, same account) → same session.
+                        if round_id == 1 or acct != boundary_account:
+                            current_session_id += 1
+                        pending_new_session = False
+                        boundary_account = None
                     active_event = {
                         "start_time": ts, "account": acct,
                         "session_index": current_session_id,
@@ -209,14 +224,20 @@ def parse_account_health(target_account=None, login_data=None):
             elif "switched to" in line_lower:
                 try: potential_new_acc = line_raw.split("switched to")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
                 except: pass
-            is_boundary = False
-            if "automation finished" in line_lower:
-                is_boundary = True
-            elif potential_new_acc and potential_new_acc != current_account:
-                is_boundary = True
-            if is_boundary:
+            is_auto_finished = "automation finished" in line_lower
+            is_acc_switch = bool(potential_new_acc and potential_new_acc != current_account)
+            if is_auto_finished:
+                # Defer session bump to next START (same logic as JSON BOUNDARY)
+                pending_new_session = True
+                boundary_account = current_account
+                last_boundary_idx = i
+                active_event = None
+            elif is_acc_switch:
+                # Real account switch → immediate new session
                 if last_boundary_idx != i - 1:
                     current_session_id += 1
+                    pending_new_session = False
+                    boundary_account = None
                 last_boundary_idx = i
                 active_event = None
             if potential_new_acc:

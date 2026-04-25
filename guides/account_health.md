@@ -27,7 +27,7 @@ When viewing detailed histories, toggle **Plot Graph** to access interactive Alt
   - 🟪 **Purple/Blue**: Reject (Safety filter refused the prompt)
   - 🟧 **Orange**: Reset (Page crashed or required a hard refresh)
   - 🟥 **Light Red**: Fail (A success was detected but the file was missing/corrupted)
-- **Session Banding**: The chart uses alternating Base/Light colors for the bars to visually group events by account session. This makes it easy to see exactly where automated account switches occurred.
+- **Session Banding**: The chart uses alternating Base/Light colors for the bars to visually group events by account session. This makes it easy to see exactly where automated account switches occurred. **Continue Session** (Stop → Resume without resetting) preserves the same session color — only a fresh start (Round 1) or a real account switch creates a new color band.
 
 #### Reject Rates (Line Chart)
 - **X-Axis**: Successful image downloads.

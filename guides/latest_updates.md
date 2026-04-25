@@ -6,6 +6,11 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ### Update: 2026-04-25 - Account Health Session & Accuracy Fixes
 
+#### Fix 0: Continue Session Bar Color No Longer Changes After Stop & Resume
+- **Root Cause**: When the user clicked **Stop** and then **Continue Session**, the engine wrote a `BOUNDARY` JSON event followed (a few DEBUG lines later) by a new `START` event with the same round number (> 1). The old parser incremented `current_session_id` immediately upon encountering any `BOUNDARY` event. Since the `START` after a continue carries the same account and a round_id > 1, it received the new `session_index`, causing its bar to render in the alternate color band.
+- **Fix**: Deferred the session_id bump from the `BOUNDARY` event to the next `START` event. At `START` time, the parser inspects `round_id`: if `round_id == 1` (fresh start) or the account changed, it is a genuine new session and the counter increments. If `round_id > 1` with the same account (continue session), the counter is **not** incremented. The same deferred logic is applied to the legacy text-path (`"automation finished"`).
+- **Rule**: `ACCOUNT_SWITCH` with a real account change still bumps immediately. Only `BOUNDARY`-triggered session boundaries are deferred until the next `START` to absorb continues.
+
 #### Fix 1: Continue Session No Longer Creates a False New Session
 - **Root Cause**: The legacy text-path boundary detector in `health_parser.py` matched the string `"automation manager started"` as a session boundary. Since "Continue Session" writes exactly this line, every resume was incorrectly incrementing `session_id`, splitting what should be one continuous session into multiple visual segments in the Loading Duration chart.
 - **Fix**: Removed `"automation manager started"` from the boundary condition. The only remaining text-path boundary trigger is `"automation finished"` (a real, deliberate stop). The JSON-path boundaries (`BOUNDARY` / `ACCOUNT_SWITCH` events) are unaffected and remain the authoritative signals for genuine new sessions.
