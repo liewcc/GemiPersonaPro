@@ -143,7 +143,7 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         st.data_editor(
             pd.DataFrame(data),
             column_config={
-                "round": st.column_config.TextColumn("Round"),
+                "round": st.column_config.NumberColumn("Round", format="%d"),
                 "account": st.column_config.TextColumn("Account"),
                 "time": st.column_config.TextColumn("Time"),
                 "health": st.column_config.TextColumn("Health"),
@@ -265,7 +265,7 @@ with tab1:
                     st.data_editor(
                         pd.DataFrame(_summary_all),
                         column_config={
-                            "round": st.column_config.TextColumn("Round"),
+                            "round": st.column_config.NumberColumn("Round", format="%d"),
                             "account": st.column_config.TextColumn("Account"),
                             "time": st.column_config.TextColumn("Time"),
                             "health": st.column_config.TextColumn("Health"),
