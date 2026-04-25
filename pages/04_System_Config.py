@@ -422,6 +422,13 @@ st.session_state.cfg_watchdog_delay = int(config.get("watchdog_initial_delay", 2
 st.session_state.cfg_quota_cooldown_hrs = int(config.get("quota_cooldown_hours", 24))
 st.session_state.cfg_quota_cooldown_min = config.get("quota_cooldown_minutes", 0)
 
+if st.session_state.get("current_page") != "System_Config":
+    st.session_state.current_page = "System_Config"
+    for k in ["pm_sys_initialized", "pm_df_work_sys", "pm_rerender_idx_sys"]:
+        if k in st.session_state: del st.session_state[k]
+    for k in list(st.session_state.keys()):
+        if k.startswith("pm_editor_sys_"): del st.session_state[k]
+
 if "cfg_system_nav" not in st.session_state:
     st.session_state.cfg_system_nav = config.get("system_navigation", "Engine Settings")
 

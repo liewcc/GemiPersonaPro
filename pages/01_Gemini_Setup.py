@@ -61,6 +61,9 @@ def select_multiple_files():
 st.set_page_config(page_title="GemiPersona | HOME", page_icon="sys_img/logo.png", layout="wide")
 apply_premium_style()
 
+if st.session_state.get("current_page") != "Gemini_Setup":
+    st.session_state.current_page = "Gemini_Setup"
+
 def apply_layout_fix():
     st.markdown("""
         <style>
@@ -762,7 +765,7 @@ def show_prompt_prefix_dialog():
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("Save Setting", icon="💾", use_container_width=True, key="pm_save_setup"):
+        if st.button("Save Setting", icon="💾", width="stretch", key="pm_save_setup"):
             records = edited_pm_df.to_dict("records")
             
             # Find which row is active
@@ -797,7 +800,7 @@ def show_prompt_prefix_dialog():
             asyncio.run(st.session_state.client.request_new_chat())
             
             # Cleanup
-            for k in ["pm_df_work", "pm_editor_setup", "pm_rerender_idx", "pm_dialog_initialized"]:
+            for k in ["pm_df_work", "pm_editor_setup", "pm_rerender_idx", "pm_dialog_initialized", "show_pm_dialog_setup"]:
                 if k in st.session_state: del st.session_state[k]
             # Also clear any keyed editor buffer
             for k in list(st.session_state.keys()):
@@ -806,12 +809,26 @@ def show_prompt_prefix_dialog():
             st.rerun()
             
     with c2:
-        if st.button("Cancel", use_container_width=True):
-            for k in ["pm_df_work", "pm_editor_setup", "pm_rerender_idx", "pm_dialog_initialized"]:
-                if k in st.session_state: del st.session_state[k]
-            for k in list(st.session_state.keys()):
-                if k.startswith("pm_editor_setup_"): del st.session_state[k]
-            st.rerun()
+        if st.button("Reset Counting", icon="🔄", width="stretch"):
+            records = edited_pm_df.to_dict("records")
+            new_items = []
+            for r in records:
+                new_items.append({
+                    "ratio": r.get("ratio") or "None (Master Prompt)",
+                    "target": int(r.get("target") or 1),
+                    "current": 0
+                })
+            
+            cfg = load_config()
+            if "prompt_matrix" not in cfg: cfg["prompt_matrix"] = {}
+            cfg["prompt_matrix"]["items"] = new_items
+            save_config({"prompt_matrix": cfg["prompt_matrix"]})
+            asyncio.run(st.session_state.client.request_new_chat())
+            
+            # Update working state to reflect the reset without closing dialog
+            if "pm_df_work" in st.session_state:
+                st.session_state.pm_df_work["current"] = 0
+            st.session_state.pm_rerender_idx += 1
 
 
 @st.fragment(run_every="5s")
@@ -1114,7 +1131,6 @@ with col1:
 
             with ar_col3:
                 if st.button("Aspect Ratio Looping Table", key="btn_open_prefix_dialog", width="stretch"):
-                    # Force clean start by clearing initialized flags
                     for k in ["pm_dialog_initialized", "pm_df_work", "pm_rerender_idx"]:
                         if k in st.session_state: del st.session_state[k]
                     for k in list(st.session_state.keys()):

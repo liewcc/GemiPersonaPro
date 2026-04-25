@@ -6,6 +6,8 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ### Update: 2026-04-25 - UI Polish & Noise Reduction
 - **Aspect Ratio Dialog**: Removed the redundant `st.success("Setting saved!")` alert that appeared after saving the Aspect Ratio Looping Table. The dialog now closes instantly via `st.rerun()` without displaying an intermediate confirmation banner.
+- **Aspect Ratio Data Sync**: Fixed an issue where the Aspect Ratio Looping Table and System Config aspect ratio settings loaded stale data. The UI now intelligently flushes initialization states during cross-page navigation and dialog invocations to ensure it always reads the latest configuration from disk.
+- **Persistent Dialogs**: Modified the "Reset Counting" button logic in the Aspect Ratio Looping Table to instantly apply the counter reset and visibly update the grid without forcing the dialog to close.
 
 ### Update: 2026-04-24 - Aspect Ratio Stability & Health Parsing Refactor
 - **Engine Sync**: Implemented mandatory disk-sync for the automation engine before each cycle, ensuring UI settings take effect immediately.
