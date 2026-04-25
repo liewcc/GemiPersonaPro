@@ -1,6 +1,6 @@
 # 🛠️ System Configuration Guide
 
-The **System Config** page is the central hub for managing the automation engine, task logic, and performance analysis. The interface is organized into five specialized sections via the **System Navigation** sidebar.
+The **System Config** page is the central hub for managing the automation engine, task logic, and account credentials. The interface is organized into four specialized sections via the **System Navigation** sidebar.
 
 ---
 
@@ -70,8 +70,8 @@ A customizable list of phrases used by the engine to detect when an account has 
 
 ---
 
-## 5. Account Health Analysis
-A powerful diagnostic suite that parses `engine.log` to visualize the performance and "health" of your account rotation. It helps identify problematic accounts that trigger frequent refusals or page resets.
+## 5. Account Health Analysis (Moved to Dedicated Page)
+A powerful diagnostic suite that parses `engine.log` to visualize the performance and "health" of your account rotation. It helps identify problematic accounts that trigger frequent refusals or page resets. **This module has been extracted into its own dedicated page (04_account_health.py) for improved performance and stability.**
 
 ### View Modes
 - **Full Loading History (All Events)**: A chronological audit trail of every loading attempt across all accounts. Best for system-wide stability monitoring.
@@ -103,8 +103,8 @@ The parser now uses a robust state-tracking mechanism:
 
 ---
 
-## 6. Automation Cycle Management
-A utility designed to audit and maintain the `engine.log` file by identifying and managing historical automation sessions.
+## 6. Automation Cycle Management (Moved to Dedicated Page)
+A utility designed to audit and maintain the `engine.log` file by identifying and managing historical automation sessions. **This utility is now located on the dedicated Account Health page.**
 
 ### Cycle Identification
 - **Log Parsing**: Automatically scans the system log to identify unique automation "Cycles" (defined from a fresh start of Round 1 until a stop signal).

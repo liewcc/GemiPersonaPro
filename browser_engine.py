@@ -543,13 +543,6 @@ class BrowserEngine:
         timestamp = datetime.now().strftime("[%H:%M:%S]")
         # Standardize prefix for the UI backend logs
         log_msg = f"{timestamp} API>> {msg}"
-        try:
-            with open(LOG_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{log_msg}\n")
-        except (PermissionError, IOError):
-            # Silently ignore write errors to log file to prevent automation crashes on Windows
-            pass
-        # print(log_msg)  # Silenced: user requested no general printing
         
         # Add to internal queue for API consumption
         if not hasattr(self, '_log_queue'):
@@ -559,12 +552,69 @@ class BrowserEngine:
         if len(self._log_queue) > 500:
              self._log_queue = self._log_queue[-500:]
 
+        import json
+        event_type = "DEBUG"
+        msg_lower = msg.lower()
+        
+        if "--- [auto] running round" in msg_lower:
+            event_type = "START"
+        elif "response successful" in msg_lower or ("saved:" in msg_lower and ".png" in msg_lower):
+            event_type = "SUCCESS"
+        elif "response failed (refused)" in msg_lower:
+            event_type = "REJECT"
+        elif "gemini page was unexpectedly reset" in msg_lower or "automation loop encountered an issue" in msg_lower:
+            event_type = "RESET"
+        elif "automation manager started" in msg_lower or "automation finished" in msg_lower:
+            event_type = "BOUNDARY"
+        elif "switched to" in msg_lower:
+            event_type = "ACCOUNT_SWITCH"
+        
+        entry = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "round": self.automation_status.get("cycles", 0) + 1,
+            "account": self.automation_status.get("initial_user", "unknown"),
+            "event": event_type,
+            "message": msg
+        }
+        
+        if "rejectstat: wrote record for" in msg_lower:
+            entry["event"] = "REJECT_STAT"
+            import re
+            stat_match = re.search(r"dur=([\d.]+)s, ref=(\d+), rst=(\d+)", msg)
+            if stat_match:
+                entry["duration"] = float(stat_match.group(1))
+                entry["reject"] = int(stat_match.group(2))
+                entry["reset"] = int(stat_match.group(3))
+            fname_match = re.search(r"for\s+([^ ]+)\s+\(", msg)
+            if fname_match:
+                entry["filename"] = fname_match.group(1).strip()
+                
+        if "saved: " in msg_lower:
+            try:
+                entry["filename"] = msg.split("Saved: ")[1].strip()
+            except:
+                pass
+                
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except:
+            pass
+
     def clear_physical_logs(self):
         """Truncates the engine.log file."""
         LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "engine.log"))
         try:
+            import json
+            entry = {
+                "ts": datetime.now().isoformat(timespec="seconds"),
+                "round": 0,
+                "account": "system",
+                "event": "LOG_CLEARED",
+                "message": "Engine log cleared by user."
+            }
             with open(LOG_FILE, "w", encoding="utf-8") as f:
-                f.write(f"[{datetime.now().strftime('%H:%M:%S')}] API>> Engine log cleared by user.\n")
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             return True
         except Exception as e:
             print(f"Failed to clear log: {e}")

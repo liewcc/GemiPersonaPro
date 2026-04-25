@@ -4,6 +4,13 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-04-25 - Modular Architecture & Log Consistency
+- **Module Decoupling**: Extracted the Account Health Analysis and Automation Cycle Management features from the monolithic System Config page into a dedicated standalone page (`04_account_health.py`). This massive reduction in script complexity eliminates the "Loading Duration" instability and data disappearance bugs during view-mode switches.
+- **Log Parsing Engine**: Migrated the complex `engine.log` parsing algorithms into an independent backend utility (`health_parser.py`) to improve data throughput and isolate logic from UI rendering.
+- **Chart Optimization**: Refactored Altair visualization code to deduplicate rendering logic via unified helper functions, significantly boosting performance.
+- **Clear Log Consistency**: Fixed a critical bug in the "Clear Engine Log" function from Gemini Setup. The physical log truncation now correctly writes a standardized JSON `LOG_CLEARED` event, preventing the health parser from misinterpreting legacy text markers as active sessions.
+- **Navigation Update**: Renamed the System Configuration module to `05_System_Config.py` to accommodate the new Account Health page sequence in the sidebar.
+
 ### Update: 2026-04-25 - UI Polish & Noise Reduction
 - **Aspect Ratio Dialog**: Removed the redundant `st.success("Setting saved!")` alert that appeared after saving the Aspect Ratio Looping Table. The dialog now closes instantly via `st.rerun()` without displaying an intermediate confirmation banner.
 - **Aspect Ratio Data Sync**: Fixed an issue where the Aspect Ratio Looping Table and System Config aspect ratio settings loaded stale data. The UI now intelligently flushes initialization states during cross-page navigation and dialog invocations to ensure it always reads the latest configuration from disk.
