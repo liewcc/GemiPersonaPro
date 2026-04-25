@@ -101,12 +101,12 @@ def parse_account_health(target_account=None, login_data=None):
                     active_event = None
                     continue
                 if event == "START":
-                    if active_event is None:
-                        active_event = {
-                            "start_time": ts, "account": acct,
-                            "session_index": current_session_id,
-                            "line_idx": i, "closed": False
-                        }
+                    active_event = {
+                        "start_time": ts, "account": acct,
+                        "session_index": current_session_id,
+                        "line_idx": i, "closed": False,
+                        "round": round_id
+                    }
                     continue
                 if event == "REJECT_STAT":
                     fname = rec.get("filename", "")
@@ -156,7 +156,8 @@ def parse_account_health(target_account=None, login_data=None):
                             "account": temp_account, "time": temp_start_time,
                             "health": f"{true_dur}s", "filename": fname,
                             "status": "Success" if fname else "Fail",
-                            "session_index": temp_session_idx
+                            "session_index": temp_session_idx,
+                            "round": active_event.get("round", round_id) if active_event else round_id
                         }
                         detailed_results.append(record)
                         summary_results[record["account"]] = record
@@ -166,6 +167,13 @@ def parse_account_health(target_account=None, login_data=None):
                     temp_start_time = active_event["start_time"] if active_event else ts
                     temp_session_idx = active_event["session_index"] if active_event else current_session_id
                     temp_account = active_event["account"] if active_event else acct
+                    current_round = active_event.get("round", round_id) if active_event else round_id
+                    
+                    if detailed_results:
+                        last_rec = detailed_results[-1]
+                        if last_rec.get("round") == current_round and last_rec.get("status") == event.title():
+                            continue
+
                     try:
                         fmt = '%H:%M:%S'
                         tdelta = datetime.strptime(ts, fmt) - datetime.strptime(temp_start_time, fmt)
@@ -175,7 +183,8 @@ def parse_account_health(target_account=None, login_data=None):
                     record = {
                         "account": temp_account, "time": temp_start_time,
                         "health": f"{fail_dur}s", "filename": "",
-                        "status": event.title(), "session_index": temp_session_idx
+                        "status": event.title(), "session_index": temp_session_idx,
+                        "round": active_event.get("round", round_id) if active_event else round_id
                     }
                     detailed_results.append(record)
                     if record["account"] not in summary_results or summary_results[record["account"]]["status"] != "Success":

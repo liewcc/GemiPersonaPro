@@ -13,7 +13,7 @@ from health_parser import parse_account_health, parse_engine_cycles, LOG_PATH
 from style_utils import apply_premium_style, render_dashboard_header
 
 # --- Page Setup ---
-st.set_page_config(page_title="GemiPersona | ACCOUNT HEALTH", page_icon="sys_img/logo.png", layout="wide")
+st.set_page_config(page_title="GemiPersona | Account Health", page_icon="sys_img/logo.png", layout="wide")
 apply_premium_style()
 
 config = load_config()
@@ -31,6 +31,7 @@ def _build_duration_chart(detailed_data, y_scale_type):
     """Build a bar chart of loading durations per event."""
     df = pd.DataFrame(detailed_data[::-1])
     df["Event"] = range(1, len(df) + 1)
+
     df["Minutes"] = df["health"].str.replace("s", "").astype(float) / 60.0
     df["cycle"] = df.groupby("account")["session_index"].rank(method="dense").astype(int)
     df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
@@ -39,12 +40,13 @@ def _build_duration_chart(detailed_data, y_scale_type):
     lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
     df['legend'] = df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
     df["Duration"] = df["health"].str.replace("s", "").astype(float).apply(_fmt_dur)
+    
     chart = alt.Chart(df).mark_bar().encode(
-        x=alt.X('Event:Q', title=None, scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
+        x=alt.X('Event:Q', title="Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
         y=alt.Y('Minutes:Q', title="Duration (minite)", scale=alt.Scale(type=y_scale_type)),
         color=alt.Color('legend:N', scale=alt.Scale(domain=ll, range=lr),
                         legend=alt.Legend(title=None, orient='bottom', columns=4)),
-        tooltip=['time', 'account', 'Duration', 'filename', 'status']
+        tooltip=['round', 'time', 'account', 'Duration', 'filename', 'status']
     ).properties(height=400).interactive(bind_y=False)
     return chart
 
@@ -73,6 +75,7 @@ def _build_reject_chart(detailed_data, y_scale_type):
             d["seg_id"] = seg_id; d["bg"] = 'A' if seg_id % 2 == 0 else 'B'
             d["Event"] = len(agg_data) + 1
             d["Display"] = f"{d['Image']} (#{d['Event']})"
+            d["round"] = row.get("round", "N/A")
             agg_data.append(d)
             curr_rej = 0; curr_res = 0; curr_dur = 0.0
         prev_si = si
@@ -93,7 +96,7 @@ def _build_reject_chart(detailed_data, y_scale_type):
     agg_df["t_rej"] = agg_df["Rejects"]
     agg_df["t_res"] = agg_df["Resets"]
     agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-    melt_ids = ['Event', 'Display', 'Image', 'account', 'time', 'session_index', 't_dur_fmt', 't_rej', 't_res', 'status']
+    melt_ids = ['Event', 'Display', 'Image', 'round', 'account', 'time', 'session_index', 't_dur_fmt', 't_rej', 't_res', 'status']
     plot_df = agg_df.melt(id_vars=melt_ids, value_vars=['t_dur', 'Rejects', 'Resets'], var_name='Metric', value_name='Value')
     plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minite)'})
 
@@ -107,10 +110,10 @@ def _build_reject_chart(detailed_data, y_scale_type):
     points = base.mark_point(opacity=0.9, size=50, filled=True).encode(
         color=alt.condition("datum.status == 'Fail'", alt.value("#ff3333"), alt.Color('Metric:N', scale=cs, legend=None)),
         tooltip=[
-            alt.Tooltip('Image:N', title='Filename'), alt.Tooltip('account:N', title='Account'),
-            alt.Tooltip('time:N', title='Time'), alt.Tooltip('t_dur_fmt:N', title='Duration'),
-            alt.Tooltip('t_rej:Q', title='Reject Count'), alt.Tooltip('t_res:Q', title='Reset Count'),
-            alt.Tooltip('status:N', title='Status')
+            alt.Tooltip('Image:N', title='Filename'), alt.Tooltip('round:N', title='Round'),
+            alt.Tooltip('account:N', title='Account'), alt.Tooltip('time:N', title='Time'),
+            alt.Tooltip('t_dur_fmt:N', title='Duration'), alt.Tooltip('t_rej:Q', title='Reject Count'),
+            alt.Tooltip('t_res:Q', title='Reset Count'), alt.Tooltip('status:N', title='Status')
         ]
     )
     return alt.layer(bg_bands, lines, points).resolve_scale(color='independent').properties(height=400).interactive()
@@ -137,6 +140,7 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         st.data_editor(
             pd.DataFrame(data),
             column_config={
+                "round": st.column_config.TextColumn("Round"),
                 "account": st.column_config.TextColumn("Account"),
                 "time": st.column_config.TextColumn("Time"),
                 "health": st.column_config.TextColumn("Health"),
@@ -259,6 +263,7 @@ with tab1:
                     st.data_editor(
                         pd.DataFrame(_summary_all),
                         column_config={
+                            "round": st.column_config.TextColumn("Round"),
                             "account": st.column_config.TextColumn("Account"),
                             "time": st.column_config.TextColumn("Time"),
                             "health": st.column_config.TextColumn("Health"),
