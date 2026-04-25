@@ -83,7 +83,8 @@ Toggle **Plot Performance Graph** to access interactive Altair charts:
 - **Loading Duration (Bar Chart)**:
     - **Y-Axis**: Duration in **minutes (minite)**.
     - **Colors**: **Green** (Success), **Purple/Blue** (Reject), **Orange** (Reset), **Light Red** (Fail).
-    - **Session Banding**: The chart uses alternating Base/Light colors for the background/bars to visually group events by account session, making it easy to see where account switches occurred.
+    - **Session Banding**: The chart uses alternating Base/Light colors to visually group events by session. Color ranks are computed **per-account** (independently for each account), so each account's sessions correctly alternate Base → Light → Base regardless of global session numbering.
+    - **Session Boundary Rules**: A new session (color change) is only triggered by two events: (1) a manual account switch followed by Continue Session, or (2) a quota full event. Interruptions such as crashes, re-logins, or Continue Session without an account change are all grouped into the same session color.
 - **Reject Rates (Line Chart)**:
     - **X-Axis**: Successful image downloads.
     - **Y-Axis**: Cumulative count of Refusals or Resets encountered *before* that success.

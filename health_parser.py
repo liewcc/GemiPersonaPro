@@ -205,7 +205,7 @@ def parse_account_health(target_account=None, login_data=None):
                 try: potential_new_acc = line_raw.split("switched to")[1].split()[0].strip().rstrip('.:').split('@')[0].lower()
                 except: pass
             is_boundary = False
-            if "automation finished" in line_lower or "automation manager started" in line_lower:
+            if "automation finished" in line_lower:
                 is_boundary = True
             elif potential_new_acc and potential_new_acc != current_account:
                 is_boundary = True

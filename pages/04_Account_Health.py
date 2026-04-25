@@ -33,7 +33,10 @@ def _build_duration_chart(detailed_data, y_scale_type):
     df["Event"] = range(1, len(df) + 1)
 
     df["Minutes"] = df["health"].str.replace("s", "").astype(float) / 60.0
-    df["cycle"] = df.groupby("account")["session_index"].rank(method="dense").astype(int)
+    # Rank session_index per-account so each account's sessions independently start at 1
+    df["cycle"] = df.groupby("account")["session_index"].transform(
+        lambda s: s.rank(method="dense").astype(int)
+    )
     df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
     ll = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail',
           'Success (Light)', 'Reject (Light)', 'Reset (Light)']

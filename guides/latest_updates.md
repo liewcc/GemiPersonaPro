@@ -4,6 +4,21 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-04-25 - Account Health Session & Accuracy Fixes
+
+#### Fix 1: Continue Session No Longer Creates a False New Session
+- **Root Cause**: The legacy text-path boundary detector in `health_parser.py` matched the string `"automation manager started"` as a session boundary. Since "Continue Session" writes exactly this line, every resume was incorrectly incrementing `session_id`, splitting what should be one continuous session into multiple visual segments in the Loading Duration chart.
+- **Fix**: Removed `"automation manager started"` from the boundary condition. The only remaining text-path boundary trigger is `"automation finished"` (a real, deliberate stop). The JSON-path boundaries (`BOUNDARY` / `ACCOUNT_SWITCH` events) are unaffected and remain the authoritative signals for genuine new sessions.
+- **Rule**: A new session is only created by two conditions: (1) manual account switch → continue, or (2) quota full. Any other interruption that resumes is the same session.
+
+#### Fix 2: Loading Duration Chart Session Colors Now Per-Account
+- **Root Cause**: The Base/Light alternating bar color was computed using a global `rank()` of `session_index` across all accounts. Since `session_index` is a globally incrementing integer, a single account's sessions could all share odd ranks (e.g., 1, 3, 5) and thus always render as "Base" color, never alternating.
+- **Fix**: Changed to `.transform(lambda s: s.rank(method="dense"))` grouped by `account`, so each account's sessions independently restart at rank 1 and correctly alternate Base → Light → Base.
+
+#### Fix 3: Wrong Account Name Shown on Chart Bars
+- **Root Cause**: All JSON log entries written by `browser_engine.py` used `automation_status["initial_user"]` as the `account` field. `initial_user` is set once at automation start and never updated, so after any account switch, every subsequent log record was still stamped with the original (first) account name.
+- **Fix**: The `_log_debug` method now resolves the account field with: `current_account_id → initial_user → "unknown"`. `current_account_id` is updated in real-time by `get_account_info()` after each profile switch, ensuring all log entries are correctly attributed to the account that actually produced them. The value is also normalized to lowercase username-only (stripping the `@domain` part) for consistency with the parser.
+
 ### Update: 2026-04-25 - Modular Architecture & Log Consistency
 - **Module Decoupling**: Extracted the Account Health Analysis and Automation Cycle Management features from the monolithic System Config page into a dedicated standalone page (`04_account_health.py`). This massive reduction in script complexity eliminates the "Loading Duration" instability and data disappearance bugs during view-mode switches.
 - **Log Parsing Engine**: Migrated the complex `engine.log` parsing algorithms into an independent backend utility (`health_parser.py`) to improve data throughput and isolate logic from UI rendering.

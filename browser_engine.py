@@ -572,7 +572,7 @@ class BrowserEngine:
         entry = {
             "ts": datetime.now().isoformat(timespec="seconds"),
             "round": self.automation_status.get("cycles", 0) + 1,
-            "account": self.automation_status.get("initial_user", "unknown"),
+            "account": (self.automation_status.get("current_account_id") or self.automation_status.get("initial_user") or "unknown").split('@')[0].lower(),
             "event": event_type,
             "message": msg
         }
