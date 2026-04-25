@@ -401,11 +401,7 @@ elif menu_selection == "Automation Settings":
                         target = int(r.get("target") or 1)
                         current = int(r.get("current") or 0)
                         
-                        if i < new_active_idx:
-                            current = target
-                        elif i == new_active_idx:
-                            if current >= target: current = 0
-                        else:
+                        if i == new_active_idx:
                             current = 0
                                 
                         new_items.append({

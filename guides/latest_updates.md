@@ -23,6 +23,10 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - **Root Cause**: After any profile switch (including re-login to the same account), `engine_service.py` logs `"API>> Profile switched to {user}. Restarting loop flow..."`. Because this message contains `"switched to"`, `_log_debug` classifies it as `event_type = "ACCOUNT_SWITCH"`. The parser then unconditionally incremented `session_id` on every `ACCOUNT_SWITCH` event — even when the account didn't actually change.
 - **Fix**: In `health_parser.py`, `prev_account` is now captured before `current_account` is updated. In the `ACCOUNT_SWITCH` branch, a new session is only created when `acct != prev_account` (genuine account change). `BOUNDARY` events (deliberate stop) still always create a new session. Re-login to the same account now keeps the same session color.
 
+#### Fix 5: Aspect Ratio Looping Table Save Logic
+- **Issue**: Previously, manually selecting a row as "Active" and clicking "Save Setting" would automatically mark all preceding rows as completed (max count) and zero out all subsequent rows, losing progress.
+- **Fix**: The saving logic in `01_Gemini_Setup.py` and `05_System_Config.py` has been updated. Now, when saving the table, **only the row explicitly marked as Active** has its count reset to 0. All other rows preserve their existing counts.
+
 
 
 ### Update: 2026-04-25 - Modular Architecture & Log Consistency
