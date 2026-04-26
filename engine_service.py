@@ -616,10 +616,11 @@ def _check_loop_control_thresholds(loop_ctrl: dict, result: dict):
     if not loop_ctrl:
         return False, "next_profile"
 
+    # Compute thresholds based on result dict
     dur_min = result.get("cycle_duration_sec", 0) / 60.0
     time_dur_min = result.get("time_threshold_duration_sec", 0) / 60.0
-    refused   = result.get("cycle_refused", 0)
-    resets    = result.get("cycle_resets",  0)
+    refused = result.get("cycle_refused", 0)
+    resets = result.get("cycle_resets", 0)
 
     # Time threshold
     if loop_ctrl.get("time_enabled") and time_dur_min >= loop_ctrl.get("time_minutes", 999):
@@ -632,8 +633,6 @@ def _check_loop_control_thresholds(loop_ctrl: dict, result: dict):
         return True, loop_ctrl.get("reset_action", "next_profile")
 
     return False, "next_profile"
-
-
 async def automation_manager(req: AutomationRequest):
     """Background task to manage loops and quota-restarts."""
     engine._log_debug(f"[AUTO] Manager started with mode={req.mode}, goal={req.goal}, clear_pending={req.clear_pending}")
