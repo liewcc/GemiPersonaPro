@@ -316,7 +316,7 @@ def render_stats_body_fragment():
 </div>
 """, unsafe_allow_html=True)
             with c2:
-                if st.button("🔄", help="Reset Time Threshold Timer", use_container_width=True, key="btn_reset_tt"):
+                if st.button("🔄", help="Reset Time Threshold Timer", width="stretch", key="btn_reset_tt"):
                     try:
                         import requests
                         base_url = getattr(st.session_state.client, "base_url", "http://127.0.0.1:8000")
