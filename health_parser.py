@@ -58,7 +58,10 @@ def parse_engine_cycles():
                         current_cycle = {
                             'start_idx': i, 'start_time_str': ts,
                             'end_idx': None, 'lines_count': 0,
-                            'stop_time_str': ts, 'success_count': 0
+                            'stop_time_str': ts, 'success_count': 0,
+                            'reject_count': 0, 'reset_count': 0,
+                            'reject_duration': 0, 'reset_duration': 0,
+                            'last_ts': ts
                         }
                 if current_cycle is not None:
                     current_cycle['lines_count'] += 1
@@ -67,7 +70,25 @@ def parse_engine_cycles():
                     if "ts" in rec:
                         try:
                             dt = datetime.fromisoformat(rec.get("ts", ""))
-                            current_cycle['stop_time_str'] = dt.strftime("%H:%M:%S")
+                            current_ts = dt.strftime("%H:%M:%S")
+                            current_cycle['stop_time_str'] = current_ts
+                            
+                            if current_cycle.get('last_ts'):
+                                fmt = '%H:%M:%S'
+                                start_dt = datetime.strptime(current_cycle['last_ts'], fmt)
+                                stop_dt = datetime.strptime(current_ts, fmt)
+                                t_delta = int((stop_dt - start_dt).total_seconds())
+                                if t_delta < 0: t_delta += 86400
+                                
+                                if event == "REJECT":
+                                    current_cycle['reject_count'] += 1
+                                    current_cycle['reject_duration'] += t_delta
+                                elif event == "RESET":
+                                    current_cycle['reset_count'] += 1
+                                    current_cycle['reset_duration'] += t_delta
+                                    
+                            if event in ("SUCCESS", "REJECT", "RESET", "START", "BOUNDARY", "ACCOUNT_SWITCH"):
+                                current_cycle['last_ts'] = current_ts
                         except:
                             pass
                 continue
@@ -82,7 +103,10 @@ def parse_engine_cycles():
                 current_cycle = {
                     'start_idx': i, 'start_time_str': ts,
                     'end_idx': None, 'lines_count': 0,
-                    'stop_time_str': ts, 'success_count': 0
+                    'stop_time_str': ts, 'success_count': 0,
+                    'reject_count': 0, 'reset_count': 0,
+                    'reject_duration': 0, 'reset_duration': 0,
+                    'last_ts': ts
                 }
             if current_cycle is not None:
                 current_cycle['lines_count'] += 1
@@ -92,13 +116,41 @@ def parse_engine_cycles():
                 
                 ts_match = re.search(r"\[(\d{2}:\d{2}:\d{2})\]", line)
                 if ts_match:
-                    current_cycle['stop_time_str'] = ts_match.group(1)
+                    current_ts = ts_match.group(1)
+                    current_cycle['stop_time_str'] = current_ts
+                    
+                    if current_cycle.get('last_ts'):
+                        try:
+                            fmt = '%H:%M:%S'
+                            start_dt = datetime.strptime(current_cycle['last_ts'], fmt)
+                            stop_dt = datetime.strptime(current_ts, fmt)
+                            t_delta = int((stop_dt - start_dt).total_seconds())
+                            if t_delta < 0: t_delta += 86400
+                            
+                            if "response failed (refused)" in line.lower():
+                                current_cycle['reject_count'] += 1
+                                current_cycle['reject_duration'] += t_delta
+                                current_cycle['last_ts'] = current_ts
+                            elif "unexpectedly reset" in line.lower() or "encountered an issue" in line.lower():
+                                current_cycle['reset_count'] += 1
+                                current_cycle['reset_duration'] += t_delta
+                                current_cycle['last_ts'] = current_ts
+                            elif "saved: " in line.lower() and ".png" in line.lower():
+                                current_cycle['last_ts'] = current_ts
+                            elif "--- [auto] running round" in line.lower() or "正在加载" in line.lower():
+                                current_cycle['last_ts'] = current_ts
+                        except:
+                            pass
                 
                 if "Final Stats:" in line and "'start_time': '" in line:
                     match = re.search(r"'start_time': '([^']+)'", line)
                     if match:
                         current_cycle['full_start_time'] = match.group(1)
     
+    if current_cycle is not None:
+        current_cycle['is_running'] = True
+        cycles.append(current_cycle)
+        
     return cycles
 
 

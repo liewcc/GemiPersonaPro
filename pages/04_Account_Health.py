@@ -6,6 +6,7 @@ import json
 import re
 import pandas as pd
 import altair as alt
+from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config_utils import load_config, save_config, load_login_lookup
@@ -24,7 +25,7 @@ login_data = load_login_lookup()
 
 def _fmt_dur(x):
     h = int(x // 3600); m = int((x % 3600) // 60); s = int(x % 60)
-    return f"{h}:{m:02d}:{s:02d}" if h > 0 else (f"{m}:{s:02d}" if m > 0 else f"{s}s")
+    return f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else (f"{m:02d}:{s:02d}" if m > 0 else f"{s:02d}s")
 
 
 def _build_duration_chart(detailed_data, y_scale_type):
@@ -309,10 +310,46 @@ with tab2:
         cycle_data = []
         for idx, c in enumerate(cycles):
             display_time = c.get('full_start_time', c['start_time_str'])
+            
+            avg_time_str = "N/A"
+            success_count = c.get('success_count', 0)
+            if success_count > 0:
+                try:
+                    start_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
+                    stop_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
+                    total_seconds = int((stop_dt - start_dt).total_seconds())
+                    if total_seconds < 0:
+                        total_seconds += 86400
+                    avg_seconds = total_seconds / success_count
+                    avg_time_str = _fmt_dur(avg_seconds)
+                except:
+                    pass
+            
+            reject_count = c.get('reject_count', 0)
+            avg_reject_str = "N/A"
+            if reject_count > 0:
+                avg_reject = c.get('reject_duration', 0) / reject_count
+                avg_reject_str = _fmt_dur(avg_reject)
+
+            reset_count = c.get('reset_count', 0)
+            avg_reset_str = "N/A"
+            if reset_count > 0:
+                avg_reset = c.get('reset_duration', 0) / reset_count
+                avg_reset_str = _fmt_dur(avg_reset)
+
+            is_running = c.get('is_running', False)
+            cycle_id_val = "Running" if is_running else idx + 1
+            stop_time_val = "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown')
+
             cycle_data.append({
-                "Select": False, "Cycle ID": idx + 1, "Start Time": display_time,
-                "Stop Time": c.get('stop_time_str', 'Unknown'),
-                "Success Count": c.get('success_count', 0),
+                "Select": False, "Cycle ID": cycle_id_val, "Start Time": display_time,
+                "Stop Time": stop_time_val,
+                "Images": success_count,
+                "Avg Time/Img": avg_time_str,
+                "Refused": reject_count,
+                "Avg Time/Refused": avg_reject_str,
+                "Reset": reset_count,
+                "Avg Time/Reset": avg_reset_str,
                 "Log Lines": c['lines_count'], "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
             })
 
@@ -322,17 +359,29 @@ with tab2:
             column_config={
                 "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
                 "Stop Time": st.column_config.TextColumn("Stop Time"),
-                "Success Count": st.column_config.NumberColumn("Successful Downloads", format="%d"),
+                "Images": st.column_config.NumberColumn("Images", format="%d"),
+                "Avg Time/Img": st.column_config.TextColumn("Avg Time/Img"),
+                "Refused": st.column_config.NumberColumn("Refused", format="%d"),
+                "Avg Time/Refused": st.column_config.TextColumn("Avg Time/Refused"),
+                "Reset": st.column_config.NumberColumn("Reset", format="%d"),
+                "Avg Time/Reset": st.column_config.TextColumn("Avg Time/Reset"),
                 "_start_idx": None, "_end_idx": None
             },
-            disabled=["Cycle ID", "Start Time", "Stop Time", "Success Count", "Log Lines"], hide_index=True,
+            disabled=["Cycle ID", "Start Time", "Stop Time", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines"], 
+            hide_index=True,
+            width=950
         )
 
         selected_rows = edited_df[edited_df["Select"] == True]
-        if not selected_rows.empty:
-            st.warning(f"You have selected {len(selected_rows)} cycle(s) to delete. This action will permanently remove their associated logs from `engine.log`.")
+        valid_rows = selected_rows[selected_rows["Cycle ID"].astype(str) != "Running"]
+        
+        if not selected_rows.empty and selected_rows.shape[0] > valid_rows.shape[0]:
+            st.info("The currently running cycle cannot be deleted. Any selection on it will be ignored.")
+            
+        if not valid_rows.empty:
+            st.warning(f"You have selected {len(valid_rows)} cycle(s) to delete. This action will permanently remove their associated logs from `engine.log`.")
             if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
-                cycles_to_delete = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in selected_rows.iterrows()]
+                cycles_to_delete = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
                 with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
                     lines = f.readlines()
                 to_keep = []
