@@ -369,7 +369,7 @@ def show_reject_rate_stats():
 def confirm_stop_automation_dash(location):
     st.write("Are you sure you want to stop the looping process?")
     col_y, col_n = st.columns(2)
-    if col_y.button("Yes, Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
+    if col_y.button("Stop", type="primary", width="stretch", key=f"dash_yes_stop_{location}"):
         async def do_stop_auto():
             add_log("Stopping Automation Loop...")
             resp = await st.session_state.client.stop_automation()
