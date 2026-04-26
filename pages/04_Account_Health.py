@@ -311,6 +311,8 @@ with tab2:
             display_time = c.get('full_start_time', c['start_time_str'])
             cycle_data.append({
                 "Select": False, "Cycle ID": idx + 1, "Start Time": display_time,
+                "Stop Time": c.get('stop_time_str', 'Unknown'),
+                "Success Count": c.get('success_count', 0),
                 "Log Lines": c['lines_count'], "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
             })
 
@@ -319,9 +321,11 @@ with tab2:
             df,
             column_config={
                 "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
+                "Stop Time": st.column_config.TextColumn("Stop Time"),
+                "Success Count": st.column_config.NumberColumn("Successful Downloads", format="%d"),
                 "_start_idx": None, "_end_idx": None
             },
-            disabled=["Cycle ID", "Start Time", "Log Lines"], hide_index=True,
+            disabled=["Cycle ID", "Start Time", "Stop Time", "Success Count", "Log Lines"], hide_index=True,
         )
 
         selected_rows = edited_df[edited_df["Select"] == True]

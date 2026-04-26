@@ -50,7 +50,7 @@ Over time, your `engine.log` file can become cluttered with test runs, failed se
 - **Continue Session Grouping**: The system is smart enough to group "Continue Session" triggers within their original parent cycle, preventing fragmented entries in the table.
 
 ### Log Maintenance & Decluttering
-- **Data Selection**: Provides an interactive table listing every identified cycle, showing its Start Time, Cycle ID, and the total number of log lines it occupies.
+- **Data Selection**: Provides an interactive table listing every identified cycle, showing its **Start Time**, **Stop Time**, **Cycle ID**, **Successful Downloads**, and the total number of log lines it occupies.
 - **Selective Deletion**: 
   1. Check the boxes under the **Select for Deletion** column for any historical cycles you wish to remove.
   2. Click **🗑️ Delete Selected Cycles**.

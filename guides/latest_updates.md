@@ -4,6 +4,19 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-04-26 - UI Consolidation & Enhanced Cycle Analytics
+
+#### 1. Unified Utilities Dashboard
+- **Page Merge**: Successfully combined the `Asset Sanitizer` and `Gems Bookmark` tools into a single, unified `Utilities` page (`02_Utilities.py`). This reduces sidebar clutter and centralizes post-generation asset management and character consistency workflows.
+- **Horizontal Navigation**: Implemented a sleek horizontal tab layout (`st.tabs`) at the top of the main panel, allowing users to seamlessly switch between the Image Sanitizer and Bookmark Manager without losing their current state or context.
+- **Shared Architecture**: Retained the powerful sidebar controls (Path Selection, Auto-Clean toggle) for the Sanitizer, while dynamically adapting the layout to keep the Gems Bookmark interface clean and full-width when active.
+
+#### 2. Enhanced Automation Cycle Insights
+- **Precision Tracking**: Upgraded the `health_parser.py` backend to extract high-precision stopping timestamps (`stop_time_str`) and calculate the exact number of successful image downloads (`success_count`) per automation cycle.
+- **Rich Data Display**: The **Automation Cycle Management** table in the Account Health page now features two new dedicated columns: `Stop Time` (positioned immediately after Start Time) and `Successful Downloads`. 
+- **Analytical Value**: These additions allow users to instantly gauge the duration and productivity of historical automation sessions before deciding whether to prune them from the engine logs.
+- **Legacy Compatibility**: The new parser logic is fully backwards-compatible, intelligently extracting success counts from both the modern JSON event streams and legacy text-based logs (`[HH:MM:SS]` timestamps and "Saved:" markers).
+
 ### Update: 2026-04-25 - Account Health Session & Accuracy Fixes
 
 #### Fix 0: Continue Session Bar Color No Longer Changes After Stop & Resume

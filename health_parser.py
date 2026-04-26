@@ -57,10 +57,19 @@ def parse_engine_cycles():
                             ts = "Unknown"
                         current_cycle = {
                             'start_idx': i, 'start_time_str': ts,
-                            'end_idx': None, 'lines_count': 0
+                            'end_idx': None, 'lines_count': 0,
+                            'stop_time_str': ts, 'success_count': 0
                         }
                 if current_cycle is not None:
                     current_cycle['lines_count'] += 1
+                    if event == "SUCCESS" and rec.get("filename"):
+                        current_cycle['success_count'] += 1
+                    if "ts" in rec:
+                        try:
+                            dt = datetime.fromisoformat(rec.get("ts", ""))
+                            current_cycle['stop_time_str'] = dt.strftime("%H:%M:%S")
+                        except:
+                            pass
                 continue
                 
             # --- TEXT PARSING (Legacy) ---
@@ -72,10 +81,19 @@ def parse_engine_cycles():
                 ts = match.group(1) if match else "Unknown"
                 current_cycle = {
                     'start_idx': i, 'start_time_str': ts,
-                    'end_idx': None, 'lines_count': 0
+                    'end_idx': None, 'lines_count': 0,
+                    'stop_time_str': ts, 'success_count': 0
                 }
             if current_cycle is not None:
                 current_cycle['lines_count'] += 1
+                
+                if "saved: " in line.lower() and ".png" in line.lower():
+                    current_cycle['success_count'] += 1
+                
+                ts_match = re.search(r"\[(\d{2}:\d{2}:\d{2})\]", line)
+                if ts_match:
+                    current_cycle['stop_time_str'] = ts_match.group(1)
+                
                 if "Final Stats:" in line and "'start_time': '" in line:
                     match = re.search(r"'start_time': '([^']+)'", line)
                     if match:
