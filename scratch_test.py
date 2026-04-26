@@ -1,1 +1,0 @@
-import sys; sys.path.insert(0, '.'); from config_utils import load_config; cfg = load_config(); print('automation block:', cfg.get('automation')); print('remove_watermark:', cfg.get('automation', {}).get('remove_watermark'))  
