@@ -49,8 +49,14 @@ def _sidebar_fragment_content():
             display_str = acc
             if is_quota_full:
                 display_str = f"<span style='color: #ff6666;'>{acc} (Quota Full)</span>"
-                
+            
             if is_active:
+                # Use blue for active account to make it stand out
+                blue_name = f"<span style='color: #4b9cff;'>{acc}</span>"
+                if is_quota_full:
+                    display_str = f"{blue_name} <span style='color: #ff6666;'>(Quota Full)</span>"
+                else:
+                    display_str = blue_name
                 acc_list_md.append(f"- **{display_str}** *(Active)*")
             else:
                 acc_list_md.append(f"- {display_str}")
