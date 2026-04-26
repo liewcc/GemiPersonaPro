@@ -617,11 +617,12 @@ def _check_loop_control_thresholds(loop_ctrl: dict, result: dict):
         return False, "next_profile"
 
     dur_min = result.get("cycle_duration_sec", 0) / 60.0
+    time_dur_min = result.get("time_threshold_duration_sec", 0) / 60.0
     refused   = result.get("cycle_refused", 0)
     resets    = result.get("cycle_resets",  0)
 
     # Time threshold
-    if loop_ctrl.get("time_enabled") and dur_min >= loop_ctrl.get("time_minutes", 999):
+    if loop_ctrl.get("time_enabled") and time_dur_min >= loop_ctrl.get("time_minutes", 999):
         return True, loop_ctrl.get("time_action", "next_profile")
     # Refused threshold
     if loop_ctrl.get("refused_enabled") and refused >= loop_ctrl.get("refused_threshold", 999):
@@ -636,6 +637,13 @@ def _check_loop_control_thresholds(loop_ctrl: dict, result: dict):
 async def automation_manager(req: AutomationRequest):
     """Background task to manage loops and quota-restarts."""
     engine._log_debug(f"[AUTO] Manager started with mode={req.mode}, goal={req.goal}, clear_pending={req.clear_pending}")
+    
+    # Initialize independent time threshold timer if not already running
+    if engine._lc_time_threshold_start_time is None or req.clear_pending:
+        engine._lc_time_threshold_start_time = time.time()
+        
+    _prev_time_enabled = req.config.get("automation", {}).get("loop_control", {}).get("time_enabled", False)
+        
     try:
         while True:
             # Modified Check: If stop signal is set, ONLY break if it's NOT a session loss.
@@ -646,6 +654,12 @@ async def automation_manager(req: AutomationRequest):
                 
             # 1. Reload Config from Disk (Ensures profile switches/URL changes are picked up)
             req.config.update(load_config())
+            
+            _curr_time_enabled = req.config.get("automation", {}).get("loop_control", {}).get("time_enabled", False)
+            if _curr_time_enabled and not _prev_time_enabled:
+                engine._lc_time_threshold_start_time = time.time()
+                engine._log_debug("API>> Time threshold enabled by user. Resetting internal timer.")
+            _prev_time_enabled = _curr_time_enabled
 
             # 1b. Check Goal Satisfaction
             status = engine.automation_status
@@ -750,14 +764,19 @@ async def automation_manager(req: AutomationRequest):
                         p_dir = os.path.join(cfg.get("save_dir"), "processed")
                         os.makedirs(p_dir, exist_ok=True)
                         
-                        engine._log_debug(f"[AUTO] Refining {len(paths)} new images...")
-                        await asyncio.sleep(0)  # Yield event loop so dashboard reads inter_cycle_since before blocking
-                        for p in paths:
-                            if os.path.exists(p):
-                                with Image.open(p) as img:
-                                    final_img = processor.hybrid_process(img)
-                                    p_path = os.path.join(p_dir, os.path.basename(p))
+                        def _process_image(p_in, p_dir_out, processor_obj):
+                            import os
+                            from PIL import Image
+                            from processing_utils import save_with_metadata
+                            if os.path.exists(p_in):
+                                with Image.open(p_in) as img:
+                                    final_img = processor_obj.hybrid_process(img)
+                                    p_path = os.path.join(p_dir_out, os.path.basename(p_in))
                                     save_with_metadata(final_img, img, p_path)
+
+                        engine._log_debug(f"[AUTO] Refining {len(paths)} new images (async thread)...")
+                        for p in paths:
+                            await asyncio.to_thread(_process_image, p, p_dir, processor)
                         engine._log_debug("[AUTO] Refinement complete.")
                     except Exception as p_err:
                         import traceback
@@ -789,15 +808,28 @@ async def automation_manager(req: AutomationRequest):
                 loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
                 lc_trigger, lc_action = False, "next_profile"
                 
-                if loop_ctrl and result.get("status") != "success":
+                if loop_ctrl:
                     v_dur = result.get("lc_cycle_duration_sec", (time.time() - getattr(engine, '_lc_cycle_start_time', time.time())) if getattr(engine, '_lc_cycle_start_time', None) else 0)
                     v_ref = result.get("lc_cycle_refused", getattr(engine, '_lc_pending_refused', 0))
                     v_rst = result.get("lc_cycle_resets", getattr(engine, '_lc_pending_resets', 0))
                     
+                    # Capture time threshold duration BEFORE any potential reset
+                    current_tt_dur = time.time() - getattr(engine, '_lc_time_threshold_start_time', time.time())
+                    
                     lc_trigger, lc_action = _check_loop_control_thresholds(
                         loop_ctrl,
-                        {"cycle_duration_sec": v_dur, "cycle_refused": v_ref, "cycle_resets": v_rst}
+                        {
+                            "cycle_duration_sec": v_dur, 
+                            "time_threshold_duration_sec": current_tt_dur,
+                            "cycle_refused": v_ref, 
+                            "cycle_resets": v_rst
+                        }
                     )
+                
+                # 4.6 Reset Time Threshold on Success (if no switch was triggered)
+                if not lc_trigger and result.get("status") == "success" and len(result.get("saved_paths", [])) > 0:
+                    engine._lc_time_threshold_start_time = time.time()
+                    engine._log_debug("API>> Image successfully downloaded. Resetting Time Threshold timer.")
 
                 if lc_trigger:
                     engine._log_debug(f"API>> Loop Control triggered (action={lc_action}). Attempting switch...")
@@ -823,6 +855,14 @@ async def automation_manager(req: AutomationRequest):
                         engine._lc_pending_refused = 0
                         engine._lc_pending_resets  = 0
                         engine._lc_cycle_start_time = time.time()
+
+                        # Check if this switch was specifically triggered by TIME
+                        # We use a simple heuristic: if dur_min (from the check above) was the trigger
+                        _v_time_dur = (time.time() - engine._lc_time_threshold_start_time) / 60.0
+                        if loop_ctrl.get("time_enabled") and _v_time_dur >= loop_ctrl.get("time_minutes", 999):
+                            engine._log_debug("API>> Time Threshold met. Resetting independent time timer.")
+                            engine._lc_time_threshold_start_time = time.time()
+
                         engine._automation_needs_new_chat = True
                         continue
                     elif lc_switch_res.get("status") == "table_full":
@@ -909,6 +949,7 @@ async def automation_manager(req: AutomationRequest):
                     engine._lc_pending_refused = 0
                     engine._lc_pending_resets = 0
                     engine._lc_cycle_start_time = time.time()
+                    engine._lc_time_threshold_start_time = time.time()
                     continue # Try next loop with new user
                 elif switch_res.get("status") == "table_full":
                     loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
@@ -942,6 +983,7 @@ async def automation_manager(req: AutomationRequest):
                         engine._stop_automation_event.clear()
                         # Short circuit variables for loop control
                         engine._lc_cycle_start_time = time.time()
+                        engine._lc_time_threshold_start_time = time.time()
                         engine._lc_pending_refused = 0
                         engine._lc_pending_resets = 0
                         # Try again with current anchor
@@ -972,6 +1014,7 @@ async def automation_manager(req: AutomationRequest):
                 "pending_refused": getattr(engine, '_pending_refused', 0),
                 "pending_resets": getattr(engine, '_pending_resets', 0),
                 "lc_pending_duration": lc_dur,
+                "lc_time_threshold_duration": time.time() - getattr(engine, '_lc_time_threshold_start_time', time.time()),
                 "lc_pending_refused": getattr(engine, '_lc_pending_refused', 0),
                 "lc_pending_resets": getattr(engine, '_lc_pending_resets', 0)
             }
@@ -1065,6 +1108,7 @@ async def start_automation(req: AutomationRequest):
     # Initialize cycle timer to capture initial setup time in the first image's duration
     engine._cycle_start_time = time.time()
     engine._lc_cycle_start_time = time.time()
+    engine._lc_time_threshold_start_time = time.time()
     engine.automation_status["current_cycle_start_ts"] = engine._cycle_start_time
     
     # Reset snapshot for the new session
@@ -1138,6 +1182,7 @@ async def continue_automation(req: AutomationRequest):
         # Reset cycle timers since we don't want to attribute past duration
         engine._cycle_start_time = time.time()
         engine._lc_cycle_start_time = time.time()
+        engine._lc_time_threshold_start_time = time.time()
         
         # Hydrate snapshot logic as there's no pending state anymore
         engine._acct_snapshot = {
@@ -1175,6 +1220,7 @@ async def continue_automation(req: AutomationRequest):
     
                 engine._cycle_start_time = time.time() - pending_stats.get("pending_duration", 0)
                 engine._lc_cycle_start_time = time.time() - pending_stats.get("lc_pending_duration", 0)
+                engine._lc_time_threshold_start_time = time.time() - pending_stats.get("lc_time_threshold_duration", 0)
                 
                 # Remove it so we don't accidentally load it again later if we don't want to
                 os.remove(pending_file)
@@ -1183,6 +1229,7 @@ async def continue_automation(req: AutomationRequest):
                 engine._log_debug(f"API>> Failed to load pending stats: {e}")
                 if not getattr(engine, '_cycle_start_time', None): engine._cycle_start_time = time.time()
                 if not getattr(engine, '_lc_cycle_start_time', None): engine._lc_cycle_start_time = time.time()
+                if not getattr(engine, '_lc_time_threshold_start_time', None): engine._lc_time_threshold_start_time = time.time()
         else:
             # Do not clear pending counters (_pending_refused, _pending_resets) here.
             # We want to resume the process and correctly attribute past refuses/resets to the next successful image.
@@ -1190,6 +1237,8 @@ async def continue_automation(req: AutomationRequest):
                 engine._cycle_start_time = time.time()
             if not getattr(engine, '_lc_cycle_start_time', None):
                 engine._lc_cycle_start_time = time.time()
+            if not getattr(engine, '_lc_time_threshold_start_time', None):
+                engine._lc_time_threshold_start_time = time.time()
         
     # Restore internal pending counters to automation_status for UI visibility
     engine.automation_status["pending_refused"] = getattr(engine, "_pending_refused", 0)
@@ -1228,6 +1277,7 @@ async def request_new_chat():
 
 @app.get("/browser/automation/stats")
 async def get_automation_stats():
+    engine.automation_status["lc_time_threshold_start_ts"] = getattr(engine, '_lc_time_threshold_start_time', None)
     return engine.automation_status
 
 @app.get("/browser/account")
@@ -1268,6 +1318,11 @@ async def clear_attachments():
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/engine/reset_time_timer")
+async def reset_time_timer():
+    engine._lc_time_threshold_start_time = __import__('time').time()
+    return {"status": "success"}
 
 @app.post("/browser/discover")
 async def discover_capabilities():

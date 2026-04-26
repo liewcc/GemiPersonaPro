@@ -197,13 +197,20 @@ def render_stats_body_fragment():
     stats = {}
     is_running = False
     try:
-        stats = asyncio.run(st.session_state.client.get_automation_stats())
+        import requests
+        base_url = getattr(st.session_state.client, "base_url", "http://127.0.0.1:8000")
+        resp = requests.get(f"{base_url}/browser/automation/stats", timeout=3.0)
+        stats = resp.json() if resp.status_code == 200 else {}
+        
         if stats:
             st.session_state._last_known_stats = stats
+            st.session_state._stats_debug_status = "✅ API OK"
+        else:
+            st.session_state._stats_debug_status = f"⚠️ API Empty (Status: {resp.status_code})"
         is_running = stats.get("is_running", False)
-    except:
-        # API timeout during heavy watermark processing blocks the event loop.
-        # Fall back to UI state and last known stats to prevent the "Stopped" summary flashing.
+    except Exception as e:
+        # Network error or timeout
+        st.session_state._stats_debug_status = f"❌ Error: {type(e).__name__}"
         if st.session_state.get("ui_auto_looping_active", False):
             is_running = True
             stats = st.session_state.get("_last_known_stats", {})
@@ -277,15 +284,53 @@ def render_stats_body_fragment():
     if is_running:
         st.caption("🔄 Auto-refreshing counts every 1s...")
         
+        # Calculate Time Threshold flags
+        lc_cfg = load_config().get("automation", {}).get("loop_control", {})
+        t_en = lc_cfg.get("time_enabled", False)
+        t_min = lc_cfg.get("time_minutes", 10)
+        lc_start_ts = stats.get("lc_time_threshold_start_ts")
+        
+        show_tt = is_running and t_en and lc_start_ts
+
         # Compact Running Summary Section
         summary_html = f"""
-        <div style="display:flex; justify-content:space-between; background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em;">
-            <div><span style="color:#666;">Refused:</span> <b>{int(stats.get("refusals") or 0)}</b></div>
-            <div><span style="color:#666;">Resets:</span> <b>{int(stats.get("resets") or 0)}</b></div>
-            <div><span style="color:#666;">Elapsed:</span> <b>{_format_dur_str(cur_elapsed_sec)}</b></div>
-        </div>
-        """
+<div style="display:flex; justify-content:space-between; background:#f8f9fa; padding:10px; border-radius:6px; margin-bottom:{'8px' if show_tt else '15px'}; border:1px solid #e9ecef; font-size:0.9em;">
+    <div><span style="color:#666;">Refused:</span> <b>{int(stats.get("refusals") or 0)}</b></div>
+    <div><span style="color:#666;">Resets:</span> <b>{int(stats.get("resets") or 0)}</b></div>
+    <div><span style="color:#666;">Elapsed:</span> <b>{_format_dur_str(cur_elapsed_sec)}</b></div>
+</div>
+"""
         st.markdown(summary_html, unsafe_allow_html=True)
+
+        if show_tt:
+            import time
+            elapsed_lc = time.time() - float(lc_start_ts)
+            elapsed_str = _format_dur_str(elapsed_lc)
+            limit_str = _format_dur_str(t_min * 60)
+            
+            c1, c2 = st.columns([6, 1])
+            with c1:
+                st.markdown(f"""
+<div style="background:#f8f9fa; padding:8px 10px; border-radius:6px; margin-bottom:15px; border:1px solid #e9ecef; font-size:0.9em; text-align:center;">
+    <span style="color:#666;">Time Threshold Elapsed:</span> <b>{elapsed_str}</b> / {limit_str}
+</div>
+""", unsafe_allow_html=True)
+            with c2:
+                if st.button("🔄", help="Reset Time Threshold Timer", use_container_width=True, key="btn_reset_tt"):
+                    try:
+                        import requests
+                        base_url = getattr(st.session_state.client, "base_url", "http://127.0.0.1:8000")
+                        resp = requests.post(f"{base_url}/engine/reset_time_timer", timeout=3.0)
+                        res = resp.json() if resp.status_code == 200 else {}
+                        if res and res.get("status") == "success":
+                            st.toast("Timer reset successfully!", icon="✅")
+                            if "_last_known_stats" in st.session_state:
+                                st.session_state._last_known_stats["lc_time_threshold_start_ts"] = __import__('time').time()
+                        else:
+                            st.toast(f"Failed to reset: {resp.status_code}", icon="⚠️")
+                    except Exception as e:
+                        st.toast(f"Error resetting timer: {str(e)}", icon="❌")
+
 
         real_img_count = sum(1 for r in records if r.get("filename") not in ["[Stopped/Interrupted]", "[Account Switched]"])
         st.markdown(f"**{real_img_count}** image(s) downloaded.")
@@ -662,6 +707,17 @@ def show_loop_control_dialog():
                         index=ACTION_OPTIONS.index(lc["time_action"]),
                         horizontal=True, disabled=not t_en,
                         key="lc_time_action", label_visibility="collapsed")
+    
+    # Show real-time timer in config if enabled
+    if t_en:
+        try:
+            stats = asyncio.run(st.session_state.client.get_automation_stats())
+            lc_start_ts = stats.get("lc_time_threshold_start_ts")
+            if lc_start_ts:
+                import time
+                elapsed_lc = time.time() - float(lc_start_ts)
+                st.caption(f"⏱ Internal Timer: **{_format_dur_str(elapsed_lc)}** / {_format_dur_str(t_min*60)}")
+        except: pass
     st.markdown("<hr style='margin: 0px 0 15px 0;'/>", unsafe_allow_html=True)
 
     # --- Refused ---
@@ -713,8 +769,16 @@ def show_loop_control_dialog():
             "reset_action":     rs_action,
         }
         existing_auto = load_config().get("automation", {})
+        prev_t_en = existing_auto.get("loop_control", {}).get("time_enabled", False)
         existing_auto["loop_control"] = new_lc
         save_config({"automation": existing_auto})
+        
+        if t_en and not prev_t_en:
+            try:
+                import asyncio
+                asyncio.run(st.session_state.client.reset_time_timer())
+            except: pass
+            
         st.toast("Loop Control config saved.", icon="✅")
         st.rerun()
 

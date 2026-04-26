@@ -223,3 +223,8 @@ class EngineClient:
         async with httpx.AsyncClient() as client:
             resp = await client.post(f"{self.base_url}/engine/clear_logs", timeout=10.0)
             return resp.json()
+
+    async def reset_time_timer(self):
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{self.base_url}/engine/reset_time_timer", timeout=5.0)
+            return resp.json()
