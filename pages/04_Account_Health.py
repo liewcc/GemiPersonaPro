@@ -20,6 +20,47 @@ apply_premium_style()
 config = load_config()
 login_data = load_login_lookup()
 
+# --- Extract Account List & Active User ---
+summary_all, _, log_accs = parse_account_health(login_data=login_data)
+lookup_order = [u.get("username", "").lower() for u in login_data if u.get("username")]
+log_accs_set = set(log_accs)
+lookup_accs_set = set(lookup_order)
+final_dropdown_accs = list(lookup_order) + sorted(list(log_accs_set - lookup_accs_set))
+final_dropdown_accs = [acc for acc in final_dropdown_accs if acc and acc.lower() != "unknown"]
+_active_user_top = next((u.get("username", "") for u in login_data if u.get("active")), None)
+
+# --- Sidebar Content ---
+@st.fragment(run_every=5 if st.session_state.get("health_auto_refresh", True) else None)
+def _sidebar_fragment_content():
+    # Fetch fresh login data to detect account switches without full page reload
+    fresh_login_data = load_login_lookup()
+    fresh_active = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
+    
+    st.markdown("<p style='font-size: 1.15em; font-weight: bold; margin-top: 0px; margin-bottom: 5px;'>👥 Account List</p>", unsafe_allow_html=True)
+    if not final_dropdown_accs:
+        st.info("No accounts recorded yet.")
+    else:
+        acc_list_md = []
+        for acc in final_dropdown_accs:
+            user_data = next((u for u in fresh_login_data if u.get("username", "").lower() == acc.lower()), {})
+            is_active = fresh_active and acc.lower() == fresh_active.lower()
+            is_quota_full = bool(user_data.get("quota_full"))
+            
+            display_str = acc
+            if is_quota_full:
+                display_str = f"<span style='color: #ff6666;'>{acc} (Quota Full)</span>"
+                
+            if is_active:
+                acc_list_md.append(f"- **{display_str}** *(Active)*")
+            else:
+                acc_list_md.append(f"- {display_str}")
+        st.markdown("\n".join(acc_list_md), unsafe_allow_html=True)
+    st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px; border-top: 1px solid rgba(255,255,255,0.1);' />", unsafe_allow_html=True)
+
+with st.sidebar:
+    _sidebar_fragment_content()
+
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -177,12 +218,7 @@ tab1, tab2 = st.tabs(["Account Health Analysis", "Automation Cycle Management"])
 with tab1:
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
     with st.container(border=True):
-        # Get account list for dropdown
-        summary_all, _, log_accs = parse_account_health(login_data=login_data)
-        lookup_order = [u.get("username", "").lower() for u in login_data if u.get("username")]
-        log_accs_set = set(log_accs)
-        lookup_accs_set = set(lookup_order)
-        final_dropdown_accs = list(lookup_order) + sorted(list(log_accs_set - lookup_accs_set))
+
 
         col_sel, col_ref, col_btn1, col_btn2 = st.columns([2, 0.8, 0.6, 0.6])
         with col_ref:
@@ -261,20 +297,22 @@ with tab1:
 
         @st.fragment(run_every=5 if auto_refresh else None)
         def _health_fragment():
+            # Fetch fresh login data to ensure chart updates on account switch
+            fresh_login_data = load_login_lookup()
             show_graph = st.session_state.get("show_health_graph", True)
             if is_full:
                 st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing recorded loading events in chronological order (latest first).</p>", unsafe_allow_html=True)
-                _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
+                _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
                 _render_chart_or_table(all_detailed[:n_rounds], graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table")
             elif is_active:
-                _active_user = next((u.get("username", "") for u in login_data if u.get("active")), None)
+                _active_user = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
                 if not _active_user:
                     st.info("No active account is currently set.")
                 else:
-                    _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=login_data)
+                    _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
                     _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table")
             elif is_summary:
-                _summary_all, _, _ = parse_account_health(login_data=login_data)
+                _summary_all, _, _ = parse_account_health(login_data=fresh_login_data)
                 st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
                 if not _summary_all:
                     st.info("No loading records found in engine.log.")
@@ -293,7 +331,7 @@ with tab1:
                     )
             else:
                 target_acc = view_mode.replace("Detailed History: ", "")
-                _, det, _ = parse_account_health(target_account=target_acc, login_data=login_data)
+                _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
                 _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}")
 
         _health_fragment()
