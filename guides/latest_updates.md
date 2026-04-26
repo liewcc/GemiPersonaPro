@@ -1,8 +1,8 @@
-# 🆕 Latest Updates & Features
+﻿# ðŸ†• Latest Updates & Features
 
 Welcome to the latest release notes for **GemiPersonaPro**. This document outlines the most recent improvements, bug fixes, and new features added to the system.
 
-## 🚀 Recent Features & Enhancements
+## ðŸš€ Recent Features & Enhancements
 
 ### Update: 2026-04-26 - UI Consolidation & Enhanced Cycle Analytics
 
@@ -25,22 +25,22 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - **Rule**: `ACCOUNT_SWITCH` with a real account change still bumps immediately. Only `BOUNDARY`-triggered session boundaries are deferred until the next `START` to absorb continues.
 
 #### Fix 0b: Account Switch Color Change Now Visible in Loading Duration Chart
-- **Root Cause**: The bar color `cycle` was computed with `groupby("account")["session_index"].rank(method="dense")`. This means each account's sessions are ranked **independently starting from 1**. When the user stopped and switched from `nusa.direct` (session 1) to `kiongsoo` (session 2), kiongsoo's per-account rank was 1 (its first session), the same as nusa.direct's. Both rendered as `Base` color — the account switch was visually invisible.
-- **Fix**: Changed to a **global dense rank** — `df["session_index"].rank(method="dense")`. Since `session_index` is a globally incrementing counter in `health_parser.py`, kiongsoo's session gets global rank 2 → `cycle=2` → `Light`, visually distinct from nusa.direct's `Base`. This works correctly for both single-account views (no sessions shared between accounts) and the full-history view.
+- **Root Cause**: The bar color `cycle` was computed with `groupby("account")["session_index"].rank(method="dense")`. This means each account's sessions are ranked **independently starting from 1**. When the user stopped and switched from `nusa.direct` (session 1) to `kiongsoo` (session 2), kiongsoo's per-account rank was 1 (its first session), the same as nusa.direct's. Both rendered as `Base` color â€” the account switch was visually invisible.
+- **Fix**: Changed to a **global dense rank** â€” `df["session_index"].rank(method="dense")`. Since `session_index` is a globally incrementing counter in `health_parser.py`, kiongsoo's session gets global rank 2 â†’ `cycle=2` â†’ `Light`, visually distinct from nusa.direct's `Base`. This works correctly for both single-account views (no sessions shared between accounts) and the full-history view.
 
 
 #### Fix 1: Continue Session No Longer Creates a False New Session
 - **Root Cause**: The legacy text-path boundary detector in `health_parser.py` matched the string `"automation manager started"` as a session boundary. Since "Continue Session" writes exactly this line, every resume was incorrectly incrementing `session_id`, splitting what should be one continuous session into multiple visual segments in the Loading Duration chart.
 - **Fix**: Removed `"automation manager started"` from the boundary condition. The only remaining text-path boundary trigger is `"automation finished"` (a real, deliberate stop). The JSON-path boundaries (`BOUNDARY` / `ACCOUNT_SWITCH` events) are unaffected and remain the authoritative signals for genuine new sessions.
-- **Rule**: A new session is only created by two conditions: (1) manual account switch → continue, or (2) quota full. Any other interruption that resumes is the same session.
+- **Rule**: A new session is only created by two conditions: (1) manual account switch â†’ continue, or (2) quota full. Any other interruption that resumes is the same session.
 
 #### Fix 2: Loading Duration Chart Session Colors Now Per-Account
 - **Root Cause**: The Base/Light alternating bar color was computed using a global `rank()` of `session_index` across all accounts. Since `session_index` is a globally incrementing integer, a single account's sessions could all share odd ranks (e.g., 1, 3, 5) and thus always render as "Base" color, never alternating.
-- **Fix**: Changed to `.transform(lambda s: s.rank(method="dense"))` grouped by `account`, so each account's sessions independently restart at rank 1 and correctly alternate Base → Light → Base.
+- **Fix**: Changed to `.transform(lambda s: s.rank(method="dense"))` grouped by `account`, so each account's sessions independently restart at rank 1 and correctly alternate Base â†’ Light â†’ Base.
 
 #### Fix 3: Wrong Account Name Shown on Chart Bars
 - **Root Cause**: All JSON log entries written by `browser_engine.py` used `automation_status["initial_user"]` as the `account` field. `initial_user` is set once at automation start and never updated, so after any account switch, every subsequent log record was still stamped with the original (first) account name.
-- **Fix**: The `_log_debug` method now resolves the account field with: `current_account_id → initial_user → "unknown"`. `current_account_id` is updated in real-time by `get_account_info()` after each profile switch, ensuring all log entries are correctly attributed to the account that actually produced them. The value is also normalized to lowercase username-only (stripping the `@domain` part) for consistency with the parser.
+- **Fix**: The `_log_debug` method now resolves the account field with: `current_account_id â†’ initial_user â†’ "unknown"`. `current_account_id` is updated in real-time by `get_account_info()` after each profile switch, ensuring all log entries are correctly attributed to the account that actually produced them. The value is also normalized to lowercase username-only (stripping the `@domain` part) for consistency with the parser.
 
 #### Fix 4: Account Switch Fails to Change Color on Quota Full (Re-Login Logic Fix)
 - **Root Cause**: The parser was checking `acct != prev_account` line-by-line to detect a real account switch. However, during a quota full sequence, the background engine updates `current_account_id` early. Intermediate `DEBUG` logs (like history deletion) reflect the new account name. When the official `ACCOUNT_SWITCH` event was logged seconds later, `prev_account` had already bled the new account name, causing the parser to wrongly classify it as a "re-login" (same account) and failing to trigger a session color bump.
@@ -75,20 +75,20 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
     - **Interactive Loop Table**: Enabled real-time editing and "Force Start" functionality in the Dynamic Ratio Loop.
 
 ### 1. Continue Session (Resume Automation)
-- Added a highly requested **⏯️ Continue Session** functionality to both the Dashboard and Gemini Setup pages.
+- Added a highly requested **â¯ï¸ Continue Session** functionality to both the Dashboard and Gemini Setup pages.
 - Allows users to pause an active automation loop and subsequently resume it without wiping the current session's Reject Rate statistics or counter metrics.
 - Features a robust **State Hydration** mechanism: if the application or backend engine is restarted while a session is paused, the engine will automatically parse the `reject_stat_log.json` to seamlessly rebuild the previous metrics (Successes, Refusals, Resets) directly into memory upon clicking Continue.
 - Implements strict **Goal Protection**: attempting to continue a session that has already reached its configured image/round target will automatically trigger an alert dialog, preventing accidental data pollution or instant-stop loops.
 - **UI Stabilization**: Refactored the control layout across both pages. The `Start / Stop` buttons now swap seamlessly in place, while the `Continue` button securely occupies the adjacent column, ensuring absolute layout stability and zero button-jumping during active automation.
 
 ### 2. Interactive Wheel-Zoom for Dashboard Reject Rate Chart
-- Upgraded the Dashboard's **📈 Reject Rate Chart** to support smooth, mouse-wheel-based zooming and horizontal panning.
+- Upgraded the Dashboard's **ðŸ“ˆ Reject Rate Chart** to support smooth, mouse-wheel-based zooming and horizontal panning.
 - Migrated the X-axis from a string-based (Nominal) scale to a sequential quantitative scale (`order_index:Q`). This enables Altair's native interactive zooming capabilities, which are otherwise limited for nominal axes.
 - **Improved UX**: The chart now supports `bind_y=False`, allowing users to zoom and pan specifically along the timeline (X-axis) while keeping the metric values (Y-axis) stable and visible. This makes it significantly easier to analyze long automation sessions with dozens of processed images.
 - **Contextual Clarity**: Filenames remain clearly visible in the interactive tooltips, ensuring that per-image performance data is always accessible even when zoomed in.
 
 
-### 2. Quota Cooldown — Automatic Account Lock After Quota Hit
+### 2. Quota Cooldown â€” Automatic Account Lock After Quota Hit
 Accounts can now be automatically held out of the rotation for a configurable period after hitting their daily quota.
 - A new **Quota Cooldown (hours)** setting has been added to the **ENGINE SETTINGS** panel on the System Config page (default: **24 hours**).
 - When set to a value greater than `0`, the engine computes an **unlock time** for each account: `unlock_time = quota_full_time + cooldown_hours`.
@@ -128,7 +128,7 @@ The automation engine now supports dynamically reloading prompts without interru
 - Implemented a robust "atomic write" mechanism for the `user_login_lookup.json` file.
 - The system now writes to a temporary file before performing an atomic replacement, ensuring that the background automation engine never reads a partially-written or corrupted configuration file during a UI save operation.
 
-## 🐛 Critical Bug Fixes
+## ðŸ› Critical Bug Fixes
 
 ### 1. Fixed Duplicate Image Downloads (Race Condition)
 - Resolved a critical bug where the automation engine would perform redundant image downloads. By ensuring atomic task handling and stabilizing the redo-response logic, the system no longer incorrectly detects and processes stale browser states.
@@ -158,10 +158,10 @@ The automation engine now supports dynamically reloading prompts without interru
 
 ### 8. Dashboard Gallery Concurrency Handling
 - Fixed a crash (`UnidentifiedImageError`) in the Dashboard gallery fragment that occurred when the system attempted to display an image while it was still being written to disk by the automation engine.
-- The gallery now gracefully handles partially-written files by displaying a "⏳ Loading..." status, preventing the UI from crashing and ensuring a more resilient monitoring experience.
+- The gallery now gracefully handles partially-written files by displaying a "â³ Loading..." status, preventing the UI from crashing and ensuring a more resilient monitoring experience.
 
 ### 9. Reject Rate Stats Visual Chart
-- Added a new **📈 Stats Chart** button to the Dashboard main panel.
+- Added a new **ðŸ“ˆ Stats Chart** button to the Dashboard main panel.
 - This feature provides a visual breakdown of automation efficiency using a highly-optimized multi-metric line chart.
 - It tracks **Duration (in minutes)**, **Refusals**, and **Resets** per file, with filenames automatically cleaned (removing `.png` suffixes) for better readability on the X-axis.
 - **Architectural Upgrades**: Migrated to a custom-built, single-mark **Altair** implementation. This upgrade allows precise, human-readable tooltips (e.g., `Filename`, `Refused`, `Resets`, `Duration`) without the ambiguous `value` and `color` labels generated by native Streamlit charts.
@@ -199,7 +199,7 @@ The automation engine now supports dynamically reloading prompts without interru
 - The chart now uses a hidden sequential `order_index` to ensure that data points strictly follow the execution timeline, providing a true representation of performance trends over time.
 
 ### 13. Session Reset Confirmation Dialog
-- Implemented a safety confirmation prompt when starting a new automation loop via the **"▶️ Start Looping Process"** button in both the Dashboard and Gemini Setup modules.
+- Implemented a safety confirmation prompt when starting a new automation loop via the **"â–¶ï¸ Start Looping Process"** button in both the Dashboard and Gemini Setup modules.
 - The system now intelligently checks for existing session records (`history_count`). If no records exist, automation begins immediately. If previous records exist, a warning dialog prompts the user to confirm the session reset, preventing accidental loss of active session statistics.
 
 ### 14. System Configuration Navigation & UI Alignment
@@ -260,7 +260,7 @@ The automation engine now supports dynamically reloading prompts without interru
 - **Intelligent Prompt Injection**: The automation engine now automatically prefixes "Aspect Ratio: [Selected Ratio]" to the user's prompt. 
 - **Double-Injection Prevention**: Implemented a check to ensure the prefix is only added if not already present, preventing cluttered or corrupted prompts during recursive loops or manual edits.
 - **Cross-Mode Editing Freedom**: Updated the UI to allow configuration changes to both the Fixed Ratio and Dynamic List regardless of the active mode. This allows users to pre-configure their next automation sequence without switching tabs or modes.
-- **Intelligent UI Locking**: All aspect ratio controls (Radio buttons, Dropdowns, and Data Editors) are now strictly tied to the **Loop 进程 (Automation Loop)** status. Controls are locked only during active generation and automatically unlock when idle, even if the browser is open.
+- **Intelligent UI Locking**: All aspect ratio controls (Radio buttons, Dropdowns, and Data Editors) are now strictly tied to the **Loop è¿›ç¨‹ (Automation Loop)** status. Controls are locked only during active generation and automatically unlock when idle, even if the browser is open.
 - **Aesthetic Refinements**: Updated the Dynamic Prefix dialog to a responsive medium-width design and moved all titles to sentence-case for a more professional look.
 
 ### 24. Account Health Analysis UI & Accuracy
@@ -276,6 +276,8 @@ The automation engine now supports dynamically reloading prompts without interru
 - **Consistent Visual State**: The mathematical `Active` indicator is now permanently visible across the Looping Table, even when the system is operating in `Fixed Aspect Ratio` mode. This ensures users always know where their dynamic sequence paused and where it will resume.
 
 ### Update: 2026-04-26 - Automation Stability & Time Threshold Logic
-- **Streamlit Asyncio Conflict Fix**: Completely refactored the Dashboard's automation statistics fetching mechanism. Replaced \syncio.run()\ with native \equests.get()\ to prevent critical \RuntimeError\ crashes caused by Streamlit's internal event loop overlapping, ensuring the Reject Rate Stats timers no longer freeze or disappear into a false \API Timeout\ state.
+- **Streamlit Asyncio Conflict Fix**: Completely refactored the Dashboard's automation statistics fetching mechanism. Replaced `asyncio.run()` with native `requests.get()` to prevent critical `RuntimeError` crashes caused by Streamlit's internal event loop overlapping, ensuring the Reject Rate Stats timers no longer freeze or disappear into a false `API Timeout` state.
 - **Time Threshold Absolute Priority**: Overhauled the Loop Control logic to ensure the **Time Threshold** is strictly respected. Previously, if a heavily throttled account managed to slowly succeed, the success status would bypass the time check and fail to switch the profile. The system now evaluates the time duration *before* processing a success, guaranteeing an immediate account switch/re-login if the configured time limit is breached, regardless of the final generation outcome.
-- **Background Event Loop Unblocking**: Fixed a critical backend traffic jam where the CPU-intensive Watermark Removal (LaMa) process blocked FastAPI's main event loop for several seconds. Image post-processing is now safely delegated to an asynchronous background thread (\syncio.to_thread\), keeping the UI metrics 100% responsive and preventing false timeout drops during active image refinement.
+- **Background Event Loop Unblocking**: Fixed a critical backend traffic jam where the CPU-intensive Watermark Removal (LaMa) process blocked FastAPI's main event loop for several seconds. Image post-processing is now safely delegated to an asynchronous background thread (`asyncio.to_thread`), keeping the UI metrics 100% responsive and preventing false timeout drops during active image refinement.
+- **Time Threshold Reset UI**: Added a dedicated **Time Threshold Elapsed** monitor and a manual **🔄 Reset** button to the Reject Rate Stats dialog. This allows users to track exactly how much "duty cycle" time remains for the active account and manually extend the session if desired.
+- **Diagnostic UI Cleanup**: Removed the temporary `(✅ API OK)` debug status from the Dashboard after verifying the stability of the new synchronous API requests.

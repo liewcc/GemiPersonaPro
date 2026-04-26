@@ -22,6 +22,11 @@ If automation is running, this dialog **auto-refreshes every 1 second**. It show
 - **⌛ Processing Entry**: A live row tracking the current active generation, showing how many times Gemini has refused the current prompt and how long it has been running.
 - **Historical Table**: A reverse-chronological list of completed downloads with their specific duration and individual count of refusals/resets.
 
+### Time Threshold Monitor
+At the bottom of the dialog, a dedicated status bar tracks the **Time Threshold Elapsed**:
+- **Timer Display**: Shows the cumulative active time for the current account (e.g., `12:45 / 30m`).
+- **Manual Reset (🔄)**: A dedicated button to manually reset the Time Threshold timer to zero without switching accounts. This is useful if you want to give the current account "extra time" without interrupting the session.
+
 ---
 
 ## 3. Account Health Analysis (Loading Performance)

@@ -21,6 +21,9 @@ This guide explains the deeper purpose of each control and how to configure them
 
 - **How it Works**: Monitors how long a single account has been active in the current session.
 - **Threshold (Minutes)**: Once an account has been running for this many minutes, the system triggers an action (Next Profile or Re-login).
+- **Enforcement Rules**:
+    - **Reset on Success**: Successfully downloading an image (within the threshold) automatically resets the timer to zero for the current account.
+    - **Strict Timeout**: If the time threshold is exceeded during a cycle, the system will execute the switch action **immediately after the cycle ends**, even if the image was successfully downloaded. This prevents "slow" accounts from clogging the automation.
 - **Strategic Benefit**: 
     - **Freshness**: Browser sessions can become slow or buggy over hours. Periodic rotation keeps the engine responsive.
     - **Detection Avoidance**: Regularly switching profiles mimics more natural human behavior compared to one account generating for 10 hours straight.
