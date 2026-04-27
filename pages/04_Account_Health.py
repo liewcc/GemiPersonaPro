@@ -283,7 +283,7 @@ with tab1:
                     st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
             with col_rad:
                 with st.container(border=True):
-                    cr1, cr2 = st.columns([1, 1.1])
+                    cr1, cr2 = st.columns([0.8, 1.6])
                     with cr1:
                         st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=False, key="widget_health_graph_type", on_change=_on_change_health_graph)
                     with cr2:
