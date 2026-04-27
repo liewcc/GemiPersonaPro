@@ -34,11 +34,27 @@ def parse_engine_cycles():
                 if event == "BOUNDARY":
                     pending_boundary = True
                     boundary_account = acct
+                    msg = rec.get("message", "")
+                    if "Final Stats:" in msg and "'start_time': '" in msg:
+                        match = re.search(r"'start_time': '([^']+)'", msg)
+                        if match and current_cycle is not None:
+                            current_cycle['full_start_time'] = match.group(1)
                     
                 if event == "START":
                     is_new_cycle = False
-                    if pending_boundary:
-                        if round_id == 1 or acct != boundary_account:
+                    if current_cycle is None:
+                        # Very first START in the log — always create Cycle 1,
+                        # even if round_id != 1 (e.g. log was cleared mid-session
+                        # or automation was continued/hydrated).
+                        is_new_cycle = True
+                        pending_boundary = False
+                        boundary_account = None
+                    elif pending_boundary:
+                        # After a BOUNDARY (stop), only round_id == 1 means a
+                        # genuinely new cycle (user pressed Start fresh).
+                        # Account changes via Loop Control keep round_id > 1,
+                        # so they stay in the same cycle (continue session).
+                        if round_id == 1:
                             is_new_cycle = True
                         pending_boundary = False
                         boundary_account = None
@@ -94,6 +110,9 @@ def parse_engine_cycles():
                 continue
                 
             # --- TEXT PARSING (Legacy) ---
+            if "automation finished" in line.lower():
+                pending_boundary = True
+                
             if "--- [AUTO] RUNNING ROUND: 1 ---" in line:
                 if current_cycle is not None:
                     current_cycle['end_idx'] = i - 1
@@ -148,7 +167,9 @@ def parse_engine_cycles():
                         current_cycle['full_start_time'] = match.group(1)
     
     if current_cycle is not None:
-        current_cycle['is_running'] = True
+        current_cycle['is_running'] = not pending_boundary
+        if current_cycle['end_idx'] is None:
+            current_cycle['end_idx'] = i
         cycles.append(current_cycle)
         
     return cycles
@@ -211,10 +232,12 @@ def parse_account_health(target_account=None, login_data=None):
                     continue
                 if event == "START":
                     if pending_new_session:
-                        # Fresh start (round 1) or different account → genuine new session.
-                        # Continue session (round_id > 1, same account) → same session.
-                        if round_id == 1 or acct != boundary_account:
+                        # After a BOUNDARY, only round_id == 1 means a genuinely
+                        # new session (user pressed Start fresh).  Account changes
+                        # via Loop Control keep round_id > 1 → same session.
+                        if round_id == 1:
                             current_session_id += 1
+                        # Reset flags for subsequent processing.
                         pending_new_session = False
                         boundary_account = None
                     last_stable_account = acct

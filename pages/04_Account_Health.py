@@ -358,9 +358,23 @@ with tab2:
                 cycle_id_val = "Running" if is_running else idx + 1
                 stop_time_val = "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown')
 
+                # Calculate duration (start → stop, or start → last recorded time for running cycles)
+                duration_str = "N/A"
+                calc_stop = c.get('stop_time_str', c['start_time_str'])
+                try:
+                    s_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
+                    e_dt = datetime.strptime(calc_stop, '%H:%M:%S')
+                    dsec = int((e_dt - s_dt).total_seconds())
+                    if dsec < 0:
+                        dsec += 86400  # midnight crossover
+                    duration_str = f"{dsec // 3600}:{(dsec % 3600) // 60:02d}"
+                except:
+                    pass
+
                 cycle_data.append({
                     "Select": False, "Cycle ID": cycle_id_val, "Start Time": display_time,
                     "Stop Time": stop_time_val,
+                    "Duration": duration_str,
                     "Images": success_count,
                     "Avg Time/Img": avg_time_str,
                     "Refused": reject_count,
@@ -376,6 +390,7 @@ with tab2:
                 column_config={
                     "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
                     "Stop Time": st.column_config.TextColumn("Stop Time"),
+                    "Duration": st.column_config.TextColumn("Duration"),
                     "Images": st.column_config.NumberColumn("Images", format="%d"),
                     "Avg Time/Img": st.column_config.TextColumn("Avg Time/Img"),
                     "Refused": st.column_config.NumberColumn("Refused", format="%d"),
@@ -384,9 +399,9 @@ with tab2:
                     "Avg Time/Reset": st.column_config.TextColumn("Avg Time/Reset"),
                     "_start_idx": None, "_end_idx": None
                 },
-                disabled=["Cycle ID", "Start Time", "Stop Time", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines"], 
+                disabled=["Cycle ID", "Start Time", "Stop Time", "Duration", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines"], 
                 hide_index=True,
-                width=950,
+                width="stretch",
                 key="automation_cycle_editor"
             )
 

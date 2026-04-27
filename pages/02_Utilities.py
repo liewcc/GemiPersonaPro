@@ -1047,7 +1047,7 @@ def rename_export_dialog(folder_path):
     # Detect padding from first filename; ensure it covers total file count
     first_nums      = re.findall(r'\d+', sorted_files[0])
     detected_pad    = len(first_nums[-1]) if first_nums else 1
-    padding         = max(detected_pad, len(str(total)))
+    auto_padding    = max(detected_pad, len(str(total)))
 
     # Processed folder status
     has_processed = os.path.isdir(proc_src)
@@ -1074,7 +1074,13 @@ def rename_export_dialog(folder_path):
     # --- Info panel ---
     st.write(f"📁 **Source:** `{base_name}` ({total} images)")
     st.write(f"📁 **Output:** `{base_name}_rename`")
-    st.write(f"🔢 **Padding:** `{padding}` digits  *(auto-detected from `{sorted_files[0]}`)*")
+    
+    col_p1, col_p2 = st.columns(2)
+    with col_p1:
+        start_num = st.number_input("Start Number", value=1, min_value=0, step=1, help="Starting file number")
+    with col_p2:
+        padding = st.number_input("Padding", value=auto_padding, min_value=1, step=1, help=f"Auto-detected: {auto_padding}")
+
     if has_processed:
         st.write(f"📂 **Sync `processed/`:** ✅ Found ({proc_count} matching files)")
     else:
@@ -1100,7 +1106,7 @@ def rename_export_dialog(folder_path):
 
                     # Build old → new name mapping
                     name_map = {
-                        fname: str(i + 1).zfill(padding) + os.path.splitext(fname)[1]
+                        fname: str(start_num + i).zfill(padding) + os.path.splitext(fname)[1]
                         for i, fname in enumerate(sorted_files)
                     }
 
