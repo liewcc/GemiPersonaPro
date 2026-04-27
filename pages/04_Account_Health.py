@@ -94,7 +94,7 @@ def _build_duration_chart(detailed_data, y_scale_type):
     
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X('Event:Q', title="Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
-        y=alt.Y('Minutes:Q', title="Duration (minite)", scale=alt.Scale(type=y_scale_type)),
+        y=alt.Y('Minutes:Q', title="Duration (minutes)", scale=alt.Scale(type=y_scale_type)),
         color=alt.Color('legend:N', scale=alt.Scale(domain=ll, range=lr),
                         legend=alt.Legend(title=None, orient='bottom', columns=4)),
         tooltip=['round', 'time', 'account', 'Duration', 'filename', 'status']
@@ -149,9 +149,9 @@ def _build_reject_chart(detailed_data, y_scale_type):
     agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
     melt_ids = ['Event', 'Display', 'Image', 'round', 'account', 'time', 'session_index', 't_dur_fmt', 't_rej', 't_res', 'status']
     plot_df = agg_df.melt(id_vars=melt_ids, value_vars=['t_dur', 'Rejects', 'Resets'], var_name='Metric', value_name='Value')
-    plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minite)'})
+    plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minutes)'})
 
-    cs = alt.Scale(domain=['Duration (minite)', 'Rejects', 'Resets'], range=['#2ecc71', '#a0a0ff', '#f39c12'])
+    cs = alt.Scale(domain=['Duration (minutes)', 'Rejects', 'Resets'], range=['#2ecc71', '#a0a0ff', '#f39c12'])
     base = alt.Chart(plot_df).encode(
         x=alt.X('Event:Q', title=None, axis=alt.Axis(format='d', tickMinStep=1)),
         y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
@@ -227,62 +227,61 @@ with tab1:
         # Integrated top row: View Mode and Actions
         c1, c2, c3, c4 = st.columns([2.2, 0.8, 0.8, 0.7])
         with c1:
-            options = ["Full Loading History (All Events)", "Detailed History: Active Account", "Latest Summary (All Accounts)"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs]
+            options = ["Full Loading History (All Events)", "Detailed History: Active Account"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs]
             cfg_val = config.get("health_view_mode", "Full Loading History (All Events)")
             try: view_index = options.index(cfg_val)
             except ValueError: view_index = 0
-            view_mode = st.selectbox("Select View Mode", options=options, index=view_index, key="widget_health_view_mode", on_change=_on_change_health_view, help="Choose between a complete history of all loading events, a summary of all accounts, or detailed history for a specific account.")
+            view_mode = st.selectbox("Select View Mode", options=options, index=view_index, key="widget_health_view_mode", on_change=_on_change_health_view, help="Choose between a complete history of all loading events or detailed history for a specific account.")
         
         is_full = view_mode == "Full Loading History (All Events)"
         is_active = view_mode == "Detailed History: Active Account"
-        is_summary = view_mode == "Latest Summary (All Accounts)"
         
         if "show_health_graph" not in st.session_state:
             st.session_state.show_health_graph = True
 
         with c2:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("Refresh Log", icon="🔄", use_container_width=True):
+            if st.button("Refresh Log", icon="🔄", width="stretch"):
                 st.rerun()
         with c3:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if not is_summary:
-                lbl = "Show Table" if st.session_state.show_health_graph else "Plot Graph"
-                ico = "📋" if st.session_state.show_health_graph else "📊"
-                if st.button(lbl, icon=ico, use_container_width=True):
-                    st.session_state.show_health_graph = not st.session_state.show_health_graph
-                    st.rerun()
-            else:
-                st.button("Plot Graph", icon="📊", disabled=True, use_container_width=True)
+            lbl = "Show Table" if st.session_state.show_health_graph else "Plot Graph"
+            ico = "📋" if st.session_state.show_health_graph else "📊"
+            if st.button(lbl, icon=ico, width="stretch"):
+                st.session_state.show_health_graph = not st.session_state.show_health_graph
+                st.rerun()
         with c4:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             st.toggle("Auto-refresh", value=True, key="health_auto_refresh")
 
-        if not is_summary:
-            cfg_n_rounds = config.get("health_n_rounds", 100)
-            if st.session_state.show_health_graph:
-                # Second row for Graph Settings: Slider, Mode, Scale
-                col_slider, col_rad, col_scale = st.columns([1.5, 1.2, 1.3])
-                graph_opts = ["Round Duration", "Retry Analysis"]
-                scale_opts = ["Linear", "Logarithmic"]
-                cfg_graph = config.get("health_graph_type", "Round Duration")
-                try: graph_idx = graph_opts.index(cfg_graph)
-                except ValueError: graph_idx = 0
-                cfg_scale = config.get("health_y_scale", "Linear")
-                try: scale_idx = scale_opts.index(cfg_scale)
-                except ValueError: scale_idx = 0
-                
-                with col_slider:
+        cfg_n_rounds = config.get("health_n_rounds", 100)
+        if st.session_state.show_health_graph:
+            # Second row for Graph Settings: Slider, Mode, Scale
+            col_slider, col_rad, col_scale = st.columns([2, 1, 1])
+            graph_opts = ["Round Duration", "Retry Analysis"]
+            scale_opts = ["Linear", "Logarithmic"]
+            cfg_graph = config.get("health_graph_type", "Round Duration")
+            try: graph_idx = graph_opts.index(cfg_graph)
+            except ValueError: graph_idx = 0
+            cfg_scale = config.get("health_y_scale", "Linear")
+            try: scale_idx = scale_opts.index(cfg_scale)
+            except ValueError: scale_idx = 0
+            
+            with col_slider:
+                with st.container(border=True):
                     st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
-                with col_rad:
-                    with st.container(border=True):
-                        st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph)
-                with col_scale:
-                    # Y-Axis Scale in a container at the far right
-                    with st.container(border=True):
-                        st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
-            else:
-                st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds, label_visibility="collapsed")
+            with col_rad:
+                with st.container(border=True):
+                    st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph)
+            with col_scale:
+                # Y-Axis Scale in a container at the far right
+                with st.container(border=True):
+                    st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
+        else:
+            c_left, c_right = st.columns([1, 1])
+            with c_left:
+                with st.container(border=True):
+                    st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
 
         # Read settings once for the fragment
         y_scale_type = 'symlog' if config.get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
@@ -307,24 +306,6 @@ with tab1:
                 else:
                     _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
                     _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table")
-            elif is_summary:
-                _summary_all, _, _ = parse_account_health(login_data=fresh_login_data)
-                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
-                if not _summary_all:
-                    st.info("No loading records found in engine.log.")
-                else:
-                    st.data_editor(
-                        pd.DataFrame(_summary_all),
-                        column_config={
-                            "round": st.column_config.NumberColumn("Round", format="%d"),
-                            "account": st.column_config.TextColumn("Account"),
-                            "time": st.column_config.TextColumn("Time"),
-                            "health": st.column_config.TextColumn("Health"),
-                            "filename": st.column_config.TextColumn("Filename"),
-                            "status": st.column_config.TextColumn("Status")
-                        },
-                        disabled=True, width="stretch", hide_index=True, height=450, key="health_summary_table"
-                    )
             else:
                 target_acc = view_mode.replace("Detailed History: ", "")
                 _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
@@ -333,96 +314,101 @@ with tab1:
         _health_fragment()
 
 with tab2:
-    st.markdown("### 🔄 Automation Cycle Management")
-    st.write("This tool analyzes `engine.log` for complete automation cycles (Start -> Stop). **Continue Session** triggers are grouped within their original parent cycle.")
+    @st.fragment()
+    def _cycle_management_fragment():
+        st.markdown("### 🔄 Automation Cycle Management")
+        st.write("This tool analyzes `engine.log` for complete automation cycles (Start -> Stop). **Continue Session** triggers are grouped within their original parent cycle.")
 
-    cycles = parse_engine_cycles()
-    if not cycles:
-        st.info("No complete cycles found in the log.")
-    else:
-        st.write(f"Found **{len(cycles)}** complete cycle(s).")
-        cycle_data = []
-        for idx, c in enumerate(cycles):
-            display_time = c.get('full_start_time', c['start_time_str'])
+        cycles = parse_engine_cycles()
+        if not cycles:
+            st.info("No complete cycles found in the log.")
+        else:
+            st.write(f"Found **{len(cycles)}** complete cycle(s).")
+            cycle_data = []
+            for idx, c in enumerate(cycles):
+                display_time = c.get('full_start_time', c['start_time_str'])
+                
+                avg_time_str = "N/A"
+                success_count = c.get('success_count', 0)
+                if success_count > 0:
+                    try:
+                        start_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
+                        stop_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
+                        total_seconds = int((stop_dt - start_dt).total_seconds())
+                        if total_seconds < 0:
+                            total_seconds += 86400
+                        avg_seconds = total_seconds / success_count
+                        avg_time_str = _fmt_dur(avg_seconds)
+                    except:
+                        pass
+                
+                reject_count = c.get('reject_count', 0)
+                avg_reject_str = "N/A"
+                if reject_count > 0:
+                    avg_reject = c.get('reject_duration', 0) / reject_count
+                    avg_reject_str = _fmt_dur(avg_reject)
+
+                reset_count = c.get('reset_count', 0)
+                avg_reset_str = "N/A"
+                if reset_count > 0:
+                    avg_reset = c.get('reset_duration', 0) / reset_count
+                    avg_reset_str = _fmt_dur(avg_reset)
+
+                is_running = c.get('is_running', False)
+                cycle_id_val = "Running" if is_running else idx + 1
+                stop_time_val = "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown')
+
+                cycle_data.append({
+                    "Select": False, "Cycle ID": cycle_id_val, "Start Time": display_time,
+                    "Stop Time": stop_time_val,
+                    "Images": success_count,
+                    "Avg Time/Img": avg_time_str,
+                    "Refused": reject_count,
+                    "Avg Time/Refused": avg_reject_str,
+                    "Reset": reset_count,
+                    "Avg Time/Reset": avg_reset_str,
+                    "Log Lines": c['lines_count'], "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
+                })
+
+            df = pd.DataFrame(cycle_data)
+            edited_df = st.data_editor(
+                df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
+                    "Stop Time": st.column_config.TextColumn("Stop Time"),
+                    "Images": st.column_config.NumberColumn("Images", format="%d"),
+                    "Avg Time/Img": st.column_config.TextColumn("Avg Time/Img"),
+                    "Refused": st.column_config.NumberColumn("Refused", format="%d"),
+                    "Avg Time/Refused": st.column_config.TextColumn("Avg Time/Refused"),
+                    "Reset": st.column_config.NumberColumn("Reset", format="%d"),
+                    "Avg Time/Reset": st.column_config.TextColumn("Avg Time/Reset"),
+                    "_start_idx": None, "_end_idx": None
+                },
+                disabled=["Cycle ID", "Start Time", "Stop Time", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines"], 
+                hide_index=True,
+                width=950,
+                key="automation_cycle_editor"
+            )
+
+            selected_rows = edited_df[edited_df["Select"] == True]
+            valid_rows = selected_rows[selected_rows["Cycle ID"].astype(str) != "Running"]
             
-            avg_time_str = "N/A"
-            success_count = c.get('success_count', 0)
-            if success_count > 0:
-                try:
-                    start_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
-                    stop_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
-                    total_seconds = int((stop_dt - start_dt).total_seconds())
-                    if total_seconds < 0:
-                        total_seconds += 86400
-                    avg_seconds = total_seconds / success_count
-                    avg_time_str = _fmt_dur(avg_seconds)
-                except:
-                    pass
-            
-            reject_count = c.get('reject_count', 0)
-            avg_reject_str = "N/A"
-            if reject_count > 0:
-                avg_reject = c.get('reject_duration', 0) / reject_count
-                avg_reject_str = _fmt_dur(avg_reject)
+            if not selected_rows.empty and selected_rows.shape[0] > valid_rows.shape[0]:
+                st.info("The currently running cycle cannot be deleted. Any selection on it will be ignored.")
+                
+            if not valid_rows.empty:
+                st.warning(f"You have selected {len(valid_rows)} cycle(s) to delete. This action will permanently remove their associated logs from `engine.log`.")
+                if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
+                    cycles_to_delete = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
+                    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+                        lines = f.readlines()
+                    to_keep = []
+                    for i, line in enumerate(lines):
+                        if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_delete):
+                            to_keep.append(line)
+                    with open(LOG_PATH, "w", encoding="utf-8") as f:
+                        f.writelines(to_keep)
+                    st.success(f"Successfully deleted {len(cycles_to_delete)} cycle(s).")
+                    st.rerun()
 
-            reset_count = c.get('reset_count', 0)
-            avg_reset_str = "N/A"
-            if reset_count > 0:
-                avg_reset = c.get('reset_duration', 0) / reset_count
-                avg_reset_str = _fmt_dur(avg_reset)
-
-            is_running = c.get('is_running', False)
-            cycle_id_val = "Running" if is_running else idx + 1
-            stop_time_val = "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown')
-
-            cycle_data.append({
-                "Select": False, "Cycle ID": cycle_id_val, "Start Time": display_time,
-                "Stop Time": stop_time_val,
-                "Images": success_count,
-                "Avg Time/Img": avg_time_str,
-                "Refused": reject_count,
-                "Avg Time/Refused": avg_reject_str,
-                "Reset": reset_count,
-                "Avg Time/Reset": avg_reset_str,
-                "Log Lines": c['lines_count'], "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
-            })
-
-        df = pd.DataFrame(cycle_data)
-        edited_df = st.data_editor(
-            df,
-            column_config={
-                "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
-                "Stop Time": st.column_config.TextColumn("Stop Time"),
-                "Images": st.column_config.NumberColumn("Images", format="%d"),
-                "Avg Time/Img": st.column_config.TextColumn("Avg Time/Img"),
-                "Refused": st.column_config.NumberColumn("Refused", format="%d"),
-                "Avg Time/Refused": st.column_config.TextColumn("Avg Time/Refused"),
-                "Reset": st.column_config.NumberColumn("Reset", format="%d"),
-                "Avg Time/Reset": st.column_config.TextColumn("Avg Time/Reset"),
-                "_start_idx": None, "_end_idx": None
-            },
-            disabled=["Cycle ID", "Start Time", "Stop Time", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines"], 
-            hide_index=True,
-            width=950
-        )
-
-        selected_rows = edited_df[edited_df["Select"] == True]
-        valid_rows = selected_rows[selected_rows["Cycle ID"].astype(str) != "Running"]
-        
-        if not selected_rows.empty and selected_rows.shape[0] > valid_rows.shape[0]:
-            st.info("The currently running cycle cannot be deleted. Any selection on it will be ignored.")
-            
-        if not valid_rows.empty:
-            st.warning(f"You have selected {len(valid_rows)} cycle(s) to delete. This action will permanently remove their associated logs from `engine.log`.")
-            if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
-                cycles_to_delete = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
-                with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
-                    lines = f.readlines()
-                to_keep = []
-                for i, line in enumerate(lines):
-                    if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_delete):
-                        to_keep.append(line)
-                with open(LOG_PATH, "w", encoding="utf-8") as f:
-                    f.writelines(to_keep)
-                st.success(f"Successfully deleted {len(cycles_to_delete)} cycle(s).")
-                st.rerun()
+    _cycle_management_fragment()
