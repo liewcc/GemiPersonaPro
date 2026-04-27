@@ -294,7 +294,8 @@ def parse_account_health(target_account=None, login_data=None):
                             except: true_dur = 0
                         record = {
                             "account": temp_account, "time": temp_start_time,
-                            "health": f"{true_dur}s", "filename": fname,
+                            "health": f"{true_dur}s", "health_self": f"{true_dur}s",
+                            "filename": fname,
                             "status": "Success" if fname else "Fail",
                             "session_index": temp_session_idx,
                             "round": active_event.get("round", round_id) if active_event else round_id
@@ -322,7 +323,8 @@ def parse_account_health(target_account=None, login_data=None):
                     except: fail_dur = 0
                     record = {
                         "account": temp_account, "time": temp_start_time,
-                        "health": f"{fail_dur}s", "filename": "",
+                        "health": f"{fail_dur}s", "health_self": f"{fail_dur}s",
+                        "filename": "",
                         "status": event.title(), "session_index": temp_session_idx,
                         "round": active_event.get("round", round_id) if active_event else round_id
                     }
@@ -423,7 +425,8 @@ def parse_account_health(target_account=None, login_data=None):
                         if true_dur is None: true_dur = 0
                         record = {
                             "account": temp_account, "time": temp_start_time,
-                            "health": f"{true_dur}s", "filename": fname,
+                            "health": f"{true_dur}s", "health_self": f"{true_dur}s",
+                            "filename": fname,
                             "status": "Success" if fname else "Fail",
                             "session_index": temp_session_idx,
                             "true_rej": true_rej, "true_res": true_res
@@ -440,7 +443,8 @@ def parse_account_health(target_account=None, login_data=None):
                     except: fail_dur = 0
                     record = {
                         "account": temp_account, "time": temp_start_time,
-                        "health": f"{fail_dur}s", "filename": "",
+                        "health": f"{fail_dur}s", "health_self": f"{fail_dur}s",
+                        "filename": "",
                         "status": status, "session_index": temp_session_idx
                     }
                     detailed_results.append(record)

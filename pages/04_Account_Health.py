@@ -75,29 +75,37 @@ def _fmt_dur(x):
     return f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else (f"{m:02d}:{s:02d}" if m > 0 else f"{s:02d}s")
 
 
-def _build_duration_chart(detailed_data, y_scale_type):
+def _build_duration_chart(detailed_data, y_scale_type, event_only_success=False):
     """Build a bar chart of loading durations per event."""
     df = pd.DataFrame(detailed_data[::-1])
     df["Event"] = range(1, len(df) + 1)
 
-    df["Minutes"] = df["health"].str.replace("s", "").astype(float) / 60.0
+    # When event_only_success is True, use health_self for Success rows
+    if event_only_success and "health_self" in df.columns:
+        df["_dur_col"] = df.apply(
+            lambda r: r["health_self"] if r["status"] == "Success" and pd.notna(r.get("health_self")) else r["health"], axis=1)
+    else:
+        df["_dur_col"] = df["health"]
+    df["Minutes"] = df["_dur_col"].str.replace("s", "").astype(float) / 60.0
     # Global dense rank of session_index so every new session (including account
     # switches) alternates Base ↔ Light. Per-account ranking caused all first
     # sessions of different accounts to share rank=1 and thus the same color.
     df["cycle"] = df["session_index"].rank(method="dense").astype(int)
     df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-    ll = ['Success (Base)', 'Reject (Base)', 'Reset (Base)', 'Fail',
-          'Success (Light)', 'Reject (Light)', 'Reset (Light)']
+    # Display status: Reject → Refused
+    df["display_status"] = df["status"].replace({"Reject": "Refused"})
+    ll = ['Success (Base)', 'Refused (Base)', 'Reset (Base)', 'Fail',
+          'Success (Light)', 'Refused (Light)', 'Reset (Light)']
     lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
-    df['legend'] = df.apply(lambda r: f"{r['status']} ({r['variant']})" if r['status'] != 'Fail' else 'Fail', axis=1)
-    df["Duration"] = df["health"].str.replace("s", "").astype(float).apply(_fmt_dur)
+    df['legend'] = df.apply(lambda r: f"{r['display_status']} ({r['variant']})" if r['display_status'] != 'Fail' else 'Fail', axis=1)
+    df["Duration"] = df["_dur_col"].str.replace("s", "").astype(float).apply(_fmt_dur)
     
     chart = alt.Chart(df).mark_bar().encode(
         x=alt.X('Event:Q', title="Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
         y=alt.Y('Minutes:Q', title="Duration (minutes)", scale=alt.Scale(type=y_scale_type)),
         color=alt.Color('legend:N', scale=alt.Scale(domain=ll, range=lr),
                         legend=alt.Legend(title=None, orient='bottom', columns=4)),
-        tooltip=['round', 'time', 'account', 'Duration', 'filename', 'status']
+        tooltip=['round', 'time', 'account', 'Duration', 'filename', 'display_status:N']
     ).properties(height=400).interactive(bind_y=False)
     return chart
 
@@ -144,14 +152,14 @@ def _build_reject_chart(detailed_data, y_scale_type):
         tooltip=['account:N', 'session_index:Q']
     )
     agg_df["t_dur"] = agg_df["Duration"] / 60.0
-    agg_df["t_rej"] = agg_df["Rejects"]
+    agg_df["t_ref"] = agg_df["Rejects"]
     agg_df["t_res"] = agg_df["Resets"]
     agg_df["t_dur_fmt"] = agg_df["Duration"].apply(lambda x: f"{int(x // 60)}:{int(x % 60):02d}")
-    melt_ids = ['Event', 'Display', 'Image', 'round', 'account', 'time', 'session_index', 't_dur_fmt', 't_rej', 't_res', 'status']
+    melt_ids = ['Event', 'Display', 'Image', 'round', 'account', 'time', 'session_index', 't_dur_fmt', 't_ref', 't_res', 'status']
     plot_df = agg_df.melt(id_vars=melt_ids, value_vars=['t_dur', 'Rejects', 'Resets'], var_name='Metric', value_name='Value')
-    plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minutes)'})
+    plot_df['Metric'] = plot_df['Metric'].replace({'t_dur': 'Duration (minutes)', 'Rejects': 'Refused'})
 
-    cs = alt.Scale(domain=['Duration (minutes)', 'Rejects', 'Resets'], range=['#2ecc71', '#a0a0ff', '#f39c12'])
+    cs = alt.Scale(domain=['Duration (minutes)', 'Refused', 'Resets'], range=['#2ecc71', '#a0a0ff', '#f39c12'])
     base = alt.Chart(plot_df).encode(
         x=alt.X('Event:Q', title=None, axis=alt.Axis(format='d', tickMinStep=1)),
         y=alt.Y('Value:Q', title=None, scale=alt.Scale(type=y_scale_type)),
@@ -163,14 +171,14 @@ def _build_reject_chart(detailed_data, y_scale_type):
         tooltip=[
             alt.Tooltip('Image:N', title='Filename'), alt.Tooltip('round:N', title='Round'),
             alt.Tooltip('account:N', title='Account'), alt.Tooltip('time:N', title='Time'),
-            alt.Tooltip('t_dur_fmt:N', title='Duration'), alt.Tooltip('t_rej:Q', title='Reject Count'),
+            alt.Tooltip('t_dur_fmt:N', title='Duration'), alt.Tooltip('t_ref:Q', title='Refused Count'),
             alt.Tooltip('t_res:Q', title='Reset Count'), alt.Tooltip('status:N', title='Status')
         ]
     )
     return alt.layer(bg_bands, lines, points).resolve_scale(color='independent').properties(height=400).interactive()
 
 
-def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, table_key):
+def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, table_key, event_only_success=False):
     """Unified rendering: either chart or table for a given dataset."""
     if not data:
         st.info(f"No loading records found for {label}.")
@@ -178,9 +186,9 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
     if show_graph:
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Performance Graph: <b>{label}</b></p>", unsafe_allow_html=True)
         if graph_type == "Round Duration":
-            st.altair_chart(_build_duration_chart(data, y_scale_type), width="stretch")
+            st.altair_chart(_build_duration_chart(data, y_scale_type, event_only_success=event_only_success), width="stretch")
         else:
-            st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Reject Rate: <b>{label}</b> (X-Axis: Successful Images)</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Refused Rate: <b>{label}</b> (X-Axis: Successful Images)</p>", unsafe_allow_html=True)
             chart = _build_reject_chart(data, y_scale_type)
             if chart is None:
                 st.info("No successful image downloads found to plot trends.")
@@ -215,6 +223,9 @@ def _on_change_health_y_scale():
 
 def _on_change_health_n_rounds():
     save_config({"health_n_rounds": st.session_state.widget_health_n_rounds})
+
+def _on_change_event_only_success():
+    save_config({"health_event_only_success": st.session_state.widget_event_only_success})
 
 
 # ── Render Logic ─────────────────────────────────────────────────────────────
@@ -273,6 +284,16 @@ with tab1:
             with col_rad:
                 with st.container(border=True):
                     st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph)
+                    is_round_dur = (cfg_graph == "Round Duration")
+                    cfg_eos = config.get("health_event_only_success", False)
+                    st.toggle(
+                        "Event-Only Success Duration",
+                        value=cfg_eos if is_round_dur else False,
+                        disabled=not is_round_dur,
+                        key="widget_event_only_success",
+                        on_change=_on_change_event_only_success,
+                        help="ON: Success bars show only the final attempt duration (same as Refused/Reset). OFF: Success bars show the cumulative round duration (from last success to this success)."
+                    )
             with col_scale:
                 # Y-Axis Scale in a container at the far right
                 with st.container(border=True):
@@ -287,6 +308,7 @@ with tab1:
         y_scale_type = 'symlog' if config.get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
         graph_type = config.get("health_graph_type", "Round Duration")
         n_rounds = config.get("health_n_rounds", 100)
+        event_only_success = config.get("health_event_only_success", False) and graph_type == "Round Duration"
 
         # Fragment for auto-refreshing content
         auto_refresh = st.session_state.get("health_auto_refresh", True)
@@ -298,18 +320,18 @@ with tab1:
             show_graph = st.session_state.get("show_health_graph", True)
             if is_full:
                 _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
-                _render_chart_or_table(all_detailed[:n_rounds], graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table")
+                _render_chart_or_table(all_detailed[:n_rounds], graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table", event_only_success=event_only_success)
             elif is_active:
                 _active_user = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
                 if not _active_user:
                     st.info("No active account is currently set.")
                 else:
                     _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
-                    _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table")
+                    _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table", event_only_success=event_only_success)
             else:
                 target_acc = view_mode.replace("Detailed History: ", "")
                 _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
-                _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}")
+                _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}", event_only_success=event_only_success)
 
         _health_fragment()
 

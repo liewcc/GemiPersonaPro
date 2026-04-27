@@ -22,14 +22,17 @@ When viewing detailed histories, toggle **Plot Graph** to access interactive Alt
 
 #### Loading Duration (Bar Chart)
 - **Y-Axis**: Duration in **minutes (minite)**. Choose between Linear or Logarithmic scales.
+- **Toggle - Event-Only Success Duration**: This toggle (available in Round Duration mode) changes how the green Success bars are calculated:
+  - **OFF (Default)**: Success bars show the cumulative duration of the entire round (from the first loading attempt until this success).
+  - **ON**: Success bars only show the duration of the final, successful attempt (from the last refusal/reset until success). This aligns the success bar logic with the Refused and Reset bars.
 - **Colors**: 
   - 🟩 **Green**: Success
-  - 🟪 **Purple/Blue**: Reject (Safety filter refused the prompt)
+  - 🟪 **Purple/Blue**: Refused (Safety filter refused the prompt)
   - 🟧 **Orange**: Reset (Page crashed or required a hard refresh)
   - 🟥 **Light Red**: Fail (A success was detected but the file was missing/corrupted)
 - **Session Banding**: The chart uses alternating Base/Light colors for the bars to visually group events by account session. This makes it easy to see exactly where automated account switches occurred. **Continue Session** (Stop → Resume without resetting) preserves the same session color — only a fresh start (Round 1) or a real account switch creates a new color band.
 
-#### Reject Rates (Line Chart)
+#### Refused Rates (Line Chart)
 - **X-Axis**: Successful image downloads.
 - **Y-Axis**: Cumulative count of Refusals or Resets encountered *before* achieving that success.
 - **Purpose**: A rising trend line indicates that an account is becoming "tired" or heavily filtered. If you see consistent spikes in rejects, it suggests the account needs a longer cooldown or your prompts need more variation.
@@ -59,4 +62,4 @@ Over time, your `engine.log` file can become cluttered with test runs, failed se
 
 ---
 
-*💡 **Pro Tip**: If a specific account shows a consistent "Reject" pattern in the graphs, consider using the System Config page to increase the **Quota Cooldown** hours for your system, or manually bypass that account in the Credentials table.*
+*💡 **Pro Tip**: If a specific account shows a consistent "Refused" pattern in the graphs, consider using the System Config page to increase the **Quota Cooldown** hours for your system, or manually bypass that account in the Credentials table.*
