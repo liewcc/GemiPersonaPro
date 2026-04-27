@@ -29,12 +29,26 @@ At the bottom of the dialog, a dedicated status bar tracks the **Time Threshold 
 
 ---
 
-## 3. Account Health Analysis (Loading Performance)
-Located on the **System Config** page, this tool tracks how quickly each account loads the Gemini environment.
+## 3. Account Health Analysis
+Located on the dedicated **Account Health** page, this tool provides a powerful diagnostic suite to visualize the performance and stability of your account rotation.
 
-- **Visual Trends**: Use the **Plot Graph** button to visualize loading speed trends over time. 
-- **Identify Bottlenecks**: Significant spikes in loading duration (Health) can indicate network issues or account-specific throttling.
-- **Artifact Tracking**: The graph explicitly labels which loading events resulted in successful image downloads, allowing you to correlate performance with output.
+### Interactive Performance Graphs
+Toggle **Plot Performance Graph** to access modular analysis containers:
+
+- **Round Duration (Bar Chart)**:
+    - **Purpose**: Tracks the time consumed by each automation round.
+    - **Y-Axis**: Duration in **minutes**. 
+    - **Session Grouping**: Uses alternating colors (Base/Light) to visually separate distinct automation sessions.
+    - **Linear/Logarithmic Toggle**: Switch scales to visualize both large duration spikes and subtle timing variations.
+- **Retry Analysis (Line Chart)**:
+    - **Purpose**: Observes the number of "Refused" and "Reset" events encountered for each successful image download.
+    - **Interpretation**: A high count of retries for a single image suggests the account is heavily filtered or the prompt is problematic.
+    - **Success Correlation**: The X-Axis maps directly to successful image filenames, allowing you to identify which assets were the hardest to acquire.
+
+### Advanced Layout & Controls
+- **Modular Containers**: Graph modes and Y-Axis scales are organized into bordered containers for a clean, professional interface.
+- **View Modes**: Choose between **Full Loading History**, **Detailed History (Active Account)**, or a **Latest Summary** table for all accounts.
+- **Auto-Refresh**: Enable to keep the charts synced with `engine.log` every 5 seconds.
 
 ---
 

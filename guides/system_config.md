@@ -79,16 +79,15 @@ A powerful diagnostic suite that parses `engine.log` to visualize the performanc
 - **Latest Summary (All Accounts)**: A high-level overview showing the most recent loading status and duration for every account in the system.
 
 ### Performance Visualizations
-Toggle **Plot Performance Graph** to access interactive Altair charts:
-- **Loading Duration (Bar Chart)**:
-    - **Y-Axis**: Duration in **minutes (minite)**.
+Toggle **Plot Performance Graph** to access interactive Altair charts within modular containers:
+- **Round Duration (Bar Chart)**:
+    - **Y-Axis**: Duration in **minutes**.
     - **Colors**: **Green** (Success), **Purple/Blue** (Reject), **Orange** (Reset), **Light Red** (Fail).
-    - **Session Banding**: The chart uses alternating Base/Light colors to visually group events by session. Color ranks are computed **per-account** (independently for each account), so each account's sessions correctly alternate Base → Light → Base regardless of global session numbering.
-    - **Session Boundary Rules**: A new session (color change) is only triggered by two events: (1) a manual account switch followed by Continue Session, or (2) a quota full event. Interruptions such as crashes, re-logins, or Continue Session without an account change are all grouped into the same session color.
-- **Reject Rates (Line Chart)**:
+    - **Session Banding**: The chart uses alternating Base/Light colors to visually group events by session. Color ranks are computed **per-account** to ensure consistent alternating patterns during rotation.
+- **Retry Analysis (Line Chart)**:
     - **X-Axis**: Successful image downloads.
     - **Y-Axis**: Cumulative count of Refusals or Resets encountered *before* that success.
-    - **Purpose**: A rising trend line indicates that an account is becoming "tired" or heavily filtered, suggesting it may need a longer cooldown.
+    - **Purpose**: A rising trend line indicates that an account is encountering more friction (Refusals/Resets), suggesting it may need a longer cooldown or a prompt adjustment.
 
 ### Status Indicators
 - **Success**: The AI responded and a file was successfully saved.

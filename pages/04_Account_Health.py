@@ -176,18 +176,18 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         st.info(f"No loading records found for {label}.")
         return
     if show_graph:
-        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Performance Graph for <b>{label}</b></p>", unsafe_allow_html=True)
-        if graph_type == "Loading Duration":
+        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Performance Graph: <b>{label}</b></p>", unsafe_allow_html=True)
+        if graph_type == "Round Duration":
             st.altair_chart(_build_duration_chart(data, y_scale_type), width="stretch")
         else:
-            st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Reject Rate for <b>{label}</b> (X-Axis: Successful Images)</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Reject Rate: <b>{label}</b> (X-Axis: Successful Images)</p>", unsafe_allow_html=True)
             chart = _build_reject_chart(data, y_scale_type)
             if chart is None:
                 st.info("No successful image downloads found to plot trends.")
             else:
                 st.altair_chart(chart, width="stretch")
     else:
-        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Loading records for <b>{label}</b>.</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Loading records: <b>{label}</b>.</p>", unsafe_allow_html=True)
         st.data_editor(
             pd.DataFrame(data),
             column_config={
@@ -222,80 +222,71 @@ def _on_change_health_n_rounds():
 tab1, tab2 = st.tabs(["Account Health Analysis", "Automation Cycle Management"])
 
 with tab1:
-    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
     with st.container(border=True):
-
-
-        col_sel, col_ref, col_btn1, col_btn2 = st.columns([2, 0.8, 0.6, 0.6])
-        with col_ref:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            st.toggle("Auto-refresh", value=True, key="health_auto_refresh", help="Disable to prevent chart reset while zooming.")
-        with col_sel:
+        # Integrated top row: View Mode and Actions
+        c1, c2, c3, c4 = st.columns([2.2, 0.8, 0.8, 0.7])
+        with c1:
             options = ["Full Loading History (All Events)", "Detailed History: Active Account", "Latest Summary (All Accounts)"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs]
             cfg_val = config.get("health_view_mode", "Full Loading History (All Events)")
-            try:
-                view_index = options.index(cfg_val)
-            except ValueError:
-                view_index = 0
+            try: view_index = options.index(cfg_val)
+            except ValueError: view_index = 0
             view_mode = st.selectbox("Select View Mode", options=options, index=view_index, key="widget_health_view_mode", on_change=_on_change_health_view, help="Choose between a complete history of all loading events, a summary of all accounts, or detailed history for a specific account.")
-
+        
         is_full = view_mode == "Full Loading History (All Events)"
         is_active = view_mode == "Detailed History: Active Account"
         is_summary = view_mode == "Latest Summary (All Accounts)"
-
+        
         if "show_health_graph" not in st.session_state:
             st.session_state.show_health_graph = True
 
-        with col_btn1:
+        with c2:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("Refresh Log", icon="🔄", width="stretch"):
+            if st.button("Refresh Log", icon="🔄", use_container_width=True):
                 st.rerun()
-        with col_btn2:
+        with c3:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             if not is_summary:
                 lbl = "Show Table" if st.session_state.show_health_graph else "Plot Graph"
                 ico = "📋" if st.session_state.show_health_graph else "📊"
-                if st.button(lbl, icon=ico, width="stretch", type="secondary"):
+                if st.button(lbl, icon=ico, use_container_width=True):
                     st.session_state.show_health_graph = not st.session_state.show_health_graph
                     st.rerun()
             else:
-                st.button("Plot Graph", icon="📊", width="stretch", disabled=True)
+                st.button("Plot Graph", icon="📊", disabled=True, use_container_width=True)
+        with c4:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            st.toggle("Auto-refresh", value=True, key="health_auto_refresh")
 
         if not is_summary:
-            st.markdown("<div style='margin-bottom: 5px;'></div>", unsafe_allow_html=True)
             cfg_n_rounds = config.get("health_n_rounds", 100)
-            
             if st.session_state.show_health_graph:
-                col_slider, col_rad, col_scale = st.columns([1.5, 1.5, 1])
-                graph_opts = ["Loading Duration", "Reject Rates"]
+                # Second row for Graph Settings: Slider, Mode, Scale
+                col_slider, col_rad, col_scale = st.columns([1.5, 1.2, 1.3])
+                graph_opts = ["Round Duration", "Retry Analysis"]
                 scale_opts = ["Linear", "Logarithmic"]
-                cfg_graph = config.get("health_graph_type", "Loading Duration")
-                try:
-                    graph_idx = graph_opts.index(cfg_graph)
-                except ValueError:
-                    graph_idx = 0
+                cfg_graph = config.get("health_graph_type", "Round Duration")
+                try: graph_idx = graph_opts.index(cfg_graph)
+                except ValueError: graph_idx = 0
                 cfg_scale = config.get("health_y_scale", "Linear")
-                try:
-                    scale_idx = scale_opts.index(cfg_scale)
-                except ValueError:
-                    scale_idx = 0
+                try: scale_idx = scale_opts.index(cfg_scale)
+                except ValueError: scale_idx = 0
                 
                 with col_slider:
                     st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
                 with col_rad:
-                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                    st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph, label_visibility="collapsed")
+                    with st.container(border=True):
+                        st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph)
                 with col_scale:
-                    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                    st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Use Logarithmic scale to see small counts (Rejects/Resets) alongside large durations.")
+                    # Y-Axis Scale in a container at the far right
+                    with st.container(border=True):
+                        st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
             else:
-                col_slider, _ = st.columns([1.5, 2.5])
-                with col_slider:
-                    st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
+                st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds, label_visibility="collapsed")
 
         # Read settings once for the fragment
         y_scale_type = 'symlog' if config.get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
-        graph_type = config.get("health_graph_type", "Loading Duration")
+        graph_type = config.get("health_graph_type", "Round Duration")
         n_rounds = config.get("health_n_rounds", 100)
 
         # Fragment for auto-refreshing content
@@ -307,7 +298,6 @@ with tab1:
             fresh_login_data = load_login_lookup()
             show_graph = st.session_state.get("show_health_graph", True)
             if is_full:
-                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing recorded loading events in chronological order (latest first).</p>", unsafe_allow_html=True)
                 _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
                 _render_chart_or_table(all_detailed[:n_rounds], graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table")
             elif is_active:
@@ -319,7 +309,7 @@ with tab1:
                     _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table")
             elif is_summary:
                 _summary_all, _, _ = parse_account_health(login_data=fresh_login_data)
-                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 10px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
+                st.markdown("<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Showing the last recorded loading performance for each account.</p>", unsafe_allow_html=True)
                 if not _summary_all:
                     st.info("No loading records found in engine.log.")
                 else:
