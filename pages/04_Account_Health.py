@@ -283,21 +283,25 @@ with tab1:
                     st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
             with col_rad:
                 with st.container(border=True):
-                    st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=True, key="widget_health_graph_type", on_change=_on_change_health_graph)
-                    is_round_dur = (cfg_graph == "Round Duration")
-                    cfg_eos = config.get("health_event_only_success", False)
-                    st.toggle(
-                        "Event-Only Success Duration",
-                        value=cfg_eos if is_round_dur else False,
-                        disabled=not is_round_dur,
-                        key="widget_event_only_success",
-                        on_change=_on_change_event_only_success,
-                        help="ON: Success bars show only the final attempt duration (same as Refused/Reset). OFF: Success bars show the cumulative round duration (from last success to this success)."
-                    )
+                    cr1, cr2 = st.columns([1, 1.1])
+                    with cr1:
+                        st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=False, key="widget_health_graph_type", on_change=_on_change_health_graph)
+                    with cr2:
+                        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                        is_round_dur = (cfg_graph == "Round Duration")
+                        cfg_eos = config.get("health_event_only_success", False)
+                        st.toggle(
+                            "Event-Only Success Duration",
+                            value=cfg_eos if is_round_dur else False,
+                            disabled=not is_round_dur,
+                            key="widget_event_only_success",
+                            on_change=_on_change_event_only_success,
+                            help="ON: Success bars show only the final attempt duration (same as Refused/Reset). OFF: Success bars show the cumulative round duration (from last success to this success)."
+                        )
             with col_scale:
                 # Y-Axis Scale in a container at the far right
                 with st.container(border=True):
-                    st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=True, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
+                    st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=False, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
         else:
             c_left, c_right = st.columns([1, 1])
             with c_left:
