@@ -651,8 +651,12 @@ async def automation_manager(req: AutomationRequest):
                 print("[AUTO] User stop signal detected in manager.")
                 break
                 
-            # 1. Reload Config from Disk (Ensures profile switches/URL changes are picked up)
+            # 1. Reload Config and Detect Current User
             req.config.update(load_config())
+            current_user = (
+                engine.automation_status.get("current_account_id")
+                or req.config.get("active_user")
+            )
             
             _curr_time_enabled = req.config.get("automation", {}).get("loop_control", {}).get("time_enabled", False)
             if _curr_time_enabled and not _prev_time_enabled:
@@ -802,8 +806,8 @@ async def automation_manager(req: AutomationRequest):
             # --- [NEW] Real-time persistence of session stats ---
             _commit_session_stats_to_table()
 
-            # 4b. Loop-Control Threshold Check (applies to success, refused, reset, error, timeout)
-            if result.get("status") in ["success", "refused", "reset", "error", "timeout"]:
+            # 4b. Loop-Control Threshold Check (applies to success, refused, reset, error, timeout, quota)
+            if result.get("status") in ["success", "refused", "reset", "error", "timeout", "quota"]:
                 loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
                 lc_trigger, lc_action = False, "next_profile"
                 
@@ -831,12 +835,13 @@ async def automation_manager(req: AutomationRequest):
                     engine._log_debug("API>> Image successfully downloaded. Resetting Time Threshold timer.")
 
                 if lc_trigger:
-                    engine._log_debug(f"API>> Loop Control triggered (action={lc_action}). Attempting switch...")
-                    current_user = (
-                        engine.automation_status.get("current_account_id")
-                        or req.config.get("active_user")
-                    )
-                    if lc_action == "re_login" and current_user:
+                    # If quota was hit, we MUST switch to next profile even if action was re_login
+                    actual_action = lc_action
+                    if result.get("status") == "quota":
+                        actual_action = "next_profile"
+
+                    engine._log_debug(f"API>> Loop Control triggered (action={actual_action}). Attempting switch...")
+                    if actual_action == "re_login" and current_user:
                         lc_switch_res = await perform_switch_logic(target_username=current_user)
                     else:
                         lc_switch_res = await perform_switch_logic()  # direction=+1 (next)
@@ -849,18 +854,30 @@ async def automation_manager(req: AutomationRequest):
                         await asyncio.sleep(5)
                         engine._stop_automation_event.clear()
                         
-                        # Maintain pending stats across account switches (next_profile or re_login)
-                        # Only clear the Loop Control specific counters.
+                        # Maintain pending stats across account switches
                         engine._lc_pending_refused = 0
                         engine._lc_pending_resets  = 0
                         engine._lc_cycle_start_time = time.time()
 
-                        # Check if this switch was specifically triggered by TIME
-                        # We use a simple heuristic: if dur_min (from the check above) was the trigger
-                        _v_time_dur = (time.time() - engine._lc_time_threshold_start_time) / 60.0
-                        if loop_ctrl.get("time_enabled") and _v_time_dur >= loop_ctrl.get("time_minutes", 999):
-                            engine._log_debug("API>> Time Threshold met. Resetting independent time timer.")
+                        # --- [ABS ALARM FIX] ---
+                        # Only reset Time Threshold timer if:
+                        # 1. This switch was specifically triggered by TIME being reached
+                        # 2. The switch resulted in a DIFFERENT account (fresh start for new user)
+                        
+                        _time_limit_min = loop_ctrl.get("time_minutes", 999)
+                        # current_tt_dur was captured at line 816 (before switch)
+                        time_was_met = (loop_ctrl.get("time_enabled") and (current_tt_dur / 60.0) >= _time_limit_min)
+                        
+                        is_new_account = (lc_switch_res.get("user") != current_user)
+                        
+                        if time_was_met or is_new_account:
+                            if time_was_met:
+                                engine._log_debug("API>> Time Threshold reached limit. Resetting absolute timer.")
+                            else:
+                                engine._log_debug(f"API>> Switched to different account {lc_switch_res.get('user')}. Resetting timer.")
                             engine._lc_time_threshold_start_time = time.time()
+                        else:
+                            engine._log_debug(f"API>> Re-login to same account {current_user} (Time {current_tt_dur/60.0:.1f}/{_time_limit_min}m). Timer NOT reset.")
 
                         engine._automation_needs_new_chat = True
                         continue
@@ -896,6 +913,7 @@ async def automation_manager(req: AutomationRequest):
                             
                             # Short circuit variables for loop control
                             engine._lc_cycle_start_time = time.time()
+                            engine._lc_time_threshold_start_time = time.time() # Reset timer after infinite loop sleep
                             engine._lc_pending_refused = 0
                             engine._lc_pending_resets = 0
                             continue
@@ -948,7 +966,11 @@ async def automation_manager(req: AutomationRequest):
                     engine._lc_pending_refused = 0
                     engine._lc_pending_resets = 0
                     engine._lc_cycle_start_time = time.time()
-                    engine._lc_time_threshold_start_time = time.time()
+                    
+                    # Only reset time threshold if it's a REAL switch to a different account
+                    if switch_res.get("user") != current_user:
+                        engine._lc_time_threshold_start_time = time.time()
+                    
                     continue # Try next loop with new user
                 elif switch_res.get("status") == "table_full":
                     loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
