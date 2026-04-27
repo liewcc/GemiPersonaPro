@@ -268,7 +268,7 @@ with tab1:
         cfg_n_rounds = config.get("health_n_rounds", 100)
         if st.session_state.show_health_graph:
             # Second row for Graph Settings: Slider, Mode, Scale
-            col_slider, col_rad, col_scale = st.columns([2, 1, 1])
+            col_slider, col_rad, col_scale = st.columns([2.0, 1.4, 0.6])
             graph_opts = ["Round Duration", "Retry Analysis"]
             scale_opts = ["Linear", "Logarithmic"]
             cfg_graph = config.get("health_graph_type", "Round Duration")
