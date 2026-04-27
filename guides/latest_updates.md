@@ -1,8 +1,11 @@
-﻿# ðŸ†• Latest Updates & Features
+# ðŸ†• Latest Updates & Features
 
 Welcome to the latest release notes for **GemiPersonaPro**. This document outlines the most recent improvements, bug fixes, and new features added to the system.
 
 ## ðŸš€ Recent Features & Enhancements
+
+### Update: 2026-04-27 - Aspect Ratio Table UI Fix
+- **Aspect Ratio 'Active' Save Logic**: Fixed a bug where selecting the "Active" row in the Aspect Ratio Looping Table (both in Gemini Setup and System Config) failed to properly update the underlying counting math. Saving a specifically marked "Active" row now automatically resets its count and marks prior rows as complete, ensuring the generation sequence reliably resumes exactly where the user clicked.
 
 ### Update: 2026-04-26 - UI Consolidation & Enhanced Cycle Analytics
 

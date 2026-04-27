@@ -781,6 +781,11 @@ def show_prompt_prefix_dialog():
                 target = int(r.get("target") or 1)
                 current = int(r.get("current") or 0)
                 
+                if i < new_active_idx and current < target:
+                    current = target
+                elif i == new_active_idx and current >= target:
+                    current = 0
+                
                 new_items.append({
                     "ratio": r.get("ratio") or "None (Master Prompt)",
                     "target": target,
