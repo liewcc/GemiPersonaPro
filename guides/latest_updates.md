@@ -1,8 +1,15 @@
-# ðŸ†• Latest Updates & Features
+# 🆕 Latest Updates & Features
 
 Welcome to the latest release notes for **GemiPersonaPro**. This document outlines the most recent improvements, bug fixes, and new features added to the system.
 
-## ðŸš€ Recent Features & Enhancements
+## 🚀 Recent Features & Enhancements
+
+### Update: 2026-04-28 - Account Health UI Scaling & Stability
+- **Dynamic Log Scaling**: The `Show Last N Events` slider in the Account Health page is no longer capped at 2000 events. It now dynamically calculates its maximum value based on the exact number of events currently stored in `engine.log`.
+- **Global Cycle Isolation**: Introduced a new **Show Last Cycle Only** toggle. When enabled, it intelligently identifies the start of the most recent *global* automation cycle and filters out all older events. It seamlessly merges multi-session data caused by Loop Control account switches, providing a clean view of the current run regardless of how many accounts are involved.
+- **Contextual UI De-cluttering**: The graph controls container (including the events slider and cycle toggle) now automatically hides when the user switches to **Table Mode**, maximizing vertical screen real estate for the data grid.
+- **Total Events Tracking**: Added a new **Events** column to the Automation Cycle Management table. This new data point summarizes the absolute total of all processing events (Successes + Refusals + Resets) contained within each historical cycle.
+- **Streamlit Garbage Collection Bypass**: Addressed a known Streamlit core bug (`MediaFileStorageError`) that caused the backend to crash when auto-refreshing fragments (`@st.fragment`) coexisted with a local static file path for `page_icon`. The application's `page_icon` has been converted to an emoji (`🏥`) to permanently bypass this frontend caching issue.
 
 ### Update: 2026-04-27 - Aspect Ratio Table UI Fix
 - **Aspect Ratio 'Active' Save Logic**: Fixed a bug where selecting the "Active" row in the Aspect Ratio Looping Table (both in Gemini Setup and System Config) failed to properly update the underlying counting math. Saving a specifically marked "Active" row now automatically resets its count and marks prior rows as complete, ensuring the generation sequence reliably resumes exactly where the user clicked.

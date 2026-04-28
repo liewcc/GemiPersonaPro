@@ -20,6 +20,10 @@ Use the dropdown menu to select the scope of your analysis:
 ### Performance Visualizations
 When viewing detailed histories, toggle **Plot Graph** to access interactive Altair charts:
 
+#### Graph Controls
+- **Show Last N Events**: A dynamic slider that controls how many historical events are rendered. The maximum limit automatically scales to the exact length of your `engine.log` file, allowing you to visualize your entire history without an arbitrary cap. (Note: This control panel automatically hides when in **Show Table** mode for a cleaner interface).
+- **Show Last Cycle Only**: When toggled ON, the charts and tables will intelligently filter the dataset to display *only* the events belonging to the most recent global automation cycle (even if that cycle spans multiple accounts via Loop Control switching).
+
 #### Loading Duration (Bar Chart)
 - **Y-Axis**: Duration in **minutes (minite)**. Choose between Linear or Logarithmic scales.
 - **Toggle - Event-Only Success Duration**: This toggle (available in Round Duration mode) changes how the green Success bars are calculated:
@@ -53,7 +57,7 @@ Over time, your `engine.log` file can become cluttered with test runs, failed se
 - **Continue Session Grouping**: The system is smart enough to group "Continue Session" triggers within their original parent cycle, preventing fragmented entries in the table.
 
 ### Log Maintenance & Decluttering
-- **Data Selection**: Provides an interactive table listing every identified cycle, showing its **Start Time**, **Stop Time**, **Cycle ID**, **Successful Downloads**, and the total number of log lines it occupies.
+- **Data Selection**: Provides an interactive table listing every identified cycle, showing its **Start Time**, **Stop Time**, **Cycle ID**, **Duration**, **Successful Downloads** (Images), **Events** (total count of all successes, refusals, and resets in the cycle), and the total number of log lines it occupies.
 - **Selective Deletion**: 
   1. Check the boxes under the **Select for Deletion** column for any historical cycles you wish to remove.
   2. Click **🗑️ Delete Selected Cycles**.

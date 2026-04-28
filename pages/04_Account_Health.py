@@ -14,14 +14,17 @@ from health_parser import parse_account_health, parse_engine_cycles, LOG_PATH
 from style_utils import apply_premium_style, render_dashboard_header
 
 # --- Page Setup ---
-st.set_page_config(page_title="GemiPersona | Account Health", page_icon="sys_img/logo.png", layout="wide")
+st.set_page_config(page_title="GemiPersona | Account Health", page_icon="🏥", layout="wide")
 apply_premium_style()
 
 config = load_config()
 login_data = load_login_lookup()
 
 # --- Extract Account List & Active User ---
-summary_all, _, log_accs = parse_account_health(login_data=login_data)
+summary_all, all_events_list, log_accs = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
+max_events_raw = max(2000, len(all_events_list))
+max_available_events = ((max_events_raw + 9) // 10) * 10
+
 lookup_order = [u.get("username", "").lower() for u in login_data if u.get("username")]
 log_accs_set = set(log_accs)
 lookup_accs_set = set(lookup_order)
@@ -227,6 +230,9 @@ def _on_change_health_n_rounds():
 def _on_change_event_only_success():
     save_config({"health_event_only_success": st.session_state.widget_event_only_success})
 
+def _on_change_show_last_cycle():
+    save_config({"health_show_last_cycle": st.session_state.widget_show_last_cycle})
+
 
 # ── Render Logic ─────────────────────────────────────────────────────────────
 
@@ -266,6 +272,8 @@ with tab1:
             st.toggle("Auto-refresh", value=True, key="health_auto_refresh")
 
         cfg_n_rounds = config.get("health_n_rounds", 100)
+        safe_n_rounds = min(cfg_n_rounds, max_available_events)
+        
         if st.session_state.show_health_graph:
             # Second row for Graph Settings: Slider, Mode, Scale
             col_slider, col_rad, col_scale = st.columns([2.0, 1.4, 0.6])
@@ -280,7 +288,15 @@ with tab1:
             
             with col_slider:
                 with st.container(border=True):
-                    st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
+                    st.slider("Show Last N Events", min_value=10, max_value=max_available_events, value=safe_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
+                    cfg_last_cycle = config.get("health_show_last_cycle", False)
+                    st.toggle(
+                        "Show Last Cycle Only",
+                        value=cfg_last_cycle,
+                        key="widget_show_last_cycle",
+                        on_change=_on_change_show_last_cycle,
+                        help="ON: Limit the events to the most recent automation cycle only."
+                    )
             with col_rad:
                 with st.container(border=True):
                     cr1, cr2 = st.columns([1.0, 1.4])
@@ -302,17 +318,14 @@ with tab1:
                 # Y-Axis Scale in a container at the far right
                 with st.container(border=True):
                     st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=False, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
-        else:
-            c_left, c_right = st.columns([1, 1])
-            with c_left:
-                with st.container(border=True):
-                    st.slider("Show Last N Events", min_value=10, max_value=2000, value=cfg_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
+
 
         # Read settings once for the fragment
         y_scale_type = 'symlog' if config.get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
         graph_type = config.get("health_graph_type", "Round Duration")
         n_rounds = config.get("health_n_rounds", 100)
         event_only_success = config.get("health_event_only_success", False) and graph_type == "Round Duration"
+        show_last_cycle = config.get("health_show_last_cycle", False)
 
         # Fragment for auto-refreshing content
         auto_refresh = st.session_state.get("health_auto_refresh", True)
@@ -322,20 +335,46 @@ with tab1:
             # Fetch fresh login data to ensure chart updates on account switch
             fresh_login_data = load_login_lookup()
             show_graph = st.session_state.get("show_health_graph", True)
+            
+            def _apply_filters(data):
+                if show_last_cycle and data and all_events_list:
+                    # Find all session_indexes belonging to the latest global cycle
+                    session_min_round = {}
+                    for e in all_events_list:
+                        s_id = e.get("session_index")
+                        r = e.get("round", 1)
+                        if s_id not in session_min_round:
+                            session_min_round[s_id] = r
+                        else:
+                            session_min_round[s_id] = min(session_min_round[s_id], r)
+                            
+                    latest_s_id = all_events_list[0].get("session_index")
+                    valid_sessions = {latest_s_id}
+                    curr_id = latest_s_id
+                    while curr_id > 1:
+                        if session_min_round.get(curr_id, 1) > 1:
+                            curr_id -= 1
+                            valid_sessions.add(curr_id)
+                        else:
+                            break
+                            
+                    data = [d for d in data if d.get("session_index") in valid_sessions]
+                return data[:n_rounds]
+
             if is_full:
                 _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
-                _render_chart_or_table(all_detailed[:n_rounds], graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table", event_only_success=event_only_success)
+                _render_chart_or_table(_apply_filters(all_detailed), graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table", event_only_success=event_only_success)
             elif is_active:
                 _active_user = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
                 if not _active_user:
                     st.info("No active account is currently set.")
                 else:
                     _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
-                    _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table", event_only_success=event_only_success)
+                    _render_chart_or_table(_apply_filters(det), graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table", event_only_success=event_only_success)
             else:
                 target_acc = view_mode.replace("Detailed History: ", "")
                 _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
-                _render_chart_or_table(det[:n_rounds], graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}", event_only_success=event_only_success)
+                _render_chart_or_table(_apply_filters(det), graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}", event_only_success=event_only_success)
 
         _health_fragment()
 
@@ -407,7 +446,7 @@ with tab2:
                     "Avg Time/Refused": avg_reject_str,
                     "Reset": reset_count,
                     "Avg Time/Reset": avg_reset_str,
-                    "Log Lines": c['lines_count'], "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
+                    "Log Lines": c['lines_count'], "Events": success_count + reject_count + reset_count, "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
                 })
 
             df = pd.DataFrame(cycle_data)
@@ -423,9 +462,10 @@ with tab2:
                     "Avg Time/Refused": st.column_config.TextColumn("Avg Time/Refused"),
                     "Reset": st.column_config.NumberColumn("Reset", format="%d"),
                     "Avg Time/Reset": st.column_config.TextColumn("Avg Time/Reset"),
+                    "Events": st.column_config.NumberColumn("Events", format="%d"),
                     "_start_idx": None, "_end_idx": None
                 },
-                disabled=["Cycle ID", "Start Time", "Stop Time", "Duration", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines"], 
+                disabled=["Cycle ID", "Start Time", "Stop Time", "Duration", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines", "Events"], 
                 hide_index=True,
                 width="stretch",
                 key="automation_cycle_editor"
