@@ -324,6 +324,25 @@ with tab1:
                 with st.container(border=True):
                     st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=False, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
 
+        # Resolve the last-cycle log-line boundary OUTSIDE the fragment so it is
+        # computed only once per full page render, not on every 5-second refresh.
+        # This prevents the extra parse_engine_cycles() I/O from triggering
+        # redundant chart re-renders and causing flickering.
+        _last_cycle_start_idx = None
+        _last_cycle_end_idx = None
+        _show_last_cycle_outer = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
+        if _show_last_cycle_outer:
+            _outer_cycles = parse_engine_cycles()
+            if _outer_cycles:
+                _lc = _outer_cycles[-1]
+                _last_cycle_start_idx = _lc.get('start_idx')
+                # For a running cycle, parse_engine_cycles() sets end_idx to
+                # the last line at parse time — a stale snapshot.  When the
+                # fragment auto-refreshes and new events arrive beyond that
+                # line, they would be excluded.  Use None (→ float('inf')) so
+                # the filter never caps the upper bound for a running cycle.
+                _last_cycle_end_idx = None if _lc.get('is_running') else _lc.get('end_idx')
+
         # Fragment for independent refreshing
         @st.fragment(run_every=auto_val)
         def _health_fragment():
@@ -331,30 +350,43 @@ with tab1:
             # Pull immediate state from session_state for snappy UI adjustment
             graph_type = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
             y_scale_type = 'symlog' if st.session_state.get("widget_health_y_scale", config.get("health_y_scale", "Linear")) == "Logarithmic" else 'linear'
-            
+
             is_retry_frag = (graph_type == "Retry Analysis")
             cfg_key_frag = "health_n_rounds_retry" if is_retry_frag else "health_n_rounds"
             widget_key_frag = "widget_health_n_rounds_retry" if is_retry_frag else "widget_health_n_rounds"
-            
+
             n_rounds = st.session_state.get(widget_key_frag, config.get(cfg_key_frag, 100))
             show_last_cycle = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
             event_only_success = st.session_state.get("widget_event_only_success", config.get("health_event_only_success", False)) and graph_type == "Round Duration"
             show_graph = st.session_state.get("show_health_graph", True)
 
             def _apply_filters(data, all_events_ref):
-                # Assign true sequence numbers before any slicing, so charts show actual chronological position
+                # Step 1 – assign global Absolute_Event_Num on the full dataset
+                # so that without cycle-filtering, chart X-axis shows true
+                # chronological position (e.g. events 3441-3540 when slicing
+                # the last 100 from 3540 total).
                 total_events = len(data)
                 for idx, record in enumerate(data):
                     record["Absolute_Event_Num"] = total_events - idx
-                    
-                # Filter for last cycle if enabled
-                if show_last_cycle and data and all_events_ref:
-                    latest_s_id = all_events_ref[0].get("session_index")
-                    filtered_data = [d for d in data if d.get("session_index") == latest_s_id]
+
+                # Step 2 – filter to the last automation cycle if requested.
+                # Use log_line_idx against the boundary computed outside the
+                # fragment to avoid extra file I/O on every auto-refresh tick.
+                if show_last_cycle and data and _last_cycle_start_idx is not None:
+                    end_bound = _last_cycle_end_idx if _last_cycle_end_idx is not None else float('inf')
+                    filtered_data = [
+                        d for d in data
+                        if _last_cycle_start_idx <= d.get("log_line_idx", -1) <= end_bound
+                    ]
+                    # Step 3 – re-number locally within the cycle so the chart
+                    # X-axis always starts from 1 instead of the global offset.
+                    cycle_total = len(filtered_data)
+                    for idx, record in enumerate(filtered_data):
+                        record["Absolute_Event_Num"] = cycle_total - idx
                 else:
                     filtered_data = data
-                    
-                # Slice to requested N rounds (which are the newest N events)
+
+                # Step 4 – slice to the requested N most-recent events
                 return filtered_data[:n_rounds]
 
             if is_full:
