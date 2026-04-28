@@ -492,54 +492,58 @@ with tab3:
 with tab4:
     @st.fragment()
     def _engine_logs_debugging_fragment():
-        st.markdown("### 🛠️ Engine Logs Debugging")
         def _clr(): st.session_state.debug_logs_output = ""
         cycles = parse_engine_cycles()
         c_opts = ["All"] + [f"Cycle {i+1}: {c['start_time_str']} - {c.get('stop_time_str', 'Ongoing...')}" for i, c in enumerate(cycles)]
             
-        c1, c2, c3, c4, c5 = st.columns([2.0, 1.2, 0.6, 0.6, 0.9])
-        with c1:
-            sel_cycle = st.selectbox("Select Cycle", c_opts, key="tab4_cycle_select", on_change=_clr)
-        
-        is_all = (sel_cycle == "All")
-        l_count, e_count, cycle_events_natural = 0, 0, []
-        if not is_all:
-            try:
-                c_idx = int(sel_cycle.split(":")[0].replace("Cycle ", "")) - 1
-                c_info = cycles[c_idx]
-                l_count = c_info['lines_count']
-                _, all_ev, _ = parse_account_health(target_account="ALL_EVENTS", login_data=load_login_lookup())
-                cycle_events_natural = [e for e in reversed(all_ev) if c_info['start_idx'] <= e.get('log_line_idx', -1) <= (c_info['end_idx'] or 999999999)]
-                e_count = len(cycle_events_natural)
-            except: pass
+        with st.container(border=True):
+            c1, c2, c3, c4, c5, c6 = st.columns([1.6, 0.9, 0.5, 0.5, 1.2, 0.7])
+            with c1:
+                sel_cycle = st.selectbox("Select Cycle", c_opts, key="tab4_cycle_select", on_change=_clr)
+            
+            is_all = (sel_cycle == "All")
+            l_count, e_count, cycle_events_natural = 0, 0, []
+            if not is_all:
+                try:
+                    c_idx = int(sel_cycle.split(":")[0].replace("Cycle ", "")) - 1
+                    c_info = cycles[c_idx]
+                    l_count = c_info['lines_count']
+                    _, all_ev, _ = parse_account_health(target_account="ALL_EVENTS", login_data=load_login_lookup())
+                    cycle_events_natural = [e for e in reversed(all_ev) if c_info['start_idx'] <= e.get('log_line_idx', -1) <= (c_info['end_idx'] or 999999999)]
+                    e_count = len(cycle_events_natural)
+                    with c1: st.markdown(f"<p style='font-size: 0.8em; color: #a0a0ff; margin-top: -15px;'>📊 Lines: <b>{l_count}</b> | Events: <b>{e_count}</b></p>", unsafe_allow_html=True)
+                except: pass
 
-        with c2: mode = st.selectbox("Filter Mode", ["Log Lines", "Events"], key="tab4_filter_mode", on_change=_clr, disabled=is_all)
-        mv = l_count if not is_all and mode == "Log Lines" else (e_count if not is_all else 1000000)
-        if not is_all:
-            st.markdown(f"<p style='font-size: 0.9em; color: #a0a0ff; margin-top: -15px;'>📊 Stats: Lines <b>{l_count}</b>  | Events <b>{e_count}</b></p>", unsafe_allow_html=True)
-        else:
-            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            with c2: mode = st.selectbox("Filter Mode", ["Log Lines", "Events"], key="tab4_filter_mode", on_change=_clr, disabled=is_all)
+            mv = l_count if not is_all and mode == "Log Lines" else (e_count if not is_all else 1000000)
 
-        with c3: sv = st.number_input("Start", 1, max(1, mv), 1, key="tab4_start", on_change=_clr, disabled=is_all)
-        with c4: ev = st.number_input("End", 1, max(1, mv), mv if not is_all else 1, key="tab4_end", on_change=_clr, disabled=is_all)
+            with c3: sv = st.number_input("Start", 1, max(1, mv), 1, key="tab4_start", on_change=_clr, disabled=is_all)
+            with c4: ev = st.number_input("End", 1, max(1, mv), mv if not is_all else 1, key="tab4_end", on_change=_clr, disabled=is_all)
 
-        with c5:
-            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-            if st.button("Show Lists", icon="📋", width="stretch", key="tab4_show_btn"):
-                with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
-                if is_all: out = lines
-                else:
-                    try:
-                        if mode == "Log Lines":
-                            out = lines[c_info['start_idx'] + (sv-1) : c_info['start_idx'] + (ev-1) + 1]
-                        else:
-                            s_idx = cycle_events_natural[sv-1].get('log_line_idx', c_info['start_idx'])
-                            e_idx = cycle_events_natural[ev-1].get('log_line_idx', len(lines)-1)
-                            out = lines[s_idx:e_idx+1]
-                    except: out = []
-                st.session_state.debug_logs_output = "\n".join(reversed([l.strip() for l in out if l.strip()]))
+            with c5:
+                st.radio("First Line", ["Top", "Bottom"], index=1, horizontal=True, key="tab4_order", on_change=_clr)
+
+            with c6:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Show", icon="📋", width="stretch", key="tab4_show_btn"):
+                    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
+                    if is_all: out = lines
+                    else:
+                        try:
+                            if mode == "Log Lines":
+                                out = lines[c_info['start_idx'] + (sv-1) : c_info['start_idx'] + (ev-1) + 1]
+                            else:
+                                s_idx = cycle_events_natural[sv-1].get('log_line_idx', c_info['start_idx'])
+                                e_idx = cycle_events_natural[ev-1].get('log_line_idx', len(lines)-1)
+                                out = lines[s_idx:e_idx+1]
+                        except: out = []
+                    logs_clean = [l.strip() for l in out if l.strip()]
+                    if st.session_state.get("tab4_order") == "Top":
+                        st.session_state.debug_logs_output = "\n".join(logs_clean)
+                    else:
+                        st.session_state.debug_logs_output = "\n".join(reversed(logs_clean))
         if st.session_state.get("debug_logs_output"):
-            st.markdown("<p style='color: #a0a0ff; font-weight: bold; margin-top: 20px;'>ENGINE DEBUG LOGS</p>", unsafe_allow_html=True)
-            with st.container(height=515, border=True): st.code(st.session_state.debug_logs_output, language="text")
+            st.markdown("<p style='color: #a0a0ff; font-weight: bold; margin-top: 8px;'>ENGINE DEBUG LOGS</p>", unsafe_allow_html=True)
+            with st.container(height=580, border=True): st.code(st.session_state.debug_logs_output, language="text")
 
     _engine_logs_debugging_fragment()
