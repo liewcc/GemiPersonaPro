@@ -495,11 +495,20 @@ with tab3:
             st.info("No automation cycles recorded yet.")
             return
 
+        def _reset_tab3_slider():
+            if "tab3_n_accounts" in st.session_state:
+                del st.session_state["tab3_n_accounts"]
+
         with st.container(border=True):
-            c1, c2 = st.columns([2.0, 1.0])
+            c1, c2, c3 = st.columns([2.0, 0.7, 0.3])
             with c1:
-                selected_cycle_str = st.selectbox("Select Cycle", list(reversed(cycle_opts)), key="tab3_cycle_select")
+                selected_cycle_str = st.selectbox("Select Cycle", list(reversed(cycle_opts)), key="tab3_cycle_select", on_change=_reset_tab3_slider)
                 selected_cycle_id = int(selected_cycle_str.split(" ")[1])
+            with c3:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Refresh", icon="🔄", width="stretch", key="tab3_refresh_btn"):
+                    _reset_tab3_slider()
+                    st.rerun(scope="app")
                 
             selected_cycle = cycles[selected_cycle_id - 1]
             cycle_events = [e for e in all_detailed if selected_cycle['start_idx'] <= e.get("log_line_idx", -1) <= (selected_cycle['end_idx'] or 999999999)]
@@ -518,8 +527,14 @@ with tab3:
                 else:
                     stats.append({"session_index": s_id, "account": e.get("account", "Unknown"), "duration": dur, "events": 1, "images": success_val, "refused": reject_val, "reset": reset_val, "start_time": e.get("time", "Unknown")})
             
+            # Clamp stored slider value to prevent crash when switching
+            # to a cycle with fewer accounts than the previously selected one.
+            max_accounts = max(1, len(stats))
+            if "tab3_n_accounts" in st.session_state and st.session_state["tab3_n_accounts"] > max_accounts:
+                st.session_state["tab3_n_accounts"] = max_accounts
+            
             with c2:
-                n_accs = st.slider("Show Last N Accounts", 1, max(1, len(stats)), len(stats), key="tab3_n_accounts") if stats else 0
+                n_accs = st.slider("Show Last N Accounts", 1, max_accounts, max_accounts, key="tab3_n_accounts") if stats else 0
                     
         if not stats: return
         view_stats = stats[-n_accs:] if n_accs < len(stats) else stats
@@ -527,12 +542,15 @@ with tab3:
         for i, s in enumerate(view_stats):
             c_type = "Even" if i % 2 == 0 else "Odd"
             color_val = f"Image_{c_type}" if s["images"] > 0 else c_type
-            chart_data.append({"Switch": i+1, "Display": s['start_time'] + "\u200b"*i, "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Images": s["images"], "Refused": s["refused"], "Reset": s["reset"], "Color": color_val})
+            chart_data.append({"Switch": i+1, "Display": f"#{i+1} ({s['start_time']})", "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Images": s["images"], "Refused": s["refused"], "Reset": s["reset"], "Color": color_val})
         
         df_chart = pd.DataFrame(chart_data)
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Account Switch Duration Chart</p>", unsafe_allow_html=True)
+        
+        display_order = [d["Display"] for d in chart_data]
+        
         bar = alt.Chart(df_chart).mark_bar().encode(
-            x=alt.X('Display:O', title="Switch Time", sort=alt.EncodingSortField(field="Switch")),
+            x=alt.X('Display:O', title="Switch Time", sort=display_order),
             y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
             color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd", "Image_Even", "Image_Odd"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=None),
             tooltip=['Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
@@ -545,7 +563,7 @@ with tab3:
             fontSize=11,
             fontWeight='bold'
         ).encode(
-            x=alt.X('Display:O', sort=alt.EncodingSortField(field="Switch")),
+            x=alt.X('Display:O', sort=display_order),
             y=alt.Y('Duration (Minutes):Q'),
             text=alt.Text('Images:Q')
         )
