@@ -100,6 +100,7 @@ _init("lama_fake_pct",       0)
 _init("all_done",            False)
 _init("countdown",           3)
 _init("auto_redirect_done",  False)
+_init("update_info",         {"checked": False, "available": False, "local": "", "remote": ""})
 
 
 # ── Startup logic ────────────────────────────────────────────────────────────
@@ -162,6 +163,40 @@ def _kick_lama_thread():
     t.start()
 
 
+# ── Update Check logic ────────────────────────────────────────────────────────
+
+def _check_updates_worker():
+    """Background worker to check for git updates."""
+    try:
+        # 1. Get local commit
+        res_local = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+        local_hash = res_local.stdout.strip() if res_local.returncode == 0 else ""
+        
+        # 2. Fetch remote (assumes 'origin' and 'main')
+        subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, text=True, timeout=10)
+        
+        # 3. Get remote commit
+        res_remote = subprocess.run(["git", "rev-parse", "origin/main"], capture_output=True, text=True, timeout=5)
+        remote_hash = res_remote.stdout.strip() if res_remote.returncode == 0 else ""
+        
+        if local_hash and remote_hash:
+            st.session_state.update_info = {
+                "checked": True,
+                "available": local_hash != remote_hash,
+                "local": local_hash[:7],
+                "remote": remote_hash[:7]
+            }
+        else:
+            st.session_state.update_info["checked"] = True
+    except Exception:
+        st.session_state.update_info["checked"] = True
+
+if not st.session_state.update_info["checked"]:
+    t_upd = threading.Thread(target=_check_updates_worker, daemon=True)
+    add_script_run_ctx(t_upd)
+    t_upd.start()
+
+
 # ── Countdown fragment (must be at global scope – Fragment Stability Protocol) ──
 
 @st.fragment(run_every="1s")
@@ -189,7 +224,7 @@ def render_countdown():
 
 # ── Header ───────────────────────────────────────────────────────────────────
 
-col1, col2, col3 = st.columns([1, 2, 1])
+col1, col2, col3 = st.columns([1.2, 1.6, 1.2])
 with col2:
     st.image("sys_img/logo.png", width="stretch")
 
@@ -230,6 +265,33 @@ with st.status(_label, expanded=True, state=_state) as _s:
     if st.session_state.step_lama_done:
         msg = "Already in memory" if st.session_state.step_lama_skip else "Loaded successfully"
         st.write(f"✅ LaMa AI Model: {msg}")
+
+        # Inline Update Status
+        if not st.session_state.update_info["checked"]:
+            st.write("🔍 Checking for updates…")
+        elif st.session_state.update_info["available"]:
+            st.markdown("---")
+            st.markdown(f"✨ **Update Available:** `{st.session_state.update_info['remote']}` is ready.")
+            if st.button("Update Repository Now", width="stretch", type="primary"):
+                with st.status("Updating repository...", expanded=True) as s:
+                    st.write("Checking for local changes...")
+                    status_res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+                    if status_res.stdout.strip():
+                        s.update(label="❌ Update Aborted", state="error")
+                        st.warning("Please commit or stash changes before updating.")
+                    else:
+                        st.write("Pulling changes...")
+                        pull_res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
+                        if pull_res.returncode == 0:
+                            s.update(label="✅ Updated", state="complete")
+                            st.success("Updated! Restarting...")
+                            time.sleep(1.5)
+                            st.rerun()
+                        else:
+                            s.update(label="❌ Failed", state="error")
+                            st.error(pull_res.stderr)
+        else:
+            st.write(f"✅ Version: `{st.session_state.update_info['local']}` (Latest)")
 
     # Execute the next pending step (one per rerun — advance via st.rerun())
     if not st.session_state.step_engine_done:
