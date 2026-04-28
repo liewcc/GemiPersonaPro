@@ -179,10 +179,14 @@ def _check_updates_worker():
         res_remote = subprocess.run(["git", "rev-parse", "origin/main"], capture_output=True, text=True, timeout=5)
         remote_hash = res_remote.stdout.strip() if res_remote.returncode == 0 else ""
         
+        # 4. Check if we are behind remote
+        res_behind = subprocess.run(["git", "rev-list", "--count", "HEAD..origin/main"], capture_output=True, text=True, timeout=5)
+        is_behind = int(res_behind.stdout.strip()) > 0 if res_behind.returncode == 0 else False
+        
         if local_hash and remote_hash:
             st.session_state.update_info = {
                 "checked": True,
-                "available": local_hash != remote_hash,
+                "available": is_behind,
                 "local": local_hash[:7],
                 "remote": remote_hash[:7]
             }
@@ -270,7 +274,6 @@ with st.status(_label, expanded=True, state=_state) as _s:
         if not st.session_state.update_info["checked"]:
             st.write("🔍 Checking for updates…")
         elif st.session_state.update_info["available"]:
-            st.markdown("---")
             st.markdown(f"✨ **Update Available:** `{st.session_state.update_info['remote']}` is ready.")
             if st.button("Update Repository Now", width="stretch", type="primary"):
                 with st.status("Updating repository...", expanded=True) as s:
