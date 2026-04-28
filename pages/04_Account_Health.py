@@ -14,23 +14,30 @@ from health_parser import parse_account_health, parse_engine_cycles, LOG_PATH
 from style_utils import apply_premium_style, render_dashboard_header
 
 # --- Page Setup ---
-st.set_page_config(page_title="GemiPersona | Account Health", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="GemiPersona Pro | Account Health", page_icon="🏥", layout="wide")
 apply_premium_style()
 
+# --- Page Data Initialization ---
 config = load_config()
 login_data = load_login_lookup()
 
-# --- Extract Account List & Active User ---
+# Fetch initial data for dropdowns and sidebar (non-fragmented)
+# Note: Full data fetching for charts will happen inside fragments
 summary_all, all_events_list, log_accs = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
-max_events_raw = max(2000, len(all_events_list))
-max_available_events = ((max_events_raw + 9) // 10) * 10
 
+# Extract unique accounts for the view mode dropdown
 lookup_order = [u.get("username", "").lower() for u in login_data if u.get("username")]
 log_accs_set = set(log_accs)
 lookup_accs_set = set(lookup_order)
 final_dropdown_accs = list(lookup_order) + sorted(list(log_accs_set - lookup_accs_set))
 final_dropdown_accs = [acc for acc in final_dropdown_accs if acc and acc.lower() != "unknown"]
-_active_user_top = next((u.get("username", "") for u in login_data if u.get("active")), None)
+
+max_events_raw = max(10, len(all_events_list))
+max_available_events = ((max_events_raw + 9) // 10) * 10
+
+# Auto-refresh setting
+auto_refresh = st.session_state.get("health_auto_refresh", True)
+auto_val = 5 if auto_refresh else None
 
 # --- Sidebar Content ---
 @st.fragment(run_every=5 if st.session_state.get("health_auto_refresh", True) else None)
@@ -54,7 +61,6 @@ def _sidebar_fragment_content():
                 display_str = f"<span style='color: #ff6666;'>{acc} (Quota Full)</span>"
             
             if is_active:
-                # Use blue for active account to make it stand out
                 blue_name = f"<span style='color: #4b9cff;'>{acc}</span>"
                 if is_quota_full:
                     display_str = f"{blue_name} <span style='color: #ff6666;'>(Quota Full)</span>"
@@ -69,33 +75,31 @@ def _sidebar_fragment_content():
 with st.sidebar:
     _sidebar_fragment_content()
 
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _fmt_dur(x):
     h = int(x // 3600); m = int((x % 3600) // 60); s = int(x % 60)
     return f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else (f"{m:02d}:{s:02d}" if m > 0 else f"{s:02d}s")
 
-
 def _build_duration_chart(detailed_data, y_scale_type, event_only_success=False):
     """Build a bar chart of loading durations per event."""
     df = pd.DataFrame(detailed_data[::-1])
     df["Event"] = range(1, len(df) + 1)
 
-    # When event_only_success is True, use health_self for Success rows
     if event_only_success and "health_self" in df.columns:
         df["_dur_col"] = df.apply(
             lambda r: r["health_self"] if r["status"] == "Success" and pd.notna(r.get("health_self")) else r["health"], axis=1)
     else:
         df["_dur_col"] = df["health"]
+        
+    if "Absolute_Event_Num" in df.columns:
+        df["Event"] = df["Absolute_Event_Num"]
+    else:
+        df["Event"] = range(1, len(df) + 1)
+        
     df["Minutes"] = df["_dur_col"].str.replace("s", "").astype(float) / 60.0
-    # Global dense rank of session_index so every new session (including account
-    # switches) alternates Base ↔ Light. Per-account ranking caused all first
-    # sessions of different accounts to share rank=1 and thus the same color.
     df["cycle"] = df["session_index"].rank(method="dense").astype(int)
     df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
-    # Display status: Reject → Refused
     df["display_status"] = df["status"].replace({"Reject": "Refused"})
     ll = ['Success (Base)', 'Refused (Base)', 'Reset (Base)', 'Fail',
           'Success (Light)', 'Refused (Light)', 'Reset (Light)']
@@ -111,7 +115,6 @@ def _build_duration_chart(detailed_data, y_scale_type, event_only_success=False)
         tooltip=['round', 'time', 'account', 'Duration', 'filename', 'display_status:N']
     ).properties(height=400).interactive(bind_y=False)
     return chart
-
 
 def _build_reject_chart(detailed_data, y_scale_type):
     """Build a reject-rate line+point chart (X = successful images)."""
@@ -135,7 +138,7 @@ def _build_reject_chart(detailed_data, y_scale_type):
                 d["Duration"] = curr_dur + row_dur
             d["Image"] = row["filename"].replace(".png", "") if row["filename"] else "FAILED"
             d["seg_id"] = seg_id; d["bg"] = 'A' if seg_id % 2 == 0 else 'B'
-            d["Event"] = len(agg_data) + 1
+            d["Event"] = row.get("Absolute_Event_Num", len(agg_data) + 1)
             d["Display"] = f"{d['Image']} (#{d['Event']})"
             d["round"] = row.get("round", "N/A")
             agg_data.append(d)
@@ -180,7 +183,6 @@ def _build_reject_chart(detailed_data, y_scale_type):
     )
     return alt.layer(bg_bands, lines, points).resolve_scale(color='independent').properties(height=400).interactive()
 
-
 def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, table_key, event_only_success=False):
     """Unified rendering: either chart or table for a given dataset."""
     if not data:
@@ -212,7 +214,6 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
             disabled=True, width="stretch", hide_index=True, height=450, key=table_key
         )
 
-
 # ── Callbacks ────────────────────────────────────────────────────────────────
 
 def _on_change_health_graph():
@@ -233,15 +234,13 @@ def _on_change_event_only_success():
 def _on_change_show_last_cycle():
     save_config({"health_show_last_cycle": st.session_state.widget_show_last_cycle})
 
-
 # ── Render Logic ─────────────────────────────────────────────────────────────
 
-tab1, tab2 = st.tabs(["Account Health Analysis", "Automation Cycle Management"])
+tab1, tab2, tab3, tab4 = st.tabs(["Account Health Analysis", "Automation Cycle Management", "Cycle Performance Insights", "Engine Logs Debugging"])
 
 with tab1:
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
     with st.container(border=True):
-        # Integrated top row: View Mode and Actions
         c1, c2, c3, c4 = st.columns([2.2, 0.8, 0.8, 0.7])
         with c1:
             options = ["Full Loading History (All Events)", "Detailed History: Active Account"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs]
@@ -271,25 +270,24 @@ with tab1:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             st.toggle("Auto-refresh", value=True, key="health_auto_refresh")
 
-        cfg_n_rounds = config.get("health_n_rounds", 100)
+        cfg_n_rounds = st.session_state.get("widget_health_n_rounds", config.get("health_n_rounds", 100))
         safe_n_rounds = min(cfg_n_rounds, max_available_events)
         
         if st.session_state.show_health_graph:
-            # Second row for Graph Settings: Slider, Mode, Scale
             col_slider, col_rad, col_scale = st.columns([2.0, 1.4, 0.6])
             graph_opts = ["Round Duration", "Retry Analysis"]
             scale_opts = ["Linear", "Logarithmic"]
-            cfg_graph = config.get("health_graph_type", "Round Duration")
-            try: graph_idx = graph_opts.index(cfg_graph)
+            cur_graph = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
+            try: graph_idx = graph_opts.index(cur_graph)
             except ValueError: graph_idx = 0
-            cfg_scale = config.get("health_y_scale", "Linear")
-            try: scale_idx = scale_opts.index(cfg_scale)
+            cur_scale = st.session_state.get("widget_health_y_scale", config.get("health_y_scale", "Linear"))
+            try: scale_idx = scale_opts.index(cur_scale)
             except ValueError: scale_idx = 0
             
             with col_slider:
                 with st.container(border=True):
                     st.slider("Show Last N Events", min_value=10, max_value=max_available_events, value=safe_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
-                    cfg_last_cycle = config.get("health_show_last_cycle", False)
+                    cfg_last_cycle = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
                     st.toggle(
                         "Show Last Cycle Only",
                         value=cfg_last_cycle,
@@ -304,8 +302,8 @@ with tab1:
                         st.radio("Graph Mode", graph_opts, index=graph_idx, horizontal=False, key="widget_health_graph_type", on_change=_on_change_health_graph)
                     with cr2:
                         st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
-                        is_round_dur = (cfg_graph == "Round Duration")
-                        cfg_eos = config.get("health_event_only_success", False)
+                        is_round_dur = (cur_graph == "Round Duration")
+                        cfg_eos = st.session_state.get("widget_event_only_success", config.get("health_event_only_success", False))
                         st.toggle(
                             "Event-Only Success Duration",
                             value=cfg_eos if is_round_dur else False,
@@ -315,66 +313,53 @@ with tab1:
                             help="ON: Success bars show only the final attempt duration (same as Refused/Reset). OFF: Success bars show the cumulative round duration (from last success to this success)."
                         )
             with col_scale:
-                # Y-Axis Scale in a container at the far right
                 with st.container(border=True):
                     st.radio("Y-Axis Scale", scale_opts, index=scale_idx, horizontal=False, key="widget_health_y_scale", on_change=_on_change_health_y_scale, help="Y-Axis Scale: Linear or Logarithmic")
 
-
-        # Read settings once for the fragment
-        y_scale_type = 'symlog' if config.get("health_y_scale", "Linear") == "Logarithmic" else 'linear'
-        graph_type = config.get("health_graph_type", "Round Duration")
-        n_rounds = config.get("health_n_rounds", 100)
-        event_only_success = config.get("health_event_only_success", False) and graph_type == "Round Duration"
-        show_last_cycle = config.get("health_show_last_cycle", False)
-
-        # Fragment for auto-refreshing content
-        auto_refresh = st.session_state.get("health_auto_refresh", True)
-
-        @st.fragment(run_every=5 if auto_refresh else None)
+        # Fragment for independent refreshing
+        @st.fragment(run_every=auto_val)
         def _health_fragment():
-            # Fetch fresh login data to ensure chart updates on account switch
             fresh_login_data = load_login_lookup()
+            # Pull immediate state from session_state for snappy UI adjustment
+            graph_type = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
+            y_scale_type = 'symlog' if st.session_state.get("widget_health_y_scale", config.get("health_y_scale", "Linear")) == "Logarithmic" else 'linear'
+            n_rounds = st.session_state.get("widget_health_n_rounds", config.get("health_n_rounds", 100))
+            show_last_cycle = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
+            event_only_success = st.session_state.get("widget_event_only_success", config.get("health_event_only_success", False)) and graph_type == "Round Duration"
             show_graph = st.session_state.get("show_health_graph", True)
-            
-            def _apply_filters(data):
-                if show_last_cycle and data and all_events_list:
-                    # Find all session_indexes belonging to the latest global cycle
-                    session_min_round = {}
-                    for e in all_events_list:
-                        s_id = e.get("session_index")
-                        r = e.get("round", 1)
-                        if s_id not in session_min_round:
-                            session_min_round[s_id] = r
-                        else:
-                            session_min_round[s_id] = min(session_min_round[s_id], r)
-                            
-                    latest_s_id = all_events_list[0].get("session_index")
-                    valid_sessions = {latest_s_id}
-                    curr_id = latest_s_id
-                    while curr_id > 1:
-                        if session_min_round.get(curr_id, 1) > 1:
-                            curr_id -= 1
-                            valid_sessions.add(curr_id)
-                        else:
-                            break
-                            
-                    data = [d for d in data if d.get("session_index") in valid_sessions]
-                return data[:n_rounds]
+
+            def _apply_filters(data, all_events_ref):
+                # Assign true sequence numbers before any slicing, so charts show actual chronological position
+                total_events = len(data)
+                for idx, record in enumerate(data):
+                    record["Absolute_Event_Num"] = total_events - idx
+                    
+                # Filter for last cycle if enabled
+                if show_last_cycle and data and all_events_ref:
+                    latest_s_id = all_events_ref[0].get("session_index")
+                    filtered_data = [d for d in data if d.get("session_index") == latest_s_id]
+                else:
+                    filtered_data = data
+                    
+                # Slice to requested N rounds (which are the newest N events)
+                return filtered_data[:n_rounds]
 
             if is_full:
-                _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
-                _render_chart_or_table(_apply_filters(all_detailed), graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table", event_only_success=event_only_success)
+                _, fresh_all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
+                _render_chart_or_table(_apply_filters(fresh_all_detailed, fresh_all_detailed), graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table", event_only_success=event_only_success)
             elif is_active:
                 _active_user = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
                 if not _active_user:
                     st.info("No active account is currently set.")
                 else:
                     _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
-                    _render_chart_or_table(_apply_filters(det), graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table", event_only_success=event_only_success)
+                    _, all_ref, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
+                    _render_chart_or_table(_apply_filters(det, all_ref), graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table", event_only_success=event_only_success)
             else:
                 target_acc = view_mode.replace("Detailed History: ", "")
                 _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
-                _render_chart_or_table(_apply_filters(det), graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}", event_only_success=event_only_success)
+                _, all_ref, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
+                _render_chart_or_table(_apply_filters(det, all_ref), graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}", event_only_success=event_only_success)
 
         _health_fragment()
 
@@ -392,60 +377,38 @@ with tab2:
             cycle_data = []
             for idx, c in enumerate(cycles):
                 display_time = c.get('full_start_time', c['start_time_str'])
-                
                 avg_time_str = "N/A"
                 success_count = c.get('success_count', 0)
                 if success_count > 0:
                     try:
-                        start_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
-                        stop_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
-                        total_seconds = int((stop_dt - start_dt).total_seconds())
-                        if total_seconds < 0:
-                            total_seconds += 86400
-                        avg_seconds = total_seconds / success_count
-                        avg_time_str = _fmt_dur(avg_seconds)
-                    except:
-                        pass
+                        s_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
+                        e_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
+                        t_sec = int((e_dt - s_dt).total_seconds())
+                        if t_sec < 0: t_sec += 86400
+                        avg_time_str = _fmt_dur(t_sec / success_count)
+                    except: pass
                 
                 reject_count = c.get('reject_count', 0)
-                avg_reject_str = "N/A"
-                if reject_count > 0:
-                    avg_reject = c.get('reject_duration', 0) / reject_count
-                    avg_reject_str = _fmt_dur(avg_reject)
-
+                avg_reject_str = _fmt_dur(c.get('reject_duration', 0) / reject_count) if reject_count > 0 else "N/A"
                 reset_count = c.get('reset_count', 0)
-                avg_reset_str = "N/A"
-                if reset_count > 0:
-                    avg_reset = c.get('reset_duration', 0) / reset_count
-                    avg_reset_str = _fmt_dur(avg_reset)
+                avg_reset_str = _fmt_dur(c.get('reset_duration', 0) / reset_count) if reset_count > 0 else "N/A"
 
                 is_running = c.get('is_running', False)
-                cycle_id_val = "Running" if is_running else idx + 1
-                stop_time_val = "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown')
-
-                # Calculate duration (start → stop, or start → last recorded time for running cycles)
                 duration_str = "N/A"
-                calc_stop = c.get('stop_time_str', c['start_time_str'])
                 try:
                     s_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
-                    e_dt = datetime.strptime(calc_stop, '%H:%M:%S')
+                    e_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
                     dsec = int((e_dt - s_dt).total_seconds())
-                    if dsec < 0:
-                        dsec += 86400  # midnight crossover
+                    if dsec < 0: dsec += 86400
                     duration_str = f"{dsec // 3600}:{(dsec % 3600) // 60:02d}"
-                except:
-                    pass
+                except: pass
 
                 cycle_data.append({
-                    "Select": False, "Cycle ID": cycle_id_val, "Start Time": display_time,
-                    "Stop Time": stop_time_val,
-                    "Duration": duration_str,
-                    "Images": success_count,
-                    "Avg Time/Img": avg_time_str,
-                    "Refused": reject_count,
-                    "Avg Time/Refused": avg_reject_str,
-                    "Reset": reset_count,
-                    "Avg Time/Reset": avg_reset_str,
+                    "Select": False, "Cycle ID": "Running" if is_running else idx + 1, "Start Time": display_time,
+                    "Stop Time": "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown'),
+                    "Duration": duration_str, "Images": success_count, "Avg Time/Img": avg_time_str,
+                    "Refused": reject_count, "Avg Time/Refused": avg_reject_str,
+                    "Reset": reset_count, "Avg Time/Reset": avg_reset_str,
                     "Log Lines": c['lines_count'], "Events": success_count + reject_count + reset_count, "_start_idx": c['start_idx'], "_end_idx": c['end_idx']
                 })
 
@@ -454,42 +417,129 @@ with tab2:
                 df,
                 column_config={
                     "Select": st.column_config.CheckboxColumn("Select for Deletion", default=False),
-                    "Stop Time": st.column_config.TextColumn("Stop Time"),
-                    "Duration": st.column_config.TextColumn("Duration"),
-                    "Images": st.column_config.NumberColumn("Images", format="%d"),
-                    "Avg Time/Img": st.column_config.TextColumn("Avg Time/Img"),
-                    "Refused": st.column_config.NumberColumn("Refused", format="%d"),
-                    "Avg Time/Refused": st.column_config.TextColumn("Avg Time/Refused"),
-                    "Reset": st.column_config.NumberColumn("Reset", format="%d"),
-                    "Avg Time/Reset": st.column_config.TextColumn("Avg Time/Reset"),
                     "Events": st.column_config.NumberColumn("Events", format="%d"),
                     "_start_idx": None, "_end_idx": None
                 },
                 disabled=["Cycle ID", "Start Time", "Stop Time", "Duration", "Images", "Avg Time/Img", "Refused", "Avg Time/Refused", "Reset", "Avg Time/Reset", "Log Lines", "Events"], 
-                hide_index=True,
-                width="stretch",
-                key="automation_cycle_editor"
+                hide_index=True, width="stretch", key="automation_cycle_editor"
             )
 
             selected_rows = edited_df[edited_df["Select"] == True]
             valid_rows = selected_rows[selected_rows["Cycle ID"].astype(str) != "Running"]
-            
-            if not selected_rows.empty and selected_rows.shape[0] > valid_rows.shape[0]:
-                st.info("The currently running cycle cannot be deleted. Any selection on it will be ignored.")
-                
             if not valid_rows.empty:
-                st.warning(f"You have selected {len(valid_rows)} cycle(s) to delete. This action will permanently remove their associated logs from `engine.log`.")
+                st.warning(f"Delete {len(valid_rows)} cycle(s)?")
                 if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
-                    cycles_to_delete = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
-                    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
-                        lines = f.readlines()
-                    to_keep = []
-                    for i, line in enumerate(lines):
-                        if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_delete):
-                            to_keep.append(line)
-                    with open(LOG_PATH, "w", encoding="utf-8") as f:
-                        f.writelines(to_keep)
-                    st.success(f"Successfully deleted {len(cycles_to_delete)} cycle(s).")
-                    st.rerun()
+                    cycles_to_del = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
+                    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
+                    to_keep = [line for i, line in enumerate(lines) if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_del)]
+                    with open(LOG_PATH, "w", encoding="utf-8") as f: f.writelines(to_keep)
+                    st.success("Deleted."); st.rerun()
 
     _cycle_management_fragment()
+
+with tab3:
+    @st.fragment(run_every=auto_val)
+    def _performance_insights_fragment():
+        st.markdown("### ⏱️ Cycle Performance Insights")
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>CYCLE PERFORMANCE INSIGHTS</p>", unsafe_allow_html=True)
+        
+        cycles = parse_engine_cycles()
+        _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=load_login_lookup())
+        
+        cycle_opts = [f"Cycle {i+1} ({c.get('full_start_time', c['start_time_str'])} - {c.get('stop_time_str', 'Ongoing...')})" for i, c in enumerate(cycles)]
+        if not cycle_opts:
+            st.info("No automation cycles recorded yet.")
+            return
+
+        with st.container(border=True):
+            c1, c2 = st.columns([2.0, 1.0])
+            with c1:
+                selected_cycle_str = st.selectbox("Select Cycle", list(reversed(cycle_opts)), key="tab3_cycle_select")
+                selected_cycle_id = int(selected_cycle_str.split(" ")[1])
+                
+            selected_cycle = cycles[selected_cycle_id - 1]
+            cycle_events = [e for e in all_detailed if selected_cycle['start_idx'] <= e.get("log_line_idx", -1) <= (selected_cycle['end_idx'] or 999999999)]
+            
+            stats = []
+            for e in reversed(cycle_events):
+                s_id = e.get("session_index")
+                dur = float(e.get("health_self", e.get("health", "0s")).replace("s", ""))
+                if stats and stats[-1]["session_index"] == s_id:
+                    stats[-1]["duration"] += dur; stats[-1]["events"] += 1
+                else:
+                    stats.append({"session_index": s_id, "account": e.get("account", "Unknown"), "duration": dur, "events": 1, "start_time": e.get("time", "Unknown")})
+            
+            with c2:
+                n_accs = st.slider("Show Last N Accounts", 1, max(1, len(stats)), len(stats), key="tab3_n_accounts") if stats else 0
+                    
+        if not stats: return
+        view_stats = stats[-n_accs:] if n_accs < len(stats) else stats
+        chart_data = [{"Switch": i+1, "Display": s['start_time'] + "\u200b"*i, "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Color": "Even" if i%2==0 else "Odd"} for i, s in enumerate(view_stats)]
+        
+        df_chart = pd.DataFrame(chart_data)
+        st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Account Switch Duration Chart</p>", unsafe_allow_html=True)
+        chart = alt.Chart(df_chart).mark_bar().encode(
+            x=alt.X('Display:O', title="Switch Time", sort=alt.EncodingSortField(field="Switch")),
+            y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
+            color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd"], range=["#4f8bf9", "#a0c0ff"]), legend=None),
+            tooltip=['Account', 'Duration', 'Events']
+        ).properties(height=400).interactive(bind_y=False)
+        st.altair_chart(chart, width="stretch")
+        st.dataframe(df_chart, column_config={"Switch": "Seq", "Duration (Minutes)": None}, width="stretch", hide_index=True)
+
+    _performance_insights_fragment()
+
+with tab4:
+    @st.fragment()
+    def _engine_logs_debugging_fragment():
+        st.markdown("### 🛠️ Engine Logs Debugging")
+        def _clr(): st.session_state.debug_logs_output = ""
+        cycles = parse_engine_cycles()
+        c_opts = ["All"] + [f"Cycle {i+1}: {c['start_time_str']} - {c.get('stop_time_str', 'Ongoing...')}" for i, c in enumerate(cycles)]
+            
+        c1, c2, c3, c4, c5 = st.columns([2.0, 1.2, 0.6, 0.6, 0.9])
+        with c1:
+            sel_cycle = st.selectbox("Select Cycle", c_opts, key="tab4_cycle_select", on_change=_clr)
+        
+        is_all = (sel_cycle == "All")
+        l_count, e_count, cycle_events_natural = 0, 0, []
+        if not is_all:
+            try:
+                c_idx = int(sel_cycle.split(":")[0].replace("Cycle ", "")) - 1
+                c_info = cycles[c_idx]
+                l_count = c_info['lines_count']
+                _, all_ev, _ = parse_account_health(target_account="ALL_EVENTS", login_data=load_login_lookup())
+                cycle_events_natural = [e for e in reversed(all_ev) if c_info['start_idx'] <= e.get('log_line_idx', -1) <= (c_info['end_idx'] or 999999999)]
+                e_count = len(cycle_events_natural)
+            except: pass
+
+        with c2: mode = st.selectbox("Filter Mode", ["Log Lines", "Events"], key="tab4_filter_mode", on_change=_clr, disabled=is_all)
+        mv = l_count if not is_all and mode == "Log Lines" else (e_count if not is_all else 1000000)
+        if not is_all:
+            st.markdown(f"<p style='font-size: 0.9em; color: #a0a0ff; margin-top: -15px;'>📊 Stats: Lines <b>{l_count}</b>  | Events <b>{e_count}</b></p>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+
+        with c3: sv = st.number_input("Start", 1, max(1, mv), 1, key="tab4_start", on_change=_clr, disabled=is_all)
+        with c4: ev = st.number_input("End", 1, max(1, mv), mv if not is_all else 1, key="tab4_end", on_change=_clr, disabled=is_all)
+
+        with c5:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("Show Lists", icon="📋", width="stretch", key="tab4_show_btn"):
+                with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
+                if is_all: out = lines
+                else:
+                    try:
+                        if mode == "Log Lines":
+                            out = lines[c_info['start_idx'] + (sv-1) : c_info['start_idx'] + (ev-1) + 1]
+                        else:
+                            s_idx = cycle_events_natural[sv-1].get('log_line_idx', c_info['start_idx'])
+                            e_idx = cycle_events_natural[ev-1].get('log_line_idx', len(lines)-1)
+                            out = lines[s_idx:e_idx+1]
+                    except: out = []
+                st.session_state.debug_logs_output = "\n".join(reversed([l.strip() for l in out if l.strip()]))
+        if st.session_state.get("debug_logs_output"):
+            st.markdown("<p style='color: #a0a0ff; font-weight: bold; margin-top: 20px;'>ENGINE DEBUG LOGS</p>", unsafe_allow_html=True)
+            with st.container(height=800, border=True): st.code(st.session_state.debug_logs_output, language="text")
+
+    _engine_logs_debugging_fragment()

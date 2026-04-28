@@ -298,7 +298,8 @@ def parse_account_health(target_account=None, login_data=None):
                             "filename": fname,
                             "status": "Success" if fname else "Fail",
                             "session_index": temp_session_idx,
-                            "round": active_event.get("round", round_id) if active_event else round_id
+                            "round": active_event.get("round", round_id) if active_event else round_id,
+                            "log_line_idx": i
                         }
                         detailed_results.append(record)
                         summary_results[record["account"]] = record
@@ -326,7 +327,8 @@ def parse_account_health(target_account=None, login_data=None):
                         "health": f"{fail_dur}s", "health_self": f"{fail_dur}s",
                         "filename": "",
                         "status": event.title(), "session_index": temp_session_idx,
-                        "round": active_event.get("round", round_id) if active_event else round_id
+                        "round": active_event.get("round", round_id) if active_event else round_id,
+                        "log_line_idx": i
                     }
                     detailed_results.append(record)
                     if record["account"] not in summary_results or summary_results[record["account"]]["status"] != "Success":
@@ -429,7 +431,8 @@ def parse_account_health(target_account=None, login_data=None):
                             "filename": fname,
                             "status": "Success" if fname else "Fail",
                             "session_index": temp_session_idx,
-                            "true_rej": true_rej, "true_res": true_res
+                            "true_rej": true_rej, "true_res": true_res,
+                            "log_line_idx": i
                         }
                         detailed_results.append(record)
                         summary_results[record["account"]] = record
@@ -445,12 +448,27 @@ def parse_account_health(target_account=None, login_data=None):
                         "account": temp_account, "time": temp_start_time,
                         "health": f"{fail_dur}s", "health_self": f"{fail_dur}s",
                         "filename": "",
-                        "status": status, "session_index": temp_session_idx
+                        "status": status, "session_index": temp_session_idx,
+                        "log_line_idx": i
                     }
                     detailed_results.append(record)
                     if record["account"] not in summary_results or summary_results[record["account"]]["status"] != "Success":
                         summary_results[record["account"]] = record
                     if active_event: active_event["start_time"] = ts_raw
+        
+        if active_event:
+            record = {
+                "account": active_event["account"],
+                "time": active_event["start_time"],
+                "health": "0s", "health_self": "0s",
+                "filename": "Pending...",
+                "status": "Ongoing",
+                "session_index": active_event["session_index"],
+                "round": active_event.get("round", 1),
+                "log_line_idx": active_event["line_idx"]
+            }
+            detailed_results.append(record)
+            
         # Backfill Unknown accounts
         first_real = None
         for r in detailed_results:

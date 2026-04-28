@@ -4,6 +4,13 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-04-28 - Account Health Architecture & UI Responsiveness
+- **Independent Fragment Architecture**: Completely reverted the `Account Health` dashboard to its stable, independent `@st.fragment` architecture. Removed shared global data caching wrappers that were previously interfering with fragment lifecycles, completely eliminating the persistent UI flickering and layout "jumping".
+- **Absolute Event Sequence Numbering**: Solved the visual bug where the "Show Last N Events" slider appeared broken. The background parser now assigns a chronological `Absolute_Event_Num` to every record *before* any slicing occurs. The X-axis for all charts now accurately reflects the true chronological sequence (e.g., displaying events 101-150 instead of defaulting to 1-50), allowing users to immediately verify that the chronological slice was successful.
+- **Real-Time UI Reactivity**: Refactored all Account Health settings (Graph Mode, Y-Axis Scale, Event Slider, and Toggles) to bypass config I/O latency. Fragments now read directly from `st.session_state`, guaranteeing that any adjustment to the UI controls triggers an instantaneous and isolated visual update in the charts.
+- **Engine Logs Debugging Independence**: Validated and locked the layout for the "Engine Logs Debugging" tab. It now operates securely inside its own fragment with a strictly fixed-height (`800px`) container and correctly contextualized filtering statistics (`📊 Stats: Lines X | Events Y`), ensuring smooth operation without disrupting the rest of the dashboard.
+
+
 ### Update: 2026-04-28 - Account Health UI Scaling & Stability
 - **Dynamic Log Scaling**: The `Show Last N Events` slider in the Account Health page is no longer capped at 2000 events. It now dynamically calculates its maximum value based on the exact number of events currently stored in `engine.log`.
 - **Global Cycle Isolation**: Introduced a new **Show Last Cycle Only** toggle. When enabled, it intelligently identifies the start of the most recent *global* automation cycle and filters out all older events. It seamlessly merges multi-session data caused by Loop Control account switches, providing a clean view of the current run regardless of how many accounts are involved.
