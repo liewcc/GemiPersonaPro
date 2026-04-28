@@ -438,7 +438,7 @@ with tab2:
     _cycle_management_fragment()
 
 with tab3:
-    @st.fragment(run_every=auto_val)
+    @st.fragment()
     def _performance_insights_fragment():
         st.markdown("### ⏱️ Cycle Performance Insights")
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>CYCLE PERFORMANCE INSIGHTS</p>", unsafe_allow_html=True)
@@ -540,6 +540,6 @@ with tab4:
                 st.session_state.debug_logs_output = "\n".join(reversed([l.strip() for l in out if l.strip()]))
         if st.session_state.get("debug_logs_output"):
             st.markdown("<p style='color: #a0a0ff; font-weight: bold; margin-top: 20px;'>ENGINE DEBUG LOGS</p>", unsafe_allow_html=True)
-            with st.container(height=800, border=True): st.code(st.session_state.debug_logs_output, language="text")
+            with st.container(height=515, border=True): st.code(st.session_state.debug_logs_output, language="text")
 
     _engine_logs_debugging_fragment()
