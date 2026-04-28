@@ -464,28 +464,50 @@ with tab3:
             for e in reversed(cycle_events):
                 s_id = e.get("session_index")
                 dur = float(e.get("health_self", e.get("health", "0s")).replace("s", ""))
+                st_val = e.get("status", "")
+                success_val = 1 if st_val == "Success" else 0
+                reject_val = 1 if st_val == "Reject" else 0
+                reset_val = 1 if st_val == "Reset" else 0
                 if stats and stats[-1]["session_index"] == s_id:
                     stats[-1]["duration"] += dur; stats[-1]["events"] += 1
+                    stats[-1]["images"] += success_val; stats[-1]["refused"] += reject_val; stats[-1]["reset"] += reset_val
                 else:
-                    stats.append({"session_index": s_id, "account": e.get("account", "Unknown"), "duration": dur, "events": 1, "start_time": e.get("time", "Unknown")})
+                    stats.append({"session_index": s_id, "account": e.get("account", "Unknown"), "duration": dur, "events": 1, "images": success_val, "refused": reject_val, "reset": reset_val, "start_time": e.get("time", "Unknown")})
             
             with c2:
                 n_accs = st.slider("Show Last N Accounts", 1, max(1, len(stats)), len(stats), key="tab3_n_accounts") if stats else 0
                     
         if not stats: return
         view_stats = stats[-n_accs:] if n_accs < len(stats) else stats
-        chart_data = [{"Switch": i+1, "Display": s['start_time'] + "\u200b"*i, "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Color": "Even" if i%2==0 else "Odd"} for i, s in enumerate(view_stats)]
+        chart_data = []
+        for i, s in enumerate(view_stats):
+            c_type = "Even" if i % 2 == 0 else "Odd"
+            color_val = f"Image_{c_type}" if s["images"] > 0 else c_type
+            chart_data.append({"Switch": i+1, "Display": s['start_time'] + "\u200b"*i, "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Images": s["images"], "Refused": s["refused"], "Reset": s["reset"], "Color": color_val})
         
         df_chart = pd.DataFrame(chart_data)
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Account Switch Duration Chart</p>", unsafe_allow_html=True)
-        chart = alt.Chart(df_chart).mark_bar().encode(
+        bar = alt.Chart(df_chart).mark_bar().encode(
             x=alt.X('Display:O', title="Switch Time", sort=alt.EncodingSortField(field="Switch")),
             y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
-            color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd"], range=["#4f8bf9", "#a0c0ff"]), legend=None),
-            tooltip=['Account', 'Duration', 'Events']
-        ).properties(height=400).interactive(bind_y=False)
+            color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd", "Image_Even", "Image_Odd"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=None),
+            tooltip=['Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
+        )
+        text = alt.Chart(df_chart).mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-3,
+            color='white',
+            fontSize=11,
+            fontWeight='bold'
+        ).encode(
+            x=alt.X('Display:O', sort=alt.EncodingSortField(field="Switch")),
+            y=alt.Y('Duration (Minutes):Q'),
+            text=alt.Text('Images:Q')
+        )
+        chart = alt.layer(bar, text).properties(height=400).interactive(bind_y=False)
         st.altair_chart(chart, width="stretch")
-        st.dataframe(df_chart, column_config={"Switch": "Seq", "Duration (Minutes)": None}, width="stretch", hide_index=True)
+        st.dataframe(df_chart, column_config={"Switch": "Seq", "Duration (Minutes)": None, "Color": None}, width="stretch", hide_index=True)
 
     _performance_insights_fragment()
 
