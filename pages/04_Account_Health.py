@@ -228,6 +228,9 @@ def _on_change_health_y_scale():
 def _on_change_health_n_rounds():
     save_config({"health_n_rounds": st.session_state.widget_health_n_rounds})
 
+def _on_change_health_n_rounds_retry():
+    save_config({"health_n_rounds_retry": st.session_state.widget_health_n_rounds_retry})
+
 def _on_change_event_only_success():
     save_config({"health_event_only_success": st.session_state.widget_event_only_success})
 
@@ -270,14 +273,19 @@ with tab1:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             st.toggle("Auto-refresh", value=True, key="health_auto_refresh")
 
-        cfg_n_rounds = st.session_state.get("widget_health_n_rounds", config.get("health_n_rounds", 100))
+        graph_opts = ["Round Duration", "Retry Analysis"]
+        cur_graph = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
+        
+        is_retry = (cur_graph == "Retry Analysis")
+        cfg_key = "health_n_rounds_retry" if is_retry else "health_n_rounds"
+        widget_key = "widget_health_n_rounds_retry" if is_retry else "widget_health_n_rounds"
+        
+        cfg_n_rounds = st.session_state.get(widget_key, config.get(cfg_key, 100))
         safe_n_rounds = min(cfg_n_rounds, max_available_events)
         
         if st.session_state.show_health_graph:
             col_slider, col_rad, col_scale = st.columns([2.0, 1.4, 0.6])
-            graph_opts = ["Round Duration", "Retry Analysis"]
             scale_opts = ["Linear", "Logarithmic"]
-            cur_graph = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
             try: graph_idx = graph_opts.index(cur_graph)
             except ValueError: graph_idx = 0
             cur_scale = st.session_state.get("widget_health_y_scale", config.get("health_y_scale", "Linear"))
@@ -286,7 +294,7 @@ with tab1:
             
             with col_slider:
                 with st.container(border=True):
-                    st.slider("Show Last N Events", min_value=10, max_value=max_available_events, value=safe_n_rounds, step=10, key="widget_health_n_rounds", on_change=_on_change_health_n_rounds)
+                    st.slider("Show Last N Events", min_value=10, max_value=max_available_events, value=safe_n_rounds, step=10, key=widget_key, on_change=_on_change_health_n_rounds_retry if is_retry else _on_change_health_n_rounds)
                     cfg_last_cycle = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
                     st.toggle(
                         "Show Last Cycle Only",
@@ -323,7 +331,12 @@ with tab1:
             # Pull immediate state from session_state for snappy UI adjustment
             graph_type = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
             y_scale_type = 'symlog' if st.session_state.get("widget_health_y_scale", config.get("health_y_scale", "Linear")) == "Logarithmic" else 'linear'
-            n_rounds = st.session_state.get("widget_health_n_rounds", config.get("health_n_rounds", 100))
+            
+            is_retry_frag = (graph_type == "Retry Analysis")
+            cfg_key_frag = "health_n_rounds_retry" if is_retry_frag else "health_n_rounds"
+            widget_key_frag = "widget_health_n_rounds_retry" if is_retry_frag else "widget_health_n_rounds"
+            
+            n_rounds = st.session_state.get(widget_key_frag, config.get(cfg_key_frag, 100))
             show_last_cycle = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
             event_only_success = st.session_state.get("widget_event_only_success", config.get("health_event_only_success", False)) and graph_type == "Round Duration"
             show_graph = st.session_state.get("show_health_graph", True)
@@ -366,7 +379,7 @@ with tab1:
 with tab2:
     @st.fragment()
     def _cycle_management_fragment():
-        st.markdown("### 🔄 Automation Cycle Management")
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>AUTOMATION CYCLE MANAGEMENT</p>", unsafe_allow_html=True)
         st.write("This tool analyzes `engine.log` for complete automation cycles (Start -> Stop). **Continue Session** triggers are grouped within their original parent cycle.")
 
         cycles = parse_engine_cycles()
@@ -440,7 +453,6 @@ with tab2:
 with tab3:
     @st.fragment()
     def _performance_insights_fragment():
-        st.markdown("### ⏱️ Cycle Performance Insights")
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>CYCLE PERFORMANCE INSIGHTS</p>", unsafe_allow_html=True)
         
         cycles = parse_engine_cycles()
