@@ -710,7 +710,7 @@ with tab3:
         seq_order = [d["Seq"] for d in chart_data]
         
         bar = alt.Chart(df_chart).mark_bar().encode(
-            x=alt.X('Seq:O', title="Seq", sort=seq_order),
+            x=alt.X('Seq:O', title="Seq", sort=seq_order, axis=alt.Axis(labelAngle=0)),
             y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
             color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd", "Image_Even", "Image_Odd"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=None),
             tooltip=['Display', 'Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
