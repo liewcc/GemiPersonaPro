@@ -6,7 +6,7 @@ import json
 import re
 import pandas as pd
 import altair as alt
-from datetime import datetime
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config_utils import load_config, save_config, load_login_lookup
@@ -422,16 +422,36 @@ with tab2:
             cycle_data = []
             for idx, c in enumerate(cycles):
                 display_time = c.get('full_start_time', c['start_time_str'])
+                stop_str_for_dur = c.get('stop_time_str', display_time)
+                
+                dsec = 0
+                dsec_valid = False
+                try:
+                    s_has_date = '-' in display_time
+                    e_has_date = '-' in stop_str_for_dur
+                    s_fmt = '%Y-%m-%d %H:%M:%S' if s_has_date else '%H:%M:%S'
+                    e_fmt = '%Y-%m-%d %H:%M:%S' if e_has_date else '%H:%M:%S'
+                    s_dt = datetime.strptime(display_time, s_fmt)
+                    e_dt = datetime.strptime(stop_str_for_dur, e_fmt)
+                    
+                    if s_has_date and not e_has_date:
+                        e_dt = e_dt.replace(year=s_dt.year, month=s_dt.month, day=s_dt.day)
+                        if e_dt < s_dt:
+                            e_dt += timedelta(days=1)
+                    elif not s_has_date and e_has_date:
+                        s_dt = s_dt.replace(year=e_dt.year, month=e_dt.month, day=e_dt.day)
+                        if s_dt > e_dt:
+                            s_dt -= timedelta(days=1)
+                            
+                    dsec = int((e_dt - s_dt).total_seconds())
+                    if dsec < 0 and not s_has_date and not e_has_date: dsec += 86400
+                    dsec_valid = True
+                except: pass
+
                 avg_time_str = "N/A"
                 success_count = c.get('success_count', 0)
-                if success_count > 0:
-                    try:
-                        s_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
-                        e_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
-                        t_sec = int((e_dt - s_dt).total_seconds())
-                        if t_sec < 0: t_sec += 86400
-                        avg_time_str = _fmt_dur(t_sec / success_count)
-                    except: pass
+                if success_count > 0 and dsec_valid:
+                    avg_time_str = _fmt_dur(max(0, dsec) / success_count)
                 
                 reject_count = c.get('reject_count', 0)
                 avg_reject_str = _fmt_dur(c.get('reject_duration', 0) / reject_count) if reject_count > 0 else "N/A"
@@ -440,17 +460,13 @@ with tab2:
 
                 is_running = c.get('is_running', False)
                 duration_str = "N/A"
-                try:
-                    s_dt = datetime.strptime(c['start_time_str'], '%H:%M:%S')
-                    e_dt = datetime.strptime(c.get('stop_time_str', c['start_time_str']), '%H:%M:%S')
-                    dsec = int((e_dt - s_dt).total_seconds())
-                    if dsec < 0: dsec += 86400
-                    duration_str = f"{dsec // 3600}:{(dsec % 3600) // 60:02d}"
-                except: pass
+                if dsec_valid:
+                    dsec_pos = max(0, dsec)
+                    duration_str = f"{dsec_pos // 3600}:{(dsec_pos % 3600) // 60:02d}"
 
                 cycle_data.append({
                     "Select": False, "Cycle ID": "Running" if is_running else idx + 1, "Start Time": display_time,
-                    "Stop Time": "Ongoing..." if is_running else c.get('stop_time_str', 'Unknown'),
+                    "Stop Time": "Ongoing..." if is_running else stop_str_for_dur,
                     "Duration": duration_str, "Images": success_count, "Avg Time/Img": avg_time_str,
                     "Refused": reject_count, "Avg Time/Refused": avg_reject_str,
                     "Reset": reset_count, "Avg Time/Reset": avg_reset_str,
@@ -534,7 +550,7 @@ with tab3:
                 st.session_state["tab3_n_accounts"] = max_accounts
             
             with c2:
-                n_accs = st.slider("Show Last N Accounts", 1, max_accounts, max_accounts, key="tab3_n_accounts") if stats else 0
+                n_accs = st.slider("Show Last N Accounts", 1, max(2, max_accounts), max_accounts, key="tab3_n_accounts", disabled=(max_accounts <= 1)) if stats else 0
                     
         if not stats: return
         view_stats = stats[-n_accs:] if n_accs < len(stats) else stats
@@ -542,34 +558,33 @@ with tab3:
         for i, s in enumerate(view_stats):
             c_type = "Even" if i % 2 == 0 else "Odd"
             color_val = f"Image_{c_type}" if s["images"] > 0 else c_type
-            chart_data.append({"Switch": i+1, "Display": f"#{i+1} ({s['start_time']})", "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Images": s["images"], "Refused": s["refused"], "Reset": s["reset"], "Color": color_val})
+            chart_data.append({"Seq": i+1, "Display": f"#{i+1} ({s['start_time']})", "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Images": s["images"], "Refused": s["refused"], "Reset": s["reset"], "Color": color_val})
         
         df_chart = pd.DataFrame(chart_data)
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Account Switch Duration Chart</p>", unsafe_allow_html=True)
         
-        display_order = [d["Display"] for d in chart_data]
+        seq_order = [d["Seq"] for d in chart_data]
         
         bar = alt.Chart(df_chart).mark_bar().encode(
-            x=alt.X('Display:O', title="Switch Time", sort=display_order),
+            x=alt.X('Seq:O', title="Seq", sort=seq_order),
             y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
             color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd", "Image_Even", "Image_Odd"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=None),
-            tooltip=['Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
+            tooltip=['Display', 'Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
         )
         text = alt.Chart(df_chart).mark_text(
             align='center',
             baseline='bottom',
             dy=-3,
-            color='white',
             fontSize=11,
             fontWeight='bold'
         ).encode(
-            x=alt.X('Display:O', sort=display_order),
+            x=alt.X('Seq:O', sort=seq_order),
             y=alt.Y('Duration (Minutes):Q'),
             text=alt.Text('Images:Q')
         )
         chart = alt.layer(bar, text).properties(height=400).interactive(bind_y=False)
         st.altair_chart(chart, width="stretch")
-        st.dataframe(df_chart, column_config={"Switch": "Seq", "Duration (Minutes)": None, "Color": None}, width="stretch", hide_index=True)
+        st.dataframe(df_chart, column_config={"Duration (Minutes)": None, "Color": None}, width="stretch", hide_index=True)
 
     _performance_insights_fragment()
 

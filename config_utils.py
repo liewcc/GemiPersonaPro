@@ -60,6 +60,11 @@ DEFAULT_CONFIG = {
             {"ratio": "2:3 (Portrait)", "target": 5, "current": 0}
         ]
     },
+    "gemini_api": {
+        "enabled": False,
+        "api_key": "",
+        "model": "gemini-2.5-flash-image"
+    },
     "health_view_mode": "Full Loading History (All Events)",
     "system_navigation": "Engine Settings"
 }

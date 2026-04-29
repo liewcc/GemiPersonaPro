@@ -69,15 +69,18 @@ def parse_engine_cycles():
                         try:
                             dt = datetime.fromisoformat(rec.get("ts", ""))
                             ts = dt.strftime("%H:%M:%S")
+                            full_ts = dt.strftime("%Y-%m-%d %H:%M:%S")
                         except:
                             ts = "Unknown"
+                            full_ts = ts
                         current_cycle = {
                             'start_idx': i, 'start_time_str': ts,
+                            'full_start_time': full_ts,
                             'end_idx': None, 'lines_count': 0,
-                            'stop_time_str': ts, 'success_count': 0,
+                            'stop_time_str': full_ts, 'success_count': 0,
                             'reject_count': 0, 'reset_count': 0,
                             'reject_duration': 0, 'reset_duration': 0,
-                            'last_ts': ts
+                            'last_ts': full_ts
                         }
                 if current_cycle is not None:
                     current_cycle['lines_count'] += 1
@@ -87,14 +90,15 @@ def parse_engine_cycles():
                         try:
                             dt = datetime.fromisoformat(rec.get("ts", ""))
                             current_ts = dt.strftime("%H:%M:%S")
-                            current_cycle['stop_time_str'] = current_ts
+                            current_ts_full = dt.strftime("%Y-%m-%d %H:%M:%S")
+                            current_cycle['stop_time_str'] = current_ts_full
                             
                             if current_cycle.get('last_ts'):
-                                fmt = '%H:%M:%S'
-                                start_dt = datetime.strptime(current_cycle['last_ts'], fmt)
-                                stop_dt = datetime.strptime(current_ts, fmt)
+                                start_fmt = '%Y-%m-%d %H:%M:%S' if '-' in current_cycle['last_ts'] else '%H:%M:%S'
+                                start_dt = datetime.strptime(current_cycle['last_ts'], start_fmt)
+                                stop_dt = datetime.strptime(current_ts_full, '%Y-%m-%d %H:%M:%S')
                                 t_delta = int((stop_dt - start_dt).total_seconds())
-                                if t_delta < 0: t_delta += 86400
+                                if t_delta < 0 and '-' not in current_cycle['last_ts']: t_delta += 86400
                                 
                                 if event == "REJECT":
                                     current_cycle['reject_count'] += 1
@@ -104,7 +108,7 @@ def parse_engine_cycles():
                                     current_cycle['reset_duration'] += t_delta
                                     
                             if event in ("SUCCESS", "REJECT", "RESET", "START", "BOUNDARY", "ACCOUNT_SWITCH"):
-                                current_cycle['last_ts'] = current_ts
+                                current_cycle['last_ts'] = current_ts_full
                         except:
                             pass
                 continue
