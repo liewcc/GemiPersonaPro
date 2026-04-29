@@ -4,6 +4,14 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-04-29 - Log Record Export & Loading Management
+- **Universal 'Load Record' Integration**: Added a new `📂 Load Record` button across the entire Account Health suite (Analysis, Insights, and Debugging tabs). This allows users to import and analyze historical `.log` files exported by the system.
+- **Save Record Logic**: Implemented a `💾 Save Record` feature in the Automation Cycle Management tab. Users can now select specific automation cycles and export them to a standalone `.log` file with custom filenames based on the cycle's start timestamp.
+- **Native File Selection**: Integrated `tkinter` file and directory dialogs into Streamlit to provide a premium, native folder/file selection experience. The dialogs have been engineered to remain open while the user browses their filesystem.
+- **Global Data Context**: When a record is loaded, the entire application intelligently overrides its data source. All charts, tables, dropdowns, and raw log viewers instantly switch to the context of the loaded file.
+- **Data Source Awareness**: Implemented high-visibility "Loaded from: [path]" indicators across all relevant dashboard tabs to ensure users always know whether they are looking at live engine logs or historical archives.
+- **Editable Default Filenames**: The Save Record dialog now automatically generates a safe, timestamped filename (e.g., `cycle_20260429_143644.log`) and presents it in an editable text box for user customization.
+
 ### Update: 2026-04-28 - Account Health Architecture & UI Responsiveness
 - **Independent Fragment Architecture**: Completely reverted the `Account Health` dashboard to its stable, independent `@st.fragment` architecture. Removed shared global data caching wrappers that were previously interfering with fragment lifecycles, completely eliminating the persistent UI flickering and layout "jumping".
 - **Absolute Event Sequence Numbering**: Solved the visual bug where the "Show Last N Events" slider appeared broken. The background parser now assigns a chronological `Absolute_Event_Num` to every record *before* any slicing occurs. The X-axis for all charts now accurately reflects the true chronological sequence (e.g., displaying events 101-150 instead of defaulting to 1-50), allowing users to immediately verify that the chronological slice was successful.

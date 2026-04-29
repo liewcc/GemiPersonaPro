@@ -64,6 +64,16 @@ Over time, your `engine.log` file can become cluttered with test runs, failed se
   3. **Warning**: This action permanently deletes the associated lines from your physical `engine.log` file.
 - **Why use this?** Use this tool to remove "stale" or early test data. Deleting bad cycles prevents them from cluttering the performance charts in the **Account Health Analysis** tab and reduces the overall log file size, leading to faster loading times for the dashboard.
 
+### Log Export & Record Management
+- **Save Record**: In the **Automation Cycle Management** tab, you can select specific cycles and click **💾 Save Record**. 
+  - This allows you to export the logs of selected cycles to a standalone `.log` file.
+  - You can choose the destination folder using a native file explorer and customize the filename (defaults to the cycle's start time).
+- **Load Record**: Available in the **Account Health Analysis**, **Cycle Performance Insights**, and **Engine Logs Debugging** tabs.
+  - Clicking **📂 Load Record** allows you to select a previously saved `.log` file.
+  - When a file is loaded, the entire dashboard switches to display the data from that file instead of the live `engine.log`.
+  - A notification "📂 Loaded from: [path]" will appear to remind you which data source is active.
+  - To return to the live logs, simply open the Load Record dialog and clear the file path input.
+
 ---
 
 *💡 **Pro Tip**: If a specific account shows a consistent "Refused" pattern in the graphs, consider using the System Config page to increase the **Quota Cooldown** hours for your system, or manually bypass that account in the Credentials table.*

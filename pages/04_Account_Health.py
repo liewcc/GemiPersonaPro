@@ -10,7 +10,9 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config_utils import load_config, save_config, load_login_lookup
-from health_parser import parse_account_health, parse_engine_cycles, LOG_PATH
+import health_parser
+from health_parser import parse_account_health, parse_engine_cycles
+from health_parser import LOG_PATH as _DEFAULT_LOG_PATH
 from style_utils import apply_premium_style, render_dashboard_header
 
 # --- Page Setup ---
@@ -20,6 +22,13 @@ apply_premium_style()
 # --- Page Data Initialization ---
 config = load_config()
 login_data = load_login_lookup()
+
+if st.session_state.get("loaded_record_path"):
+    health_parser.LOG_PATH = st.session_state.loaded_record_path
+    LOG_PATH = st.session_state.loaded_record_path
+else:
+    health_parser.LOG_PATH = _DEFAULT_LOG_PATH
+    LOG_PATH = _DEFAULT_LOG_PATH
 
 # Fetch initial data for dropdowns and sidebar (non-fragmented)
 # Note: Full data fetching for charts will happen inside fragments
@@ -190,6 +199,8 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         return
     if show_graph:
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Performance Graph: <b>{label}</b></p>", unsafe_allow_html=True)
+        if st.session_state.get("loaded_record_path"):
+            st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
         if graph_type == "Round Duration":
             st.altair_chart(_build_duration_chart(data, y_scale_type, event_only_success=event_only_success), width="stretch")
         else:
@@ -201,6 +212,8 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
                 st.altair_chart(chart, width="stretch")
     else:
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Loading records: <b>{label}</b>.</p>", unsafe_allow_html=True)
+        if st.session_state.get("loaded_record_path"):
+            st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
         st.data_editor(
             pd.DataFrame(data),
             column_config={
@@ -242,9 +255,58 @@ def _on_change_show_last_cycle():
 tab1, tab2, tab3, tab4 = st.tabs(["Account Health Analysis", "Automation Cycle Management", "Cycle Performance Insights", "Engine Logs Debugging"])
 
 with tab1:
+    @st.dialog("Load Record")
+    def _load_record_dialog():
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        st.write("Select a saved log file to load its records. Leave empty to clear.")
+        
+        if "load_record_path_input" not in st.session_state:
+            st.session_state.load_record_path_input = st.session_state.get("loaded_record_path", "")
+            
+        c1, c2 = st.columns([4, 1])
+        with c1:
+            path_container = st.empty()
+        with c2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("📁", key="browse_load_record_btn", width="stretch"):
+                root = tk.Tk()
+                root.withdraw()
+                root.wm_attributes('-topmost', True)
+                picked = filedialog.askopenfilename(filetypes=[("Log Files", "*.log"), ("All Files", "*.*")])
+                root.destroy()
+                if picked:
+                    st.session_state.load_record_path_input = picked
+                    
+        with path_container:
+            load_path = st.text_input("File Path", key="load_record_path_input")
+                    
+        c_ok, c_cancel = st.columns(2)
+        with c_ok:
+            if st.button("OK", type="primary", width="stretch"):
+                if not st.session_state.load_record_path_input:
+                    if "loaded_record_path" in st.session_state:
+                        del st.session_state["loaded_record_path"]
+                    st.session_state.load_record_success = "Reset to default engine log."
+                    st.rerun()
+                elif os.path.exists(st.session_state.load_record_path_input):
+                    st.session_state.loaded_record_path = st.session_state.load_record_path_input
+                    st.session_state.load_record_success = f"Successfully loaded records from: {st.session_state.loaded_record_path}"
+                    st.rerun()
+                else:
+                    st.error("File does not exist.")
+        with c_cancel:
+            if st.button("Cancel", width="stretch"):
+                st.rerun()
+
+    if "load_record_success" in st.session_state:
+        st.success(st.session_state.load_record_success)
+        del st.session_state.load_record_success
+
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>ACCOUNT HEALTH ANALYSIS</p>", unsafe_allow_html=True)
     with st.container(border=True):
-        c1, c2, c3, c4 = st.columns([2.2, 0.8, 0.8, 0.7])
+        c1, c2, c3, c_load, c4 = st.columns([2.0, 0.7, 0.7, 0.7, 0.7])
         with c1:
             options = ["Full Loading History (All Events)", "Detailed History: Active Account"] + [f"Detailed History: {acc}" for acc in final_dropdown_accs]
             cfg_val = config.get("health_view_mode", "Full Loading History (All Events)")
@@ -269,6 +331,10 @@ with tab1:
             if st.button(lbl, icon=ico, width="stretch"):
                 st.session_state.show_health_graph = not st.session_state.show_health_graph
                 st.rerun()
+        with c_load:
+            st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("Load Record", icon="📂", width="stretch"):
+                _load_record_dialog()
         with c4:
             st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             st.toggle("Auto-refresh", value=True, key="health_auto_refresh")
@@ -411,6 +477,73 @@ with tab1:
 with tab2:
     @st.fragment()
     def _cycle_management_fragment():
+        @st.dialog("Save Record")
+        def _save_record_dialog(valid_rows):
+            import tkinter as tk
+            from tkinter import filedialog
+            
+            st.write("Choose where to save the logs for the selected cycle(s).")
+            
+            if "save_record_path_input" not in st.session_state:
+                st.session_state.save_record_path_input = os.getcwd()
+                
+            first_start_time = valid_rows.iloc[0].get("Start Time", "") if not valid_rows.empty else ""
+            if first_start_time:
+                safe_time_str = str(first_start_time).replace(":", "").replace("-", "").replace(" ", "_")
+                default_filename = f"cycle_{safe_time_str}.log"
+            else:
+                default_filename = f"saved_cycles_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+                safe_time_str = "default"
+                
+            unique_key = f"save_filename_{safe_time_str}"
+            filename = st.text_input("File Name", value=default_filename, key=unique_key)
+                
+            c1, c2 = st.columns([4, 1])
+            with c1:
+                path_container = st.empty()
+            with c2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("📁", key="browse_save_record_btn", width="stretch"):
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.wm_attributes('-topmost', True)
+                    picked = filedialog.askdirectory()
+                    root.destroy()
+                    if picked:
+                        st.session_state.save_record_path_input = picked
+                        
+            with path_container:
+                save_path = st.text_input("Save Location", key="save_record_path_input")
+                        
+            c_ok, c_cancel = st.columns(2)
+            with c_ok:
+                if st.button("OK", type="primary", width="stretch"):
+                    try:
+                        cycles_to_save = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
+                        with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                        
+                        output_lines = []
+                        for c in cycles_to_save:
+                            output_lines.extend(lines[c['start_idx']:c['end_idx']+1])
+                            output_lines.append("\n" + "="*50 + "\n\n")
+                        
+                        save_file = os.path.join(st.session_state.save_record_path_input, filename)
+                        
+                        with open(save_file, "w", encoding="utf-8") as f:
+                            f.writelines(output_lines)
+                        st.session_state.save_record_success = f"Successfully saved to {save_file}"
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error saving: {e}")
+                    
+            with c_cancel:
+                if st.button("Cancel", width="stretch"):
+                    st.rerun()
+        if "save_record_success" in st.session_state:
+            st.success(st.session_state.save_record_success)
+            del st.session_state.save_record_success
+            
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>AUTOMATION CYCLE MANAGEMENT</p>", unsafe_allow_html=True)
         st.write("This tool analyzes `engine.log` for complete automation cycles (Start -> Stop). **Continue Session** triggers are grouped within their original parent cycle.")
 
@@ -488,13 +621,18 @@ with tab2:
             selected_rows = edited_df[edited_df["Select"] == True]
             valid_rows = selected_rows[selected_rows["Cycle ID"].astype(str) != "Running"]
             if not valid_rows.empty:
-                st.warning(f"Delete {len(valid_rows)} cycle(s)?")
-                if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
-                    cycles_to_del = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
-                    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
-                    to_keep = [line for i, line in enumerate(lines) if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_del)]
-                    with open(LOG_PATH, "w", encoding="utf-8") as f: f.writelines(to_keep)
-                    st.success("Deleted."); st.rerun()
+                st.warning(f"Selected {len(valid_rows)} cycle(s).")
+                col_del, col_save = st.columns(2)
+                with col_del:
+                    if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
+                        cycles_to_del = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
+                        with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
+                        to_keep = [line for i, line in enumerate(lines) if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_del)]
+                        with open(LOG_PATH, "w", encoding="utf-8") as f: f.writelines(to_keep)
+                        st.success("Deleted."); st.rerun()
+                with col_save:
+                    if st.button("💾 Save Record", width="stretch"):
+                        _save_record_dialog(valid_rows)
 
     _cycle_management_fragment()
 
@@ -516,7 +654,7 @@ with tab3:
                 del st.session_state["tab3_n_accounts"]
 
         with st.container(border=True):
-            c1, c2, c3 = st.columns([2.0, 0.7, 0.3])
+            c1, c2, c3, c_load = st.columns([1.4, 0.7, 0.4, 0.5])
             with c1:
                 selected_cycle_str = st.selectbox("Select Cycle", list(reversed(cycle_opts)), key="tab3_cycle_select", on_change=_reset_tab3_slider)
                 selected_cycle_id = int(selected_cycle_str.split(" ")[1])
@@ -525,6 +663,10 @@ with tab3:
                 if st.button("Refresh", icon="🔄", width="stretch", key="tab3_refresh_btn"):
                     _reset_tab3_slider()
                     st.rerun(scope="app")
+            with c_load:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Load Record", icon="📂", width="stretch", key="tab3_load_btn"):
+                    _load_record_dialog()
                 
             selected_cycle = cycles[selected_cycle_id - 1]
             cycle_events = [e for e in all_detailed if selected_cycle['start_idx'] <= e.get("log_line_idx", -1) <= (selected_cycle['end_idx'] or 999999999)]
@@ -562,6 +704,8 @@ with tab3:
         
         df_chart = pd.DataFrame(chart_data)
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Account Switch Duration Chart</p>", unsafe_allow_html=True)
+        if st.session_state.get("loaded_record_path"):
+            st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
         
         seq_order = [d["Seq"] for d in chart_data]
         
@@ -596,7 +740,7 @@ with tab4:
         c_opts = ["All"] + [f"Cycle {i+1}: {c['start_time_str']} - {c.get('stop_time_str', 'Ongoing...')}" for i, c in enumerate(cycles)]
             
         with st.container(border=True):
-            c1, c2, c3, c4, c5, c6 = st.columns([1.6, 0.9, 0.5, 0.5, 1.2, 0.7])
+            c1, c2, c3, c4, c5, c6, c_load = st.columns([1.4, 0.8, 0.4, 0.4, 0.9, 0.5, 0.6])
             with c1:
                 sel_cycle = st.selectbox("Select Cycle", c_opts, key="tab4_cycle_select", on_change=_clr)
             
@@ -641,8 +785,14 @@ with tab4:
                         st.session_state.debug_logs_output = "\n".join(logs_clean)
                     else:
                         st.session_state.debug_logs_output = "\n".join(reversed(logs_clean))
+            with c_load:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                if st.button("Load Record", icon="📂", width="stretch", key="tab4_load_btn"):
+                    _load_record_dialog()
         if st.session_state.get("debug_logs_output"):
             st.markdown("<p style='color: #a0a0ff; font-weight: bold; margin-top: 8px;'>ENGINE DEBUG LOGS</p>", unsafe_allow_html=True)
-            with st.container(height=580, border=True): st.code(st.session_state.debug_logs_output, language="text")
+            if st.session_state.get("loaded_record_path"):
+                st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -12px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
+            with st.container(height=560, border=True): st.code(st.session_state.debug_logs_output, language="text")
 
     _engine_logs_debugging_fragment()
