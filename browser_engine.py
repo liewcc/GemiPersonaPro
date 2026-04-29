@@ -507,14 +507,33 @@ class BrowserEngine:
                     log_debug(f"Adding (New stem): {orig_name}")
                     async with self._page.expect_file_chooser(timeout=20000) as fc_info:
                         await self._page.evaluate('''() => {
-                            const gemsIcon = document.querySelector('mat-icon[data-mat-icon-name="add_2"]') || 
-                                           document.querySelector('mat-icon[fonticon="add"]');
-                            if (gemsIcon) { gemsIcon.closest('button').click(); }
+                            const plusBtn = document.querySelector('button[aria-label="Open upload file menu"]') ||
+                                            document.querySelector('button[aria-label*="upload" i]') ||
+                                            document.querySelector('button[aria-label*="Upload" i]');
+                            if (plusBtn) {
+                                plusBtn.click();
+                            } else {
+                                const gemsIcon = document.querySelector('mat-icon[data-mat-icon-name="add_2"]') || 
+                                               document.querySelector('mat-icon[fonticon="add"]');
+                                if (gemsIcon) { gemsIcon.closest('button').click(); }
+                            }
                         }''')
                         await asyncio.sleep(1.2)
                         await self._page.evaluate('''() => {
-                            const opt = Array.from(document.querySelectorAll('.menu-text, span'))
-                                             .find(i => i.innerText.toLowerCase().includes("upload files"));
+                            const explicitIcon = document.querySelector('[data-test-id="local-images-files-uploader-icon"]');
+                            if (explicitIcon) {
+                                const menuItem = explicitIcon.closest('.mat-mdc-menu-item, [role="menuitem"], button');
+                                if (menuItem) {
+                                    menuItem.click();
+                                    return;
+                                }
+                            }
+                            
+                            const opt = Array.from(document.querySelectorAll('.menu-text, span, .mdc-list-item__primary-text'))
+                                             .find(i => {
+                                                 const txt = i.innerText.toLowerCase();
+                                                 return txt.includes("upload") || txt.includes("attach");
+                                             });
                             if (opt) opt.click();
                         }''')
                         file_chooser = await fc_info.value
