@@ -234,16 +234,33 @@ def select_folder():
     return path
 
 # --- Heartbeat Loop ---
-def heartbeat_worker(client):
-    while True:
+# --- Heartbeat Loop with graceful shutdown ---
+# Use a threading.Event to allow clean termination of the background heartbeat thread.
+if "heartbeat_stop_event" not in st.session_state:
+    st.session_state.heartbeat_stop_event = threading.Event()
+
+def heartbeat_worker(client, stop_event: threading.Event):
+    """Periodically send heartbeat to the engine.
+    The loop checks `stop_event` to exit cleanly when the app stops or the engine is shut down.
+    Exceptions are logged to avoid silent failures and to prevent unawaited coroutine warnings.
+    """
+    while not stop_event.is_set():
         try:
             asyncio.run(client.send_heartbeat())
-        except:
-            pass
-        time.sleep(30) # Ping every 30 seconds
+        except asyncio.CancelledError:
+            # Thread is being cancelled during shutdown; exit loop gracefully
+            break
+        except Exception as e:
+            add_log(f"Heartbeat error: {e}")
+        time.sleep(30)  # Ping every 30 seconds
 
+# Start the heartbeat thread if not already running
 if st.session_state.heartbeat_thread is None:
-    st.session_state.heartbeat_thread = threading.Thread(target=heartbeat_worker, args=(st.session_state.client,), daemon=True)
+    st.session_state.heartbeat_thread = threading.Thread(
+        target=heartbeat_worker,
+        args=(st.session_state.client, st.session_state.heartbeat_stop_event),
+        daemon=True,
+    )
     st.session_state.heartbeat_thread.start()
 
 # --- Real-time Status & Fragment ---
@@ -357,8 +374,18 @@ with st.sidebar:
             if browser_active:
                 add_log("Closing browser gracefully...")
                 asyncio.run(st.session_state.client.stop_engine())
-                time.sleep(1.0) # Small buffer for file locks to release
-                
+                time.sleep(1.0)  # Small buffer for file locks to release
+
+            # Signal heartbeat thread to stop
+            if "heartbeat_stop_event" in st.session_state:
+                st.session_state.heartbeat_stop_event.set()
+                # Optionally join the thread to ensure it exits before proceeding
+                if st.session_state.heartbeat_thread and st.session_state.heartbeat_thread.is_alive():
+                    st.session_state.heartbeat_thread.join(timeout=1)
+                # Reset for future starts
+                st.session_state.heartbeat_stop_event = threading.Event()
+                st.session_state.heartbeat_thread = None
+
             # Stop the service
             if sys.platform == 'win32' and service_pid:
                 try:

@@ -1461,6 +1461,25 @@ def show_dash_metadata(img_path):
         st.error(f"Failed to read metadata: {e}")
 
 @st.fragment(run_every="5s")
+def check_gallery_updates():
+    save_dir = st.session_state.config.get("save_dir", "")
+    if not save_dir or not os.path.isdir(save_dir): return
+    target_dir = os.path.join(save_dir, "processed") if st.session_state.get("dash_gal_check_processed") else save_dir
+    if not os.path.isdir(target_dir): return
+    try:
+        files = [f for f in os.listdir(target_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+        current_state = (len(files), max([os.path.getmtime(os.path.join(target_dir, f)) for f in files]) if files else 0)
+        
+        prev_state = st.session_state.get("dash_gallery_folder_state")
+        if prev_state is not None and prev_state != current_state:
+            st.session_state.dash_gallery_folder_state = current_state
+            st.rerun()
+            
+        st.session_state.dash_gallery_folder_state = current_state
+    except Exception:
+        pass
+
+@st.fragment()
 def render_image_gallery():
     save_dir = st.session_state.config.get("save_dir", "")
     if not save_dir or not os.path.isdir(save_dir): st.warning("Configure Save Directory."); return
@@ -1503,4 +1522,5 @@ def render_image_gallery():
                             st.toast(f"Removed {filename}"); time.sleep(0.5); st.rerun()
 
 # --- Main Gallery Call ---
+check_gallery_updates()
 render_image_gallery()

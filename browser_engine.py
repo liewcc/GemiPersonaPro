@@ -1335,23 +1335,256 @@ class BrowserEngine:
 
         for img in valid_imgs:
             try:
-                # Preview and download
-                await img.evaluate('el => el.scrollIntoView({behavior: "instant", block: "center"})')
-                await asyncio.sleep(1.0)
-                await img.click(force=True)
-                await asyncio.sleep(3.0)
-
-                async with self._page.expect_download(timeout=15000) as dl_info:
-                    await self._page.evaluate('''() => {
-                        const b = Array.from(document.querySelectorAll('button'))
-                                     .find(x => x.ariaLabel?.includes("Download") || 
-                                               x.title?.includes("Download") ||
-                                               x.innerText.includes("Download"));
-                        if(b) b.click();
+                # ── STEP 1: Wait for image to fully load & render ──
+                img_ready = False
+                for _load_wait in range(20):  # 20 * 0.5s = 10s max
+                    img_info = await img.evaluate('''el => {
+                        const rect = el.getBoundingClientRect();
+                        return {
+                            width: rect.width, height: rect.height,
+                            complete: el.complete, naturalW: el.naturalWidth
+                        };
                     }''')
+                    if img_info.get("height", 0) > 50 and img_info.get("width", 0) > 50:
+                        img_ready = True
+                        break
+                    await asyncio.sleep(0.5)
+                
+                if not img_ready:
+                    self._log_debug(f"DL-DIAG: Image not ready after 10s (h={img_info.get('height')}, w={img_info.get('width')}). Skipping.")
+                    continue
+                
+                # ── STEP 1b: Scroll & Viewport Verification ──
+                await img.evaluate('el => el.scrollIntoView({behavior: "instant", block: "center"})')
+                await asyncio.sleep(0.5)
+                
+                viewport_info = await img.evaluate('''el => {
+                    const rect = el.getBoundingClientRect();
+                    return {
+                        inViewport: rect.top >= 0 && rect.left >= 0 && 
+                                    rect.bottom <= window.innerHeight && rect.right <= window.innerWidth,
+                        imgRect: {t: Math.round(rect.top), l: Math.round(rect.left), 
+                                  b: Math.round(rect.bottom), r: Math.round(rect.right)},
+                        windowSize: {w: window.innerWidth, h: window.innerHeight}
+                    };
+                }''')
+                self._log_debug(f"DL-DIAG: viewport={viewport_info}")
+                
+                if not viewport_info.get("inViewport"):
+                    await self._page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    await asyncio.sleep(0.3)
+                    await img.evaluate('el => el.scrollIntoView({behavior: "instant", block: "center"})')
+                    await asyncio.sleep(0.5)
+                
+                # ── STEP 2: Click image to open lightbox/dialog ──
+                await img.click(force=True)
+                await asyncio.sleep(1.5)
+                
+                # ── STEP 3: Diagnose what dialog opened ──
+                dialog_diag = await self._page.evaluate('''() => {
+                    const result = {dialogFound: false, dialogType: "none", dlBtnFound: false, 
+                                    dlBtnInfo: null, allButtons: [], dialogClasses: ""};
+                    
+                    // Check for mat-dialog (Pro editing dialog or standard preview)
+                    const dialog = document.querySelector('mat-dialog-container');
+                    if (dialog) {
+                        result.dialogFound = true;
+                        const content = dialog.querySelector('mat-dialog-content');
+                        result.dialogClasses = content ? content.className : dialog.className;
+                        
+                        if (content && content.className.includes('trusted-image-dialog')) {
+                            result.dialogType = "pro_editing";
+                        } else {
+                            result.dialogType = "standard";
+                        }
+                        
+                        // Check for dialog image (high-res)
+                        const dialogImg = dialog.querySelector('img[data-test-id="trusted-image"], img.generated-image');
+                        if (dialogImg) {
+                            result.dialogImgSrc = dialogImg.src ? dialogImg.src.substring(0, 80) : "none";
+                        }
+                    }
+                    
+                    // Check for cdk-overlay (Angular Material overlay)
+                    const overlay = document.querySelector('.cdk-overlay-container .cdk-overlay-pane');
+                    if (overlay && !result.dialogFound) {
+                        result.dialogFound = true;
+                        result.dialogType = "cdk_overlay";
+                        result.dialogClasses = overlay.className;
+                    }
+                    
+                    // Scan ALL mat-icon elements for download-related icons
+                    const matIcons = Array.from(document.querySelectorAll('mat-icon'));
+                    const dlIcons = matIcons.filter(i => {
+                        const name = i.getAttribute('data-mat-icon-name') || '';
+                        const font = i.getAttribute('fonticon') || '';
+                        return name === 'download' || font === 'download';
+                    });
+                    
+                    if (dlIcons.length > 0) {
+                        result.dlBtnFound = true;
+                        const icon = dlIcons[0];
+                        const parentBtn = icon.closest('button');
+                        result.dlBtnInfo = {
+                            tagName: parentBtn ? 'button' : icon.tagName,
+                            visible: parentBtn ? (parentBtn.offsetParent !== null) : (icon.offsetParent !== null),
+                            disabled: parentBtn ? parentBtn.disabled : false,
+                            ariaLabel: parentBtn ? (parentBtn.ariaLabel || '') : '',
+                            iconName: icon.getAttribute('data-mat-icon-name') || '',
+                            fonticon: icon.getAttribute('fonticon') || '',
+                            classes: parentBtn ? parentBtn.className.substring(0, 120) : ''
+                        };
+                    }
+                    
+                    // Fallback: scan buttons for Download text
+                    if (!result.dlBtnFound) {
+                        const textBtn = Array.from(document.querySelectorAll('button'))
+                            .find(x => (x.ariaLabel || '').toLowerCase().includes('download') ||
+                                       (x.title || '').toLowerCase().includes('download') ||
+                                       x.innerText.toLowerCase().includes('download'));
+                        if (textBtn) {
+                            result.dlBtnFound = true;
+                            result.dlBtnInfo = {
+                                tagName: 'button', visible: textBtn.offsetParent !== null,
+                                disabled: textBtn.disabled,
+                                ariaLabel: textBtn.ariaLabel || '', 
+                                innerText: textBtn.innerText.substring(0, 50),
+                                classes: textBtn.className.substring(0, 120)
+                            };
+                        }
+                    }
+                    
+                    // Collect summary of ALL buttons in dialog for debugging
+                    const dialogEl = document.querySelector('mat-dialog-container') || 
+                                     document.querySelector('.cdk-overlay-container .cdk-overlay-pane');
+                    if (dialogEl) {
+                        const btns = Array.from(dialogEl.querySelectorAll('button'));
+                        result.allButtons = btns.slice(0, 15).map(b => ({
+                            ariaLabel: (b.ariaLabel || '').substring(0, 40),
+                            text: b.innerText.substring(0, 30).replace(/\\n/g, ' '),
+                            icon: (() => {
+                                const mi = b.querySelector('mat-icon');
+                                if (!mi) return '';
+                                return mi.getAttribute('data-mat-icon-name') || 
+                                       mi.getAttribute('fonticon') || 
+                                       mi.innerText.substring(0, 20);
+                            })(),
+                            visible: b.offsetParent !== null,
+                            disabled: b.disabled
+                        }));
+                    }
+                    
+                    return result;
+                }''')
+                self._log_debug(f"DL-DIAG: dialog={dialog_diag}")
+                
+                # ── STEP 4: Wait for Download button if not yet visible ──
+                dl_btn_found = dialog_diag.get("dlBtnFound", False)
+                
+                if not dl_btn_found:
+                    # Poll for the button (dialog might still be animating)
+                    for _wait in range(12):  # 12 * 0.5s = 6s max
+                        dl_btn_found = await self._page.evaluate('''() => {
+                            const matIcon = document.querySelector('mat-icon[data-mat-icon-name="download"]');
+                            if (matIcon) return true;
+                            const fontIcon = document.querySelector('mat-icon[fonticon="download"]');
+                            if (fontIcon) return true;
+                            const btn = Array.from(document.querySelectorAll('button'))
+                                         .find(x => (x.ariaLabel || '').toLowerCase().includes('download') ||
+                                                   (x.title || '').toLowerCase().includes('download') ||
+                                                   x.innerText.toLowerCase().includes('download'));
+                            if (btn) return true;
+                            return false;
+                        }''')
+                        if dl_btn_found:
+                            self._log_debug(f"DL-DIAG: button appeared after {(_wait+1)*0.5:.1f}s polling")
+                            break
+                        await asyncio.sleep(0.5)
+
+                # ── STEP 5: Execute download (button path or blob fallback) ──
+                if not dl_btn_found:
+                    self._log_debug("DL-DIAG: No download button found after polling. Using canvas extraction.")
+                    # Extract image pixels directly via canvas while dialog is still open
+                    img_bytes = await self._page.evaluate('''async () => {
+                        try {
+                            const dialogImg = document.querySelector('img[data-test-id="trusted-image"]') ||
+                                              document.querySelector('mat-dialog-container img.generated-image') ||
+                                              document.querySelector('mat-dialog-container img');
+                            if (!dialogImg || !dialogImg.naturalWidth) return null;
+                            
+                            const canvas = document.createElement('canvas');
+                            canvas.width = dialogImg.naturalWidth;
+                            canvas.height = dialogImg.naturalHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(dialogImg, 0, 0);
+                            
+                            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                            if (!blob) return null;
+                            const buf = await blob.arrayBuffer();
+                            return Array.from(new Uint8Array(buf));
+                        } catch(e) {
+                            return null;
+                        }
+                    }''')
+                    
+                    await self._page.keyboard.press("Escape")
+                    await asyncio.sleep(0.5)
+                    
+                    if img_bytes:
+                        while True:
+                            save_name = f"{prefix}{str(start_idx).zfill(padding)}.png"
+                            save_path = os.path.join(save_dir, save_name)
+                            if not os.path.exists(save_path):
+                                break
+                            start_idx += 1
+                        
+                        raw = bytes(img_bytes)
+                        self._log_debug(f"DL-DIAG: Canvas extracted {len(raw)} bytes ({len(raw)/1024:.0f}KB)")
+                        with Image.open(io.BytesIO(raw)) as pil_img:
+                            save_with_metadata(pil_img, pil_img, save_path, extra_meta=extra_meta)
+                        saved_paths.append(save_path)
+                        start_idx += 1
+                        dl_count += 1
+                        self._log_debug(f"Saved (canvas fallback): {save_name}")
+                        continue
+                    else:
+                        self._log_debug("DL-DIAG: Canvas extraction returned null. Skipping.")
+                        await self._page.keyboard.press("Escape")
+                        continue
+                
+                # Button-based download path
+                async with self._page.expect_download(timeout=15000) as dl_info:
+                    click_result = await self._page.evaluate('''() => {
+                        // Priority 1: mat-icon download button (data-mat-icon-name)
+                        let matIcon = document.querySelector('mat-icon[data-mat-icon-name="download"]');
+                        if (matIcon) {
+                            const btn = matIcon.closest('button') || matIcon;
+                            btn.click();
+                            return "clicked:data-mat-icon-name";
+                        }
+                        // Priority 2: fonticon download
+                        let fontIcon = document.querySelector('mat-icon[fonticon="download"]');
+                        if (fontIcon) {
+                            const btn = fontIcon.closest('button') || fontIcon;
+                            btn.click();
+                            return "clicked:fonticon";
+                        }
+                        // Priority 3: aria-label / title / text match
+                        const b = Array.from(document.querySelectorAll('button'))
+                                     .find(x => (x.ariaLabel || '').toLowerCase().includes('download') ||
+                                               (x.title || '').toLowerCase().includes('download') ||
+                                               x.innerText.toLowerCase().includes('download'));
+                        if (b) { b.click(); return "clicked:text-match"; }
+                        return "not_found";
+                    }''')
+                    self._log_debug(f"DL-DIAG: click_result={click_result}")
+                    
+                    if click_result == "not_found":
+                        # Button disappeared between detection and click — abort expect_download
+                        raise Exception("Download button vanished between detection and click")
+                    
                     download = await dl_info.value
                     
-                    # Find the next available index to avoid overwriting
                     while True:
                         save_name = f"{prefix}{str(start_idx).zfill(padding)}.png"
                         save_path = os.path.join(save_dir, save_name)
@@ -1361,7 +1594,6 @@ class BrowserEngine:
                     
                     temp_path = await download.path()
                     
-                    # Open and save with metadata
                     with Image.open(temp_path) as pil_img:
                         save_with_metadata(pil_img, pil_img, save_path, extra_meta=extra_meta)
                     
@@ -1374,7 +1606,61 @@ class BrowserEngine:
                 await asyncio.sleep(1.0)
             except Exception as e:
                 self._log_debug(f"Download skip: {e}")
-                await self._page.keyboard.press("Escape")
+                # Canvas rescue: extract image pixels WHILE dialog is still open.
+                # Blob URLs get revoked when dialog closes, so fetch() would fail.
+                # Canvas reads decoded pixel data directly from the <img> element.
+                try:
+                    self._log_debug("DL-DIAG: Attempting canvas rescue (dialog still open)...")
+                    img_bytes = await self._page.evaluate('''async () => {
+                        try {
+                            const dialogImg = document.querySelector('img[data-test-id="trusted-image"]') ||
+                                              document.querySelector('mat-dialog-container img.generated-image') ||
+                                              document.querySelector('mat-dialog-container img');
+                            if (!dialogImg || !dialogImg.naturalWidth) return null;
+                            
+                            const canvas = document.createElement('canvas');
+                            canvas.width = dialogImg.naturalWidth;
+                            canvas.height = dialogImg.naturalHeight;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(dialogImg, 0, 0);
+                            
+                            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                            if (!blob) return null;
+                            const buf = await blob.arrayBuffer();
+                            return Array.from(new Uint8Array(buf));
+                        } catch(e) {
+                            return null;
+                        }
+                    }''')
+                    
+                    # Close dialog after extraction
+                    await self._page.keyboard.press("Escape")
+                    await asyncio.sleep(0.5)
+                    
+                    if img_bytes:
+                        while True:
+                            save_name = f"{prefix}{str(start_idx).zfill(padding)}.png"
+                            save_path = os.path.join(save_dir, save_name)
+                            if not os.path.exists(save_path):
+                                break
+                            start_idx += 1
+                        
+                        raw = bytes(img_bytes)
+                        self._log_debug(f"DL-DIAG: Canvas extracted {len(raw)} bytes ({len(raw)/1024:.0f}KB)")
+                        with Image.open(io.BytesIO(raw)) as pil_img:
+                            save_with_metadata(pil_img, pil_img, save_path, extra_meta=extra_meta)
+                        saved_paths.append(save_path)
+                        start_idx += 1
+                        dl_count += 1
+                        self._log_debug(f"Saved (canvas rescue): {save_name}")
+                    else:
+                        self._log_debug("DL-DIAG: Canvas rescue returned null. Image may not be loaded.")
+                except Exception as fallback_err:
+                    self._log_debug(f"Canvas rescue failed: {fallback_err}")
+                    try:
+                        await self._page.keyboard.press("Escape")
+                    except:
+                        pass
 
         if dl_count == 0:
             return {"status": "ignored", "message": "Images detected but all downloads failed.", "saved_paths": []}
