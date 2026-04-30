@@ -231,5 +231,13 @@ def render_upscaler_tab():
                             pass
                     
                     st.code(log_text, language="text")
+                    
+                is_currently_running = os.path.exists("upscaler.lock")
+                if is_currently_running:
+                    st.session_state.up_was_running = True
+                else:
+                    if st.session_state.get("up_was_running", False):
+                        st.session_state.up_was_running = False
+                        st.rerun()
             
             render_log_pane()
