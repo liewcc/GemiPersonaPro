@@ -37,7 +37,11 @@ import asyncio
 import send2trash
 
 
-# --- Helper Functions & Nav Helpers ---
+# --- Custom Utilities ---
+from style_utils import apply_premium_style, render_dashboard_header
+from config_utils import load_config, save_config
+from api_client import EngineClient
+import shared_state
 import base64
 
 def natural_sort_key(s):
@@ -182,11 +186,7 @@ if st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path and os.
 if st.session_state.san_gal_page > san_total_pages:
     sync_san_page(san_total_pages)
 
-# --- Custom Utilities (Legacy load order protection) ---
-from style_utils import apply_premium_style, render_dashboard_header
-from config_utils import load_config, save_config
-from api_client import EngineClient
-import shared_state
+# --- Persistence & Metadata ---
 
 CONFIG_PATH = "config.json"
 st.set_page_config(page_title="GemiPersona | UTILITIES", page_icon="sys_img/logo.png", layout="wide", initial_sidebar_state="expanded")
@@ -1138,103 +1138,104 @@ def rename_export_dialog(folder_path):
             st.rerun()
 
 # --- UI Layout ---
-with st.sidebar:
-    # --- Path Selection ---
-    st.markdown("### Select Path")
-    with st.container(border=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("📄 File", key="san_opt_file", width="stretch"):
-                path = select_path(False)
-                if path:
-                    st.session_state.sanitizer_path = path
-                    st.session_state.sanitizer_is_dir = False
+active_tab = st.radio("Select Utility Module", ["Asset Sanitizer", "Gems Bookmark", "4K Upscaler"], horizontal=True, label_visibility="collapsed")
+
+if active_tab == "Asset Sanitizer":
+    with st.sidebar:
+        # --- Path Selection ---
+        st.markdown("### Select Path")
+        with st.container(border=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📄 File", key="san_opt_file", width="stretch"):
+                    path = select_path(False)
+                    if path:
+                        st.session_state.sanitizer_path = path
+                        st.session_state.sanitizer_is_dir = False
+                        st.rerun()
+
+            with col2:
+                if st.button("📁 Folder", key="san_opt_folder", width="stretch"):
+                    path = select_path(True)
+                    if path:
+                        st.session_state.sanitizer_path = path
+                        st.session_state.sanitizer_is_dir = True
+                        sync_san_page(1)
+                        st.rerun()
+        
+            # --- AI Cleaned Toggle ---
+            is_folder = st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path
+            not_in_processed = os.path.basename(st.session_state.sanitizer_path.rstrip("/\\")).lower() != "processed"
+        
+            can_enable_toggle = is_folder and not_in_processed
+        
+            if "san_show_cleaned" not in st.session_state:
+                st.session_state.san_show_cleaned = False
+            
+            show_cleaned = st.toggle(
+                "Show AI Cleaned Image",
+                value=st.session_state.san_show_cleaned,
+                key="san_cleaned_toggle_widget",
+                disabled=not can_enable_toggle,
+                help="Switch view to the 'processed' subfolder if it exists."
+            )
+        
+            if show_cleaned != st.session_state.san_show_cleaned:
+                if show_cleaned:
+                    # Check existence
+                    p_dir = os.path.join(st.session_state.sanitizer_path, "processed")
+                    if not os.path.isdir(p_dir):
+                        show_missing_processed_warning_dialog()
+                    else:
+                        st.session_state.san_show_cleaned = True
+                        st.rerun()
+                else:
+                    st.session_state.san_show_cleaned = False
                     st.rerun()
 
-        with col2:
-            if st.button("📁 Folder", key="san_opt_folder", width="stretch"):
-                path = select_path(True)
-                if path:
-                    st.session_state.sanitizer_path = path
-                    st.session_state.sanitizer_is_dir = True
+
+        # --- Album Navigation ---
+        if st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path and os.path.isdir(st.session_state.sanitizer_path):
+            st.markdown("### Album Navigation")
+            with st.container(border=True):
+                # 1. Sorting Controls (Moved above Navigation to trigger reset BEFORE navigation widgets render)
+                sort_options = ["Name", "Create Date", "Modified Date"]
+                new_sort = st.selectbox("Sort by", sort_options,
+                                        index=sort_options.index(st.session_state.san_sort_by),
+                                        key="san_sort_by_select",
+                                        label_visibility="visible")
+                if new_sort != st.session_state.san_sort_by:
+                    st.session_state.san_sort_by = new_sort
                     sync_san_page(1)
                     st.rerun()
-        
-        # --- AI Cleaned Toggle ---
-        is_folder = st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path
-        not_in_processed = os.path.basename(st.session_state.sanitizer_path.rstrip("/\\")).lower() != "processed"
-        
-        can_enable_toggle = is_folder and not_in_processed
-        
-        if "san_show_cleaned" not in st.session_state:
-            st.session_state.san_show_cleaned = False
-            
-        show_cleaned = st.toggle(
-            "Show AI Cleaned Image",
-            value=st.session_state.san_show_cleaned,
-            key="san_cleaned_toggle_widget",
-            disabled=not can_enable_toggle,
-            help="Switch view to the 'processed' subfolder if it exists."
-        )
-        
-        if show_cleaned != st.session_state.san_show_cleaned:
-            if show_cleaned:
-                # Check existence
-                p_dir = os.path.join(st.session_state.sanitizer_path, "processed")
-                if not os.path.isdir(p_dir):
-                    show_missing_processed_warning_dialog()
-                else:
-                    st.session_state.san_show_cleaned = True
+
+                new_dir = st.radio("Order", ["Ascending", "Descending"],
+                                   index=1 if st.session_state.san_sort_desc else 0,
+                                   key="san_sort_dir_radio",
+                                   horizontal=True,
+                                   label_visibility="collapsed")
+                new_desc = (new_dir == "Descending")
+                if new_desc != st.session_state.san_sort_desc:
+                    st.session_state.san_sort_desc = new_desc
+                    sync_san_page(1)
                     st.rerun()
-            else:
-                st.session_state.san_show_cleaned = False
-                st.rerun()
 
+                # 2. Navigation
+                render_san_gallery_nav(san_total_pages, "top")
 
-    # --- Album Navigation ---
-    if st.session_state.sanitizer_is_dir and st.session_state.sanitizer_path and os.path.isdir(st.session_state.sanitizer_path):
-        st.markdown("### Album Navigation")
-        with st.container(border=True):
-            # 1. Sorting Controls (Moved above Navigation to trigger reset BEFORE navigation widgets render)
-            sort_options = ["Name", "Create Date", "Modified Date"]
-            new_sort = st.selectbox("Sort by", sort_options,
-                                    index=sort_options.index(st.session_state.san_sort_by),
-                                    key="san_sort_by_select",
-                                    label_visibility="visible")
-            if new_sort != st.session_state.san_sort_by:
-                st.session_state.san_sort_by = new_sort
-                sync_san_page(1)
-                st.rerun()
+                st.slider("Images per page", 4, 32,
+                          value=st.session_state.san_gal_page_size,
+                          step=4,
+                          key="san_page_size_slider",
+                          on_change=on_san_page_size_change)
 
-            new_dir = st.radio("Order", ["Ascending", "Descending"],
-                               index=1 if st.session_state.san_sort_desc else 0,
-                               key="san_sort_dir_radio",
-                               horizontal=True,
-                               label_visibility="collapsed")
-            new_desc = (new_dir == "Descending")
-            if new_desc != st.session_state.san_sort_desc:
-                st.session_state.san_sort_desc = new_desc
-                sync_san_page(1)
-                st.rerun()
-
-            # 2. Navigation
-            render_san_gallery_nav(san_total_pages, "top")
-
-            st.slider("Images per page", 4, 32,
-                      value=st.session_state.san_gal_page_size,
-                      step=4,
-                      key="san_page_size_slider",
-                      on_change=on_san_page_size_change)
-
-        # --- Batch Processing Section ---
-        batch_processing_sidebar_fragment()
+            # --- Batch Processing Section ---
+            batch_processing_sidebar_fragment()
 
 
 
 
-tab_sanitizer, tab_bookmark = st.tabs(["Asset Sanitizer", "Gems Bookmark"])
-
-with tab_sanitizer:
+if active_tab == "Asset Sanitizer":
     # --- Main Panel ---
     
     
@@ -1359,7 +1360,7 @@ with tab_sanitizer:
     if "sanitizer_path_init_done" not in st.session_state:
         st.session_state.sanitizer_path = ""
         st.session_state.sanitizer_path_init_done = True
-with tab_bookmark:
+elif active_tab == "Gems Bookmark":
     st.set_page_config(page_title="GemiPersona | GEMS BOOKMARK", page_icon="sys_img/logo.png", layout="wide")
     apply_premium_style()
 
@@ -1524,3 +1525,7 @@ with tab_bookmark:
                                 bookmarks.pop(index)
                                 save_json(DB_FILE, bookmarks)
                                 st.rerun()
+
+elif active_tab == "4K Upscaler":
+    from components.upscaler_ui import render_upscaler_tab
+    render_upscaler_tab()
