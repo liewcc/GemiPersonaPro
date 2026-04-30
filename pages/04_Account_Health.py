@@ -197,15 +197,34 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
     if not data:
         st.info(f"No loading records found for {label}.")
         return
+        
+    import os
+    try:
+        current_mtime = os.path.getmtime(LOG_PATH) if os.path.exists(LOG_PATH) else 0
+    except:
+        current_mtime = 0
+        
+    cache_key = f"health_cache_{hash((label, graph_type, y_scale_type, show_graph, event_only_success, current_mtime, len(data)))}"
+    
     if show_graph:
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Performance Graph: <b>{label}</b></p>", unsafe_allow_html=True)
         if st.session_state.get("loaded_record_path"):
             st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
-        if graph_type == "Round Duration":
-            st.altair_chart(_build_duration_chart(data, y_scale_type, event_only_success=event_only_success), width="stretch")
-        else:
-            st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Refused Rate: <b>{label}</b> (X-Axis: Successful Images)</p>", unsafe_allow_html=True)
-            chart = _build_reject_chart(data, y_scale_type)
+            
+        with st.container(height=450, border=False):
+            if cache_key in st.session_state:
+                chart = st.session_state[cache_key]
+            else:
+                if graph_type == "Round Duration":
+                    chart = _build_duration_chart(data, y_scale_type, event_only_success=event_only_success)
+                else:
+                    chart = _build_reject_chart(data, y_scale_type)
+                
+                keys_to_delete = [k for k in st.session_state.keys() if k.startswith("health_cache_")]
+                for k in keys_to_delete: 
+                    del st.session_state[k]
+                st.session_state[cache_key] = chart
+                
             if chart is None:
                 st.info("No successful image downloads found to plot trends.")
             else:
@@ -214,8 +233,18 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Loading records: <b>{label}</b>.</p>", unsafe_allow_html=True)
         if st.session_state.get("loaded_record_path"):
             st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
+            
+        if cache_key in st.session_state:
+            df = st.session_state[cache_key]
+        else:
+            df = pd.DataFrame(data)
+            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("health_cache_")]
+            for k in keys_to_delete: 
+                del st.session_state[k]
+            st.session_state[cache_key] = df
+            
         st.data_editor(
-            pd.DataFrame(data),
+            df,
             column_config={
                 "round": st.column_config.NumberColumn("Round", format="%d"),
                 "account": st.column_config.TextColumn("Account"),

@@ -40,7 +40,10 @@ def main():
         # Get list of images
         valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
         files = [f for f in os.listdir(args.input) if f.lower().endswith(valid_exts)]
-        files.sort()
+        import re
+        def natural_sort_key(s):
+            return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+        files.sort(key=natural_sort_key)
         
         if not files:
             log("No images found in input directory.")

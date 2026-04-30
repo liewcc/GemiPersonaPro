@@ -99,10 +99,13 @@ def render_upscaler_tab():
                     elif not os.path.isdir(input_w):
                         st.error("Input directory does not exist.")
                     else:
-                        # Clear old logs
                         try:
                             if os.path.exists(log_path):
                                 os.remove(log_path)
+                            with open(log_path, "w", encoding="utf-8") as f:
+                                from datetime import datetime
+                                ts = datetime.now().strftime("[%H:%M:%S]")
+                                f.write(f"{ts} 🚀 Starting upscaler background worker...\n")
                         except: pass
                         
                         save_config({"upscaler": {
@@ -129,7 +132,6 @@ def render_upscaler_tab():
                             with open("upscaler.lock", "w") as f:
                                 f.write(str(proc.pid))
                             st.toast("🚀 Upscaler background worker started!")
-                            time.sleep(1)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to start worker: {e}")
@@ -166,7 +168,6 @@ def render_upscaler_tab():
                     except: pass
                     
                     st.toast("⛔ Stop signal sent and browser closed.")
-                    time.sleep(0.5)
                     st.rerun()
 
     with col2:
@@ -175,53 +176,45 @@ def render_upscaler_tab():
             with log_c1:
                 st.markdown("#### 📋 Progress Log")
             with log_c2:
-                if st.button("📊 Status", key="up_status_btn", width="stretch"):
-                    st.session_state.up_show_status = True
+                with st.popover("📊 Status", width="stretch"):
+                    @st.fragment(run_every="1s")
+                    def render_status():
+                        status_file = "upscaler_status.json"
+                        if not os.path.exists(status_file):
+                            st.info("No status data available yet.")
+                            return
+                        try:
+                            with open(status_file, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                        except Exception as e:
+                            st.error(f"Could not read status: {e}")
+                            return
+                            
+                        current_file = data.get("current_file", "None")
+                        history = data.get("history", {})
+                        
+                        st.markdown(f"**Currently Processing:** `{current_file}`")
+                        
+                        table_data = []
+                        # Show latest files first
+                        for fname in reversed(list(history.keys())):
+                            info = history[fname]
+                            status_icon = "🔄" if info.get("status") == "processing" else "✅"
+                            table_data.append({
+                                "File": f"{status_icon} {fname}",
+                                "Refusals": info.get("refusals", 0)
+                            })
+                            
+                        if table_data:
+                            st.dataframe(table_data, width="stretch", hide_index=True)
+                        else:
+                            st.info("No files processed yet.")
+                    
+                    render_status()
             with log_c3:
                 if st.button("🗑️ Clear Log", key="up_clear_log", width="stretch"):
                     try: os.remove(log_path)
                     except: pass
-                    st.rerun()
-
-            @st.dialog("Upscaler Processing Status")
-            def show_status_dialog():
-                @st.fragment(run_every="1s")
-                def render_status():
-                    status_file = "upscaler_status.json"
-                    if not os.path.exists(status_file):
-                        st.info("No status data available yet.")
-                        return
-                    try:
-                        with open(status_file, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                    except Exception as e:
-                        st.error(f"Could not read status: {e}")
-                        return
-                        
-                    current_file = data.get("current_file", "None")
-                    history = data.get("history", {})
-                    
-                    st.markdown(f"**Currently Processing:** `{current_file}`")
-                    
-                    table_data = []
-                    # Show latest files first
-                    for fname in reversed(list(history.keys())):
-                        info = history[fname]
-                        status_icon = "🔄" if info.get("status") == "processing" else "✅"
-                        table_data.append({
-                            "File": f"{status_icon} {fname}",
-                            "Refusals": info.get("refusals", 0)
-                        })
-                        
-                    if table_data:
-                        st.dataframe(table_data, width="stretch", hide_index=True)
-                    else:
-                        st.info("No files processed yet.")
-                render_status()
-
-            if st.session_state.get("up_show_status", False):
-                show_status_dialog()
-                st.session_state.up_show_status = False
             
             @st.fragment(run_every="3s")
             def render_log_pane():
@@ -238,74 +231,5 @@ def render_upscaler_tab():
                             pass
                     
                     st.code(log_text, language="text")
-
-                # Handle file change detection to update gallery cleanly
-                if os.path.exists(st.session_state.up_output):
-                    current_count = len([f for f in os.listdir(st.session_state.up_output) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
-                    last_count = st.session_state.get("up_last_file_count", -1)
-                    if last_count != -1 and current_count != last_count:
-                        st.session_state.up_last_file_count = current_count
-                        st.rerun()
-                    st.session_state.up_last_file_count = current_count
-                
-                is_currently_running = os.path.exists("upscaler.lock")
-                
-                if is_currently_running:
-                    st.session_state.up_was_running = True
-                else:
-                    if st.session_state.get("up_was_running", False):
-                        st.session_state.up_was_running = False
-                        st.rerun()
             
             render_log_pane()
-    st.markdown("#### 🖼️ Output Gallery")    
-    with st.sidebar:
-        if "up_gal_page" not in st.session_state: st.session_state.up_gal_page = 1
-        if "up_gal_size" not in st.session_state: st.session_state.up_gal_size = 8
-        
-        st.session_state.up_gal_size = st.slider("Images per page", 4, 32, value=st.session_state.up_gal_size, step=4)
-            
-        total_up_files = 0
-        if os.path.exists(st.session_state.up_output):
-            total_up_files = len([f for f in os.listdir(st.session_state.up_output) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))])
-        
-        import math
-        total_pages = max(1, math.ceil(total_up_files / st.session_state.up_gal_size))
-        if st.session_state.up_gal_page > total_pages: st.session_state.up_gal_page = total_pages
-        
-        c1, c2, c3 = st.columns([1, 2, 1])
-        with c1:
-            if st.button("◀", key="up_prev", width="stretch", disabled=(st.session_state.up_gal_page <= 1)):
-                st.session_state.up_gal_page -= 1
-                st.rerun()
-        with c2:
-            st.markdown(f"<div style='text-align:center; padding-top:5px; font-size: 0.9em;'>Page {st.session_state.up_gal_page} / {total_pages}</div>", unsafe_allow_html=True)
-        with c3:
-            if st.button("▶", key="up_next", width="stretch", disabled=(st.session_state.up_gal_page >= total_pages)):
-                st.session_state.up_gal_page += 1
-                st.rerun()
-
-    def render_gallery():
-        if os.path.exists(st.session_state.up_output):
-            try:
-                files = [f for f in os.listdir(st.session_state.up_output) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-                # Sort by filename descending (largest number first)
-                files.sort(reverse=True)
-                
-                if not files:
-                    st.info("No upscaled images yet.")
-                else:
-                    page_idx = st.session_state.up_gal_page - 1
-                    p_size = st.session_state.up_gal_size
-                    page_files = files[page_idx * p_size : (page_idx + 1) * p_size]
-                    
-                    gallery_cols = st.columns(4)
-                    for i, f in enumerate(page_files):
-                        with gallery_cols[i % 4]:
-                            st.image(os.path.join(st.session_state.up_output, f), caption=f, width="stretch")
-            except Exception as e:
-                st.error(f"Cannot read output directory: {e}")
-        else:
-            st.info("Output directory not found or not created yet.")
-            
-    render_gallery()

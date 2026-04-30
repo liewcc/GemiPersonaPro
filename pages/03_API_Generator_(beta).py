@@ -18,7 +18,7 @@ nest_asyncio.apply()
 
 # ── Page Config ─────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="GemiPersona | API Generator",
+    page_title="GemiPersona | API Generator (beta)",
     page_icon="sys_img/logo.png",
     layout="wide",
 )
@@ -105,7 +105,7 @@ API_MODELS = {
 # ── Sidebar ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.image("sys_img/logo.png", width=180)
-    st.markdown("### ⚡ API Generator")
+    st.markdown("### ⚡ API Generator (beta)")
     st.caption("Direct Gemini API image generation — no browser required.")
 
     st.divider()
