@@ -800,8 +800,8 @@ with tab3:
         view_stats = stats[-n_accs:] if n_accs < len(stats) else stats
         chart_data = []
         for i, s in enumerate(view_stats):
-            c_type = "Even" if i % 2 == 0 else "Odd"
-            color_val = f"Image_{c_type}" if s["images"] > 0 else c_type
+            c_type = "Base" if i % 2 == 0 else "Light"
+            color_val = f"With Image ({c_type})" if s["images"] > 0 else f"No Image ({c_type})"
             chart_data.append({"Seq": i+1, "Display": f"#{i+1} ({s['start_time']})", "Account": s["account"], "Duration (Minutes)": s["duration"]/60.0, "Duration": _fmt_dur(s["duration"]), "Events": s["events"], "Images": s["images"], "Refused": s["refused"], "Reset": s["reset"], "Color": color_val})
         
         df_chart = pd.DataFrame(chart_data)
@@ -814,7 +814,7 @@ with tab3:
         bar = alt.Chart(df_chart).mark_bar().encode(
             x=alt.X('Seq:O', title="Seq", sort=seq_order, axis=alt.Axis(labelAngle=0)),
             y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
-            color=alt.Color('Color:N', scale=alt.Scale(domain=["Even", "Odd", "Image_Even", "Image_Odd"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=None),
+            color=alt.Color('Color:N', scale=alt.Scale(domain=["No Image (Base)", "No Image (Light)", "With Image (Base)", "With Image (Light)"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=alt.Legend(title=None, orient='bottom', columns=4)),
             tooltip=['Display', 'Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
         )
         text = alt.Chart(df_chart).mark_text(
