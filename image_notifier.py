@@ -15,6 +15,7 @@ current_upscale_dir = ""
 tray_icon = None
 _status_popup_open   = False
 _download_popup_open = False
+_disable_auto_popup  = False
 
 # Resolve icon path relative to this script's location
 _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -235,6 +236,24 @@ def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running,
         command=gp_cmd
     ).pack(side='left', expand=True, fill='x', padx=(4, 0))
 
+    # -- Checkbox row (Disable auto popup) --
+    chk_bar = tk.Frame(body, bg=C_BG)
+    chk_bar.pack(fill='x', pady=(8, 0))
+
+    chk_var = tk.BooleanVar(value=_disable_auto_popup)
+    
+    def on_chk_toggle():
+        global _disable_auto_popup
+        _disable_auto_popup = chk_var.get()
+
+    tk.Checkbutton(
+        chk_bar, text="Do not show popups automatically",
+        variable=chk_var, command=on_chk_toggle,
+        bg=C_BG, fg=C_MUTED, selectcolor=C_CARD,
+        activebackground=C_BG, activeforeground=C_TEXT,
+        font=('Segoe UI', 8), cursor='hand2'
+    ).pack(side='left')
+
     # -- Position: bottom-right, above taskbar --
     root.update_idletasks()
     win_w = root.winfo_reqwidth()
@@ -444,14 +463,15 @@ def monitor_directory():
                 total_up_pending = [f for f in (current_up_files - last_ack['upscale']) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
 
                 if len(total_auto_pending) > 0 or len(total_up_pending) > 0:
-                    threading.Thread(
-                        target=_show_new_files_popup,
-                        args=(auto_images, up_images, 
-                              len(total_auto_pending), len(total_up_pending),
-                              current_auto_files, current_up_files,
-                              current_auto_dir, current_up_dir),
-                        daemon=True
-                    ).start()
+                    if not _disable_auto_popup:
+                        threading.Thread(
+                            target=_show_new_files_popup,
+                            args=(auto_images, up_images, 
+                                  len(total_auto_pending), len(total_up_pending),
+                                  current_auto_files, current_up_files,
+                                  current_auto_dir, current_up_dir),
+                            daemon=True
+                        ).start()
 
             last_auto_files = current_auto_files
             last_upscale_files = current_up_files
