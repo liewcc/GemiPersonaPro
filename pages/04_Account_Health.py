@@ -197,14 +197,6 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
     if not data:
         st.info(f"No loading records found for {label}.")
         return
-        
-    import os
-    try:
-        current_mtime = os.path.getmtime(LOG_PATH) if os.path.exists(LOG_PATH) else 0
-    except:
-        current_mtime = 0
-        
-    cache_key = f"health_cache_{hash((label, graph_type, y_scale_type, show_graph, event_only_success, current_mtime, len(data)))}"
     
     if show_graph:
         st.markdown(f"<p style='color: #a0a0ff; font-size: 0.9em; margin-bottom: 4px;'>Performance Graph: <b>{label}</b></p>", unsafe_allow_html=True)
@@ -212,18 +204,10 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
             st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
             
         with st.container(height=450, border=False):
-            if cache_key in st.session_state:
-                chart = st.session_state[cache_key]
+            if graph_type == "Round Duration":
+                chart = _build_duration_chart(data, y_scale_type, event_only_success=event_only_success)
             else:
-                if graph_type == "Round Duration":
-                    chart = _build_duration_chart(data, y_scale_type, event_only_success=event_only_success)
-                else:
-                    chart = _build_reject_chart(data, y_scale_type)
-                
-                keys_to_delete = [k for k in st.session_state.keys() if k.startswith("health_cache_")]
-                for k in keys_to_delete: 
-                    del st.session_state[k]
-                st.session_state[cache_key] = chart
+                chart = _build_reject_chart(data, y_scale_type)
                 
             if chart is None:
                 st.info("No successful image downloads found to plot trends.")
@@ -234,15 +218,7 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         if st.session_state.get("loaded_record_path"):
             st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
             
-        if cache_key in st.session_state:
-            df = st.session_state[cache_key]
-        else:
-            df = pd.DataFrame(data)
-            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("health_cache_")]
-            for k in keys_to_delete: 
-                del st.session_state[k]
-            st.session_state[cache_key] = df
-            
+        df = pd.DataFrame(data)
         st.data_editor(
             df,
             column_config={
@@ -438,11 +414,65 @@ with tab1:
                 # the filter never caps the upper bound for a running cycle.
                 _last_cycle_end_idx = None if _lc.get('is_running') else _lc.get('end_idx')
 
-        # Fragment for independent refreshing
+        # Single self-refreshing fragment: runs every 5s, but only
+        # rebuilds the chart when a NEW completed event is detected
+        # (SUCCESS/REJECT/RESET in the log).  Between events, the
+        # cached chart object is re-rendered from session_state,
+        # producing zero visual flicker.  No full-page st.rerun().
         @st.fragment(run_every=auto_val)
         def _health_fragment():
+            # --- Lightweight event-count check (tail-read only) ----------
+            # Read only the last 64 KB of the log to count completed
+            # JSON events.  This is O(1) relative to log size and avoids
+            # the full parse_account_health() call on every tick.
+            _TAIL_BYTES = 65536
+            _EVENT_TYPES = {'"event": "SUCCESS"', '"event": "REJECT"',
+                           '"event": "RESET"'}
+            # Also match legacy text events
+            _LEGACY_SUCCESS = "saved: "
+            _LEGACY_REJECT  = "response failed (refused)"
+            _LEGACY_RESET_A = "unexpectedly reset"
+            _LEGACY_RESET_B = "encountered an issue"
+
+            def _count_tail_events():
+                """Count completed events in the last chunk of the log."""
+                try:
+                    if not os.path.exists(LOG_PATH):
+                        return 0
+                    fsize = os.path.getsize(LOG_PATH)
+                    with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+                        if fsize > _TAIL_BYTES:
+                            f.seek(fsize - _TAIL_BYTES)
+                            f.readline()  # discard partial first line
+                        count = 0
+                        for line in f:
+                            ll = line.lower()
+                            # JSON events
+                            if line.lstrip().startswith("{"):
+                                for ev in _EVENT_TYPES:
+                                    if ev in line:
+                                        count += 1
+                                        break
+                            else:
+                                # Legacy text events
+                                if _LEGACY_SUCCESS in ll and ".png" in ll:
+                                    count += 1
+                                elif _LEGACY_REJECT in ll:
+                                    count += 1
+                                elif _LEGACY_RESET_A in ll or _LEGACY_RESET_B in ll:
+                                    count += 1
+                        return count
+                except Exception:
+                    return -1  # sentinel: force rebuild on error
+
+            current_event_count = _count_tail_events()
+            prev_event_count = st.session_state.get("_health_event_count")
+            data_changed = (prev_event_count is None
+                            or current_event_count != prev_event_count)
+            st.session_state["_health_event_count"] = current_event_count
+
+            # --- Read UI state -----------------------------------------------
             fresh_login_data = load_login_lookup()
-            # Pull immediate state from session_state for snappy UI adjustment
             graph_type = st.session_state.get("widget_health_graph_type", config.get("health_graph_type", "Round Duration"))
             y_scale_type = 'symlog' if st.session_state.get("widget_health_y_scale", config.get("health_y_scale", "Linear")) == "Logarithmic" else 'linear'
 
@@ -455,26 +485,31 @@ with tab1:
             event_only_success = st.session_state.get("widget_event_only_success", config.get("health_event_only_success", False)) and graph_type == "Round Duration"
             show_graph = st.session_state.get("show_health_graph", True)
 
+            # Build a settings signature to detect UI control changes
+            _settings_sig = (graph_type, y_scale_type, n_rounds,
+                             show_last_cycle, event_only_success, show_graph,
+                             is_full, is_active, view_mode)
+            prev_settings_sig = st.session_state.get("_health_settings_sig")
+            settings_changed = (prev_settings_sig is None
+                                or _settings_sig != prev_settings_sig)
+            st.session_state["_health_settings_sig"] = _settings_sig
+
+            needs_rebuild = data_changed or settings_changed
+
             def _apply_filters(data, all_events_ref):
                 # Step 1 – assign global Absolute_Event_Num on the full dataset
-                # so that without cycle-filtering, chart X-axis shows true
-                # chronological position (e.g. events 3441-3540 when slicing
-                # the last 100 from 3540 total).
                 total_events = len(data)
                 for idx, record in enumerate(data):
                     record["Absolute_Event_Num"] = total_events - idx
 
                 # Step 2 – filter to the last automation cycle if requested.
-                # Use log_line_idx against the boundary computed outside the
-                # fragment to avoid extra file I/O on every auto-refresh tick.
                 if show_last_cycle and data and _last_cycle_start_idx is not None:
                     end_bound = _last_cycle_end_idx if _last_cycle_end_idx is not None else float('inf')
                     filtered_data = [
                         d for d in data
                         if _last_cycle_start_idx <= d.get("log_line_idx", -1) <= end_bound
                     ]
-                    # Step 3 – re-number locally within the cycle so the chart
-                    # X-axis always starts from 1 instead of the global offset.
+                    # Step 3 – re-number locally within the cycle
                     cycle_total = len(filtered_data)
                     for idx, record in enumerate(filtered_data):
                         record["Absolute_Event_Num"] = cycle_total - idx
@@ -484,22 +519,43 @@ with tab1:
                 # Step 4 – slice to the requested N most-recent events
                 return filtered_data[:n_rounds]
 
-            if is_full:
-                _, fresh_all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
-                _render_chart_or_table(_apply_filters(fresh_all_detailed, fresh_all_detailed), graph_type, y_scale_type, show_graph, "All Events", "health_full_history_table", event_only_success=event_only_success)
-            elif is_active:
-                _active_user = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
-                if not _active_user:
-                    st.info("No active account is currently set.")
+            # --- Rebuild or serve cached ------------------------------------
+            if needs_rebuild:
+                if is_full:
+                    _, fresh_all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
+                    st.session_state["_health_cached_data"] = _apply_filters(fresh_all_detailed, fresh_all_detailed)
+                elif is_active:
+                    _active_user = next((u.get("username", "") for u in fresh_login_data if u.get("active")), None)
+                    if not _active_user:
+                        st.session_state["_health_cached_data"] = None
+                        st.session_state["_health_cached_label"] = None
+                    else:
+                        _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
+                        _, all_ref, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
+                        st.session_state["_health_cached_data"] = _apply_filters(det, all_ref)
+                        st.session_state["_health_cached_label"] = f"{_active_user} (Active Account)"
                 else:
-                    _, det, _ = parse_account_health(target_account=_active_user.lower(), login_data=fresh_login_data)
+                    target_acc = view_mode.replace("Detailed History: ", "")
+                    _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
                     _, all_ref, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
-                    _render_chart_or_table(_apply_filters(det, all_ref), graph_type, y_scale_type, show_graph, f"{_active_user} (Active Account)", "health_active_account_table", event_only_success=event_only_success)
+                    st.session_state["_health_cached_data"] = _apply_filters(det, all_ref)
+                    st.session_state["_health_cached_label"] = target_acc
+
+            # --- Render from cache ------------------------------------------
+            cached_data = st.session_state.get("_health_cached_data")
+            if is_active and cached_data is None:
+                st.info("No active account is currently set.")
             else:
-                target_acc = view_mode.replace("Detailed History: ", "")
-                _, det, _ = parse_account_health(target_account=target_acc, login_data=fresh_login_data)
-                _, all_ref, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
-                _render_chart_or_table(_apply_filters(det, all_ref), graph_type, y_scale_type, show_graph, target_acc, f"health_detailed_{target_acc}", event_only_success=event_only_success)
+                if is_full:
+                    label = "All Events"
+                    table_key = "health_full_history_table"
+                elif is_active:
+                    label = st.session_state.get("_health_cached_label", "Active Account")
+                    table_key = "health_active_account_table"
+                else:
+                    label = st.session_state.get("_health_cached_label", view_mode.replace("Detailed History: ", ""))
+                    table_key = f"health_detailed_{label}"
+                _render_chart_or_table(cached_data, graph_type, y_scale_type, show_graph, label, table_key, event_only_success=event_only_success)
 
         _health_fragment()
 
