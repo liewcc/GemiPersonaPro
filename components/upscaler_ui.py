@@ -38,6 +38,22 @@ def render_upscaler_tab():
     if "up_max_redo_enabled" not in st.session_state: st.session_state.up_max_redo_enabled = upscale_cfg.get("max_redo_enabled", False)
     if "up_max_redo" not in st.session_state: st.session_state.up_max_redo = upscale_cfg.get("max_redo", 3)
 
+    def _save_all_upscaler_settings():
+        save_config({"upscaler": {
+            "profile": st.session_state.up_profile,
+            "input_dir": st.session_state.up_input,
+            "output_dir": st.session_state.up_output,
+            "prompt": st.session_state.up_prompt,
+            "headless": st.session_state.up_headless,
+            "delete_activity": {
+                "enabled": st.session_state.up_del_enabled,
+                "range": st.session_state.up_del_range,
+                "trigger": st.session_state.up_del_trigger
+            },
+            "max_redo_enabled": st.session_state.up_max_redo_enabled,
+            "max_redo": st.session_state.up_max_redo
+        }})
+
     col1, col2 = st.columns([1.5, 1])
 
     with col1:
@@ -94,13 +110,7 @@ def render_upscaler_tab():
                 st.session_state.up_output = output_w
                 st.session_state.up_prompt = prompt_w
                 st.session_state.up_headless = headless_w
-                save_config({"upscaler": {
-                    "profile": profile_w,
-                    "input_dir": input_w,
-                    "output_dir": output_w,
-                    "prompt": prompt_w,
-                    "headless": headless_w
-                }})
+                _save_all_upscaler_settings()
                 st.rerun()
 
             # --- Delete Activity Controls ---
@@ -129,13 +139,7 @@ def render_upscaler_tab():
                 st.session_state.up_del_enabled = del_enabled_w
                 st.session_state.up_del_range = del_range_w
                 st.session_state.up_del_trigger = del_trigger_w
-                save_config({"upscaler": {
-                    "delete_activity": {
-                        "enabled": del_enabled_w,
-                        "range": del_range_w,
-                        "trigger": del_trigger_w
-                    }
-                }})
+                _save_all_upscaler_settings()
                 st.rerun()
 
             # --- Max Redo Limit Controls ---
@@ -149,10 +153,7 @@ def render_upscaler_tab():
             if redo_enabled_w != st.session_state.up_max_redo_enabled or redo_val_w != st.session_state.up_max_redo:
                 st.session_state.up_max_redo_enabled = redo_enabled_w
                 st.session_state.up_max_redo = redo_val_w
-                save_config({"upscaler": {
-                    "max_redo_enabled": redo_enabled_w,
-                    "max_redo": redo_val_w
-                }})
+                _save_all_upscaler_settings()
                 st.rerun()
 
             # Process state
@@ -175,20 +176,7 @@ def render_upscaler_tab():
                                 f.write(f"{ts} 🚀 Starting upscaler background worker...\n")
                         except: pass
                         
-                        save_config({"upscaler": {
-                            "profile": profile_w,
-                            "input_dir": input_w,
-                            "output_dir": output_w,
-                            "prompt": prompt_w,
-                            "headless": headless_w,
-                            "delete_activity": {
-                                "enabled": del_enabled_w,
-                                "range": del_range_w,
-                                "trigger": del_trigger_w
-                            },
-                            "max_redo_enabled": redo_enabled_w,
-                            "max_redo": redo_val_w
-                        }})
+                        _save_all_upscaler_settings()
                         
                         cmd = [
                             sys.executable, "upscaler_worker.py",

@@ -529,7 +529,7 @@ def main():
                                 status_data["history"][filename]["refusals"] += 1
                                 save_status()
                                 
-                                if args.max_redo > 0 and status_data["history"][filename]["refusals"] > args.max_redo:
+                                if args.max_redo > 0 and status_data["history"][filename]["refusals"] >= args.max_redo:
                                     log(f"  -> ❌ Max Redo limit ({args.max_redo}) reached. Skipping image.")
                                     raise Exception("Max Redo limit reached")
                                     
