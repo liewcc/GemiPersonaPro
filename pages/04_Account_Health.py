@@ -775,12 +775,13 @@ with tab3:
             stats = []
             for e in reversed(cycle_events):
                 s_id = e.get("session_index")
+                acct = str(e.get("account", "Unknown")).lower()
                 dur = float(e.get("health_self", e.get("health", "0s")).replace("s", ""))
                 st_val = e.get("status", "")
                 success_val = 1 if st_val == "Success" else 0
                 reject_val = 1 if st_val == "Reject" else 0
                 reset_val = 1 if st_val == "Reset" else 0
-                if stats and stats[-1]["session_index"] == s_id:
+                if stats and stats[-1]["session_index"] == s_id and stats[-1]["account"].lower() == acct:
                     stats[-1]["duration"] += dur; stats[-1]["events"] += 1
                     stats[-1]["images"] += success_val; stats[-1]["refused"] += reject_val; stats[-1]["reset"] += reset_val
                 else:
