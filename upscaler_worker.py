@@ -17,21 +17,227 @@ def log(msg):
     except:
         pass
 
+def delete_activity_history(page, range_name="Last hour"):
+    """Navigate to Gemini Activity page and delete activity for the given range.
+    Uses sync Playwright API. Returns True on success, False on failure."""
+    import re as _re
+    log(f"🗑️ Deleting activity history: {range_name}")
+    try:
+        page.goto("https://myactivity.google.com/product/gemini", wait_until="domcontentloaded")
+        page.wait_for_timeout(3000)
+
+        # Pre-dismiss banners (Dismiss / Got it)
+        for _ in range(2):
+            dismissed = False
+            for sel in ['button:has-text("Dismiss")', 'button:has-text("Got it")',
+                        'button[aria-label="Dismiss"]', 'div[role="dialog"] button:has-text("OK")']:
+                btn = page.locator(sel).first
+                if btn.is_visible():
+                    btn.click()
+                    page.wait_for_timeout(1000)
+                    dismissed = True
+                    break
+            if not dismissed:
+                break
+
+        # Click Delete button
+        delete_btn = page.locator('button[aria-label="Delete"]').first
+        if not delete_btn.is_visible():
+            page.mouse.click(10, 10)
+            page.keyboard.press("PageDown")
+            page.wait_for_timeout(1000)
+            if not delete_btn.is_visible():
+                log("  -> ⚠️ Delete button not visible on activity page.")
+                return False
+
+        delete_btn.click()
+        page.wait_for_timeout(1500)
+
+        # Select range option
+        range_map = {"Last hour": "Last hour", "Last day": "Last day", "All time": "Always"}
+        target_text = range_map.get(range_name, "Last hour")
+
+        if range_name == "All time":
+            option = page.locator('li[role="menuitem"]').filter(
+                has_text=_re.compile(r"^(Always|All time)$", _re.I)).first
+        else:
+            option = page.locator(f'li[role="menuitem"]:has-text("{target_text}")')
+
+        if not option.is_visible():
+            log(f"  -> ⚠️ Option '{target_text}' not found in menu.")
+            return False
+
+        option.click()
+        page.wait_for_timeout(2500)
+
+        # Handle confirmation dialogs
+        for _ in range(4):
+            handled = False
+            modal = page.locator('div.llhEMd, div.VfPpkd-Sx9N0d').first
+            if modal.is_visible():
+                # "No activity" case
+                no_act = modal.locator('text="You have no selected activity"').first
+                if no_act.is_visible():
+                    close_btn = modal.locator('button:has-text("Close"), button:has-text("Got it")').first
+                    if close_btn.is_visible():
+                        close_btn.click(force=True)
+                    log("  -> ℹ️ No activity to delete.")
+                    return True
+
+                # Confirm Delete
+                del_btn = modal.locator('button:has-text("Delete"), button[jsname="nUV0Pd"]').first
+                if del_btn.is_visible():
+                    del_btn.click(force=True)
+                    page.wait_for_timeout(2000)
+                    handled = True
+                    continue
+
+                # Got it / OK
+                ok_btn = modal.locator('button:has-text("Got it"), button:has-text("OK")').first
+                if ok_btn.is_visible():
+                    ok_btn.click(force=True)
+                    page.wait_for_timeout(1000)
+                    handled = True
+                    continue
+
+            # Fallback buttons
+            for sel in ['button:has-text("Delete")', 'button:has-text("Got it")',
+                        'button:has-text("Confirm")', 'button:has-text("Close")']:
+                btn = page.locator(sel).first
+                if btn.is_visible():
+                    btn.click(force=True)
+                    page.wait_for_timeout(1500)
+                    handled = True
+                    break
+            if not handled:
+                break
+
+        # Wait for snackbar confirmation
+        snackbar = page.locator('[role="alert"], [role="status"]').first
+        for _ in range(8):
+            if snackbar.is_visible():
+                msg = snackbar.inner_text() or ""
+                flat = " ".join(msg.strip().split())
+                if flat:
+                    log(f"  -> ✅ {flat}")
+                if any(x in flat.lower() for x in ["deleted", "complete", "removed"]):
+                    break
+            page.wait_for_timeout(1000)
+
+        log(f"  -> ✅ Activity deletion ({range_name}) completed.")
+        return True
+    except Exception as e:
+        log(f"  -> ❌ Delete activity failed: {e}")
+        return False
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--prompt", required=True)
+    parser.add_argument("--input", default="")
+    parser.add_argument("--output", default="")
+    parser.add_argument("--prompt", default="")
     parser.add_argument("--show-browser", action="store_true")
+    parser.add_argument("--delete-activity", default=None, help="Time range for activity deletion (e.g. 'Last hour')")
+    parser.add_argument("--delete-trigger", default="After Stop", help="When to trigger deletion: 'After Start' or 'After Stop'")
+    parser.add_argument("--delete-only", action="store_true", help="Only perform delete activity, then exit (no image processing)")
+    parser.add_argument("--max-redo", type=int, default=0, help="Maximum number of redos per image before skipping")
     args = parser.parse_args()
+
+    # --- Delete-Only Mode: standalone delete activity then exit ---
+    if args.delete_only and args.delete_activity:
+        log(f"🗑️ Delete-Only mode: {args.delete_activity}")
+        try:
+            import subprocess, shutil, json
+            base_dir = os.path.abspath(os.path.dirname(__file__))
+            source_user_data = os.path.join(base_dir, "browser_user_data")
+
+            # Resolve physical profile directory
+            physical_profile_dir = args.profile
+            local_state_path = os.path.join(source_user_data, "Local State")
+            if os.path.exists(local_state_path):
+                try:
+                    with open(local_state_path, "r", encoding="utf-8") as f:
+                        state = json.load(f)
+                        info_cache = state.get("profile", {}).get("info_cache", {})
+                        for p_dir, p_info in info_cache.items():
+                            u_name = p_info.get("user_name")
+                            if u_name and args.profile.split('@')[0].lower() == u_name.split('@')[0].lower():
+                                physical_profile_dir = p_dir
+                                break
+                except Exception as e:
+                    log(f"Warning: Profile lookup failed: {e}")
+
+            target_profile_path = os.path.join(source_user_data, physical_profile_dir)
+            sandbox_dir = os.path.join(base_dir, "upscaler_session_sandbox")
+            os.makedirs(sandbox_dir, exist_ok=True)
+            sandbox_default = os.path.join(sandbox_dir, "Default")
+
+            # Recreate junction (may have been cleaned up by Stop handler)
+            if os.path.exists(sandbox_default):
+                subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+            if not os.path.exists(target_profile_path):
+                log(f"❌ Profile path not found: {target_profile_path}")
+                return
+
+            cmd = f'mklink /J "{sandbox_default}" "{target_profile_path}"'
+            subprocess.run(cmd, shell=True, capture_output=True, text=True)
+
+            # Copy Local State
+            for f_name in ["Local State", "Variations"]:
+                src = os.path.join(source_user_data, f_name)
+                if os.path.exists(src):
+                    dest = os.path.join(sandbox_dir, f_name)
+                    shutil.copy2(src, dest)
+                    if f_name == "Local State":
+                        try:
+                            with open(dest, "r", encoding="utf-8") as f:
+                                state = json.load(f)
+                            if "profile" in state:
+                                state["profile"]["last_used"] = "Default"
+                                state["profile"]["last_active_profiles"] = ["Default"]
+                            with open(dest, "w", encoding="utf-8") as f:
+                                json.dump(state, f)
+                        except: pass
+
+            with sync_playwright() as p:
+                log("Launching browser for delete activity...")
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=sandbox_dir,
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+                    ignore_https_errors=True,
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    viewport={'width': 1920, 'height': 1080}
+                )
+                page = context.pages[0] if context.pages else context.new_page()
+                page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => false});
+                """)
+
+                delete_activity_history(page, range_name=args.delete_activity)
+
+                try: context.close()
+                except: pass
+
+        except Exception as e:
+            log(f"❌ Delete-Only mode failed: {e}")
+            import traceback
+            log(traceback.format_exc())
+        finally:
+            try:
+                sandbox_default = os.path.join(os.path.abspath(os.path.dirname(__file__)), "upscaler_session_sandbox", "Default")
+                if os.path.exists(sandbox_default):
+                    import subprocess
+                    subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+            except: pass
+        return
 
     # Create lock file
     with open("upscaler.lock", "w") as f:
         f.write(str(os.getpid()))
 
     try:
-        if not os.path.isdir(args.input):
+        if not args.input or not os.path.isdir(args.input):
             log(f"Error: Input directory {args.input} does not exist.")
             return
 
@@ -181,6 +387,14 @@ def main():
                 
             log("✅ Logged in successfully.")
 
+            # --- Delete Activity: After Start ---
+            if args.delete_activity and args.delete_trigger == "After Start":
+                delete_activity_history(page, range_name=args.delete_activity)
+                # Navigate back to Gemini after deletion
+                log("Returning to Gemini...")
+                page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
+                page.wait_for_timeout(3000)
+
             files_to_process = files.copy()
             idx = 0
             total = len(files)
@@ -212,7 +426,9 @@ def main():
                 out_path = os.path.join(args.output, filename)
                 
                 if os.path.exists(out_path):
-                    log(f"⏭️ Skipping {filename} (Already exists in output)")
+                    status_data["history"][filename]["status"] = "skipped"
+                    save_status()
+                    log(f"💨 Skipping {filename} (Already exists in output)")
                     idx += 1
                     continue
 
@@ -312,6 +528,11 @@ def main():
                                 }''')
                                 status_data["history"][filename]["refusals"] += 1
                                 save_status()
+                                
+                                if args.max_redo > 0 and status_data["history"][filename]["refusals"] > args.max_redo:
+                                    log(f"  -> ❌ Max Redo limit ({args.max_redo}) reached. Skipping image.")
+                                    raise Exception("Max Redo limit reached")
+                                    
                                 continue
                             else:
                                 log("  -> ❌ Redo button not found! Cannot retry.")
@@ -378,6 +599,7 @@ def main():
                 except Exception as e:
                     log(f"  -> ❌ Error processing {filename}: {e}")
                     success = False
+                    force_skip = str(e) == "Max Redo limit reached"
 
                 if success:
                     status_data["history"][filename]["status"] = "success"
@@ -389,17 +611,33 @@ def main():
                         if not init_browser(current_headless):
                             break
                 else:
-                    if base_headless:
+                    if base_headless and not force_skip:
                         current_headless = not current_headless
                         state_str = "headless" if current_headless else "visible (minimized)"
                         log(f"🔄 Retrying in {state_str} mode...")
                         if not init_browser(current_headless):
                             break
                     else:
+                        status_data["history"][filename]["status"] = "error"
+                        save_status()
                         log(f"❌ Failed for {filename}. Skipping.")
                         idx += 1
+                        # If we forced a skip and were in visible mode, revert to headless for the next image
+                        if force_skip and base_headless and current_headless != base_headless:
+                            log("🔄 Reverting to headless mode for next image.")
+                            current_headless = base_headless
+                            if not init_browser(current_headless):
+                                break
 
             log("🎉 Upscaling task completed!")
+
+            # --- Delete Activity: After Stop ---
+            if args.delete_activity and args.delete_trigger == "After Stop":
+                try:
+                    delete_activity_history(page, range_name=args.delete_activity)
+                except Exception as del_e:
+                    log(f"⚠️ Post-stop deletion failed: {del_e}")
+
             if context:
                 try: context.close()
                 except: pass

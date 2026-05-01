@@ -1138,9 +1138,9 @@ def rename_export_dialog(folder_path):
             st.rerun()
 
 # --- UI Layout ---
-active_tab = st.radio("Select Utility Module", ["Asset Sanitizer", "Gems Bookmark", "4K Upscaler"], horizontal=True, label_visibility="collapsed")
+tab_san, tab_gem, tab_up = st.tabs(["Asset Sanitizer", "Gems Bookmark", "4K Upscaler"], key="utilities_main_tabs")
 
-if active_tab == "Asset Sanitizer":
+with tab_san:
     with st.sidebar:
         # --- Path Selection ---
         st.markdown("### Select Path")
@@ -1232,13 +1232,8 @@ if active_tab == "Asset Sanitizer":
             # --- Batch Processing Section ---
             batch_processing_sidebar_fragment()
 
-
-
-
-if active_tab == "Asset Sanitizer":
     # --- Main Panel ---
-    
-    
+
     if st.session_state.sanitizer_path and os.path.exists(st.session_state.sanitizer_path):
         if not st.session_state.sanitizer_is_dir:
             # ── FILE MODE ────────────────────────────────────────────────────
@@ -1360,12 +1355,8 @@ if active_tab == "Asset Sanitizer":
     if "sanitizer_path_init_done" not in st.session_state:
         st.session_state.sanitizer_path = ""
         st.session_state.sanitizer_path_init_done = True
-elif active_tab == "Gems Bookmark":
-    st.set_page_config(page_title="GemiPersona | GEMS BOOKMARK", page_icon="sys_img/logo.png", layout="wide")
-    apply_premium_style()
-
+with tab_gem:
     # --- SESSION STATE INITIALIZATION ---
-    if "client" not in st.session_state: st.session_state.client = EngineClient()
     if "edit_index" not in st.session_state: st.session_state.edit_index = None
 
     # --- ENGINE HEALTH & SAFETY ---
@@ -1526,6 +1517,6 @@ elif active_tab == "Gems Bookmark":
                                 save_json(DB_FILE, bookmarks)
                                 st.rerun()
 
-elif active_tab == "4K Upscaler":
+with tab_up:
     from components.upscaler_ui import render_upscaler_tab
     render_upscaler_tab()

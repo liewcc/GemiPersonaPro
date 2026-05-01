@@ -4,6 +4,13 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-01 - 4K Upscaler Workflow & Reliability Enhancements
+- **Delete Activity Integration**: Added a dedicated `🗑️ Delete Activity` control panel to the 4K Upscaler dashboard. Users can now automatically delete Gemini activity history ("Last hour", "Last day", or "All time") directly from the upscaler workflow.
+- **Trigger Timing Control**: The activity deletion can be configured to execute either immediately `After Start` (cleaning history before processing begins) or `After Stop` (running a dedicated, lightweight cleanup process after the main worker is stopped), ensuring no interference with the actual upscaling tasks.
+- **Max Redo Limit**: Introduced a new `🔄 Max Redo Limit` toggle and numeric input to prevent infinite retry loops. If Gemini refuses a prompt repeatedly, the worker will automatically mark the image as an error and skip to the next file once the defined limit is reached, maintaining process momentum.
+- **Intelligent Output Directory Auto-fill**: To streamline setup, the `Output Directory` now automatically populates with an `/Upscale` subfolder appended to the chosen Input Directory path whenever the input is changed, while still allowing full manual overrides.
+- **Enhanced Status UI & Icons**: The progressive log and status tables now correctly distinguish between files that are actively processing (`🔄`), successfully finished (`✅`), fully failed (`❌`), or skipped because they already exist (`💨`). The worker accurately updates `upscaler_status.json` to reflect these exact states.
+
 ### Update: 2026-04-29 - Log Record Export & Loading Management
 - **Universal 'Load Record' Integration**: Added a new `📂 Load Record` button across the entire Account Health suite (Analysis, Insights, and Debugging tabs). This allows users to import and analyze historical `.log` files exported by the system.
 - **Save Record Logic**: Implemented a `💾 Save Record` feature in the Automation Cycle Management tab. Users can now select specific automation cycles and export them to a standalone `.log` file with custom filenames based on the cycle's start timestamp.

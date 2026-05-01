@@ -28,6 +28,16 @@ def render_upscaler_tab():
     if "up_prompt" not in st.session_state: st.session_state.up_prompt = upscale_cfg.get("prompt", "Please upscale this image to 4K quality, keep it exactly as it is and do not change the content.")
     if "up_headless" not in st.session_state: st.session_state.up_headless = upscale_cfg.get("headless", True)
 
+    # Delete Activity state from config
+    del_act_cfg = upscale_cfg.get("delete_activity", {})
+    if "up_del_enabled" not in st.session_state: st.session_state.up_del_enabled = del_act_cfg.get("enabled", False)
+    if "up_del_range" not in st.session_state: st.session_state.up_del_range = del_act_cfg.get("range", "Last hour")
+    if "up_del_trigger" not in st.session_state: st.session_state.up_del_trigger = del_act_cfg.get("trigger", "After Stop")
+
+    # Max Redo state from config
+    if "up_max_redo_enabled" not in st.session_state: st.session_state.up_max_redo_enabled = upscale_cfg.get("max_redo_enabled", False)
+    if "up_max_redo" not in st.session_state: st.session_state.up_max_redo = upscale_cfg.get("max_redo", 3)
+
     col1, col2 = st.columns([1.5, 1])
 
     with col1:
@@ -57,6 +67,11 @@ def render_upscaler_tab():
                     sel = select_folder()
                     if sel:
                         input_w = sel
+
+            # Auto-fill output directory if input changed
+            if input_w != st.session_state.up_input and input_w:
+                auto_output = os.path.join(input_w, "Upscale").replace("\\", "/")
+                st.session_state.up_output = auto_output
 
             output_col, out_btn = st.columns([4, 1])
             with output_col:
@@ -88,6 +103,58 @@ def render_upscaler_tab():
                 }})
                 st.rerun()
 
+            # --- Delete Activity Controls ---
+            del_col_toggle, del_col_range, del_col_trigger = st.columns([1.2, 1, 1])
+            with del_col_toggle:
+                del_enabled_w = st.toggle("🗑️ Delete Activity", value=st.session_state.up_del_enabled, help="Automatically delete Gemini activity history at the selected trigger point.")
+            
+            if del_enabled_w:
+                range_options = ["Last hour", "Last day", "All time"]
+                trigger_options = ["After Start", "After Stop"]
+                try: range_idx = range_options.index(st.session_state.up_del_range)
+                except ValueError: range_idx = 0
+                try: trigger_idx = trigger_options.index(st.session_state.up_del_trigger)
+                except ValueError: trigger_idx = 1
+                
+                with del_col_range:
+                    del_range_w = st.selectbox("Time Range", options=range_options, index=range_idx, key="up_del_range_select", label_visibility="collapsed")
+                with del_col_trigger:
+                    del_trigger_w = st.selectbox("Trigger", options=trigger_options, index=trigger_idx, key="up_del_trigger_select", label_visibility="collapsed")
+            else:
+                del_range_w = st.session_state.up_del_range
+                del_trigger_w = st.session_state.up_del_trigger
+
+            # Persist delete activity settings on change
+            if del_enabled_w != st.session_state.up_del_enabled or del_range_w != st.session_state.up_del_range or del_trigger_w != st.session_state.up_del_trigger:
+                st.session_state.up_del_enabled = del_enabled_w
+                st.session_state.up_del_range = del_range_w
+                st.session_state.up_del_trigger = del_trigger_w
+                save_config({"upscaler": {
+                    "delete_activity": {
+                        "enabled": del_enabled_w,
+                        "range": del_range_w,
+                        "trigger": del_trigger_w
+                    }
+                }})
+                st.rerun()
+
+            # --- Max Redo Limit Controls ---
+            redo_col_toggle, redo_col_input = st.columns([1.2, 2])
+            with redo_col_toggle:
+                redo_enabled_w = st.toggle("🔄 Max Redo Limit", value=st.session_state.up_max_redo_enabled, help="Automatically skip to the next image if Gemini refuses the prompt repeatedly.")
+            
+            with redo_col_input:
+                redo_val_w = st.number_input("Max Redos per Image", min_value=1, max_value=20, value=st.session_state.up_max_redo, step=1, label_visibility="collapsed", disabled=not redo_enabled_w)
+
+            if redo_enabled_w != st.session_state.up_max_redo_enabled or redo_val_w != st.session_state.up_max_redo:
+                st.session_state.up_max_redo_enabled = redo_enabled_w
+                st.session_state.up_max_redo = redo_val_w
+                save_config({"upscaler": {
+                    "max_redo_enabled": redo_enabled_w,
+                    "max_redo": redo_val_w
+                }})
+                st.rerun()
+
             # Process state
             log_path = "upscaler.log"
             is_running = os.path.exists("upscaler.lock")
@@ -113,7 +180,14 @@ def render_upscaler_tab():
                             "input_dir": input_w,
                             "output_dir": output_w,
                             "prompt": prompt_w,
-                            "headless": headless_w
+                            "headless": headless_w,
+                            "delete_activity": {
+                                "enabled": del_enabled_w,
+                                "range": del_range_w,
+                                "trigger": del_trigger_w
+                            },
+                            "max_redo_enabled": redo_enabled_w,
+                            "max_redo": redo_val_w
                         }})
                         
                         cmd = [
@@ -125,6 +199,12 @@ def render_upscaler_tab():
                         ]
                         if not headless_w:
                             cmd.append("--show-browser")
+                        # Pass delete activity args
+                        if del_enabled_w:
+                            cmd.extend(["--delete-activity", del_range_w, "--delete-trigger", del_trigger_w])
+                        # Pass max redo args
+                        if redo_enabled_w:
+                            cmd.extend(["--max-redo", str(redo_val_w)])
                         
                         try:
                             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -156,16 +236,37 @@ def render_upscaler_tab():
                             f.write(f"{ts} ⛔ Stop button clicked. Browser closed immediately.\n")
                     except: pass
                     
-                    # 3. Cleanup
+                    # 3. Cleanup lock file
                     try: os.remove("upscaler.lock")
                     except: pass
-                    try:
-                        # Path to sandbox junction relative to this file's parent
-                        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                        sandbox_default = os.path.join(root, "upscaler_session_sandbox", "Default")
-                        if os.path.exists(sandbox_default):
-                            subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
-                    except: pass
+
+                    # 4. If delete activity After Stop is enabled, spawn a standalone delete process
+                    if st.session_state.up_del_enabled and st.session_state.up_del_trigger == "After Stop":
+                        try:
+                            with open(log_path, "a", encoding="utf-8") as f:
+                                from datetime import datetime
+                                ts = datetime.now().strftime("[%H:%M:%S]")
+                                f.write(f"{ts} 🗑️ Launching standalone delete activity ({st.session_state.up_del_range})...\n")
+                        except: pass
+                        try:
+                            del_cmd = [
+                                sys.executable, "upscaler_worker.py",
+                                "--profile", st.session_state.up_profile,
+                                "--delete-only",
+                                "--delete-activity", st.session_state.up_del_range
+                            ]
+                            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                            subprocess.Popen(del_cmd, creationflags=flags)
+                        except Exception as del_e:
+                            st.toast(f"⚠️ Delete activity launch failed: {del_e}")
+                    else:
+                        # Only clean up sandbox if no delete subprocess will use it
+                        try:
+                            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                            sandbox_default = os.path.join(root, "upscaler_session_sandbox", "Default")
+                            if os.path.exists(sandbox_default):
+                                subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+                        except: pass
                     
                     st.toast("⛔ Stop signal sent and browser closed.")
                     st.rerun()
@@ -176,7 +277,7 @@ def render_upscaler_tab():
             with log_c1:
                 st.markdown("#### 📋 Progress Log")
             with log_c2:
-                with st.popover("📊 Status", width="stretch"):
+                with st.popover("📊 Status", key="upscaler_status_popover"):
                     @st.fragment(run_every="1s")
                     def render_status():
                         status_file = "upscaler_status.json"
@@ -199,7 +300,11 @@ def render_upscaler_tab():
                         # Show latest files first
                         for fname in reversed(list(history.keys())):
                             info = history[fname]
-                            status_icon = "🔄" if info.get("status") == "processing" else "✅"
+                            st_val = info.get("status")
+                            if st_val == "processing": status_icon = "🔄"
+                            elif st_val == "skipped": status_icon = "💨"
+                            elif st_val == "error": status_icon = "❌"
+                            else: status_icon = "✅"
                             table_data.append({
                                 "File": f"{status_icon} {fname}",
                                 "Refusals": info.get("refusals", 0)
