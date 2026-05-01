@@ -215,6 +215,9 @@ def on_naming_change():
         
     if updates:
         st.session_state.config = save_config(updates)
+        if st.session_state.get("last_known_auto_active", False):
+            asyncio.run(st.session_state.client.request_new_chat())
+            add_log("Storage/Naming updated. Will apply on next cycle.")
 
 def add_log(msg):
     timestamp = time.strftime("%H:%M:%S")
@@ -1232,7 +1235,11 @@ with col1:
                     st.session_state["selected_tool"] = new_tool
                     st.session_state["selected_model"] = new_model
                     st.session_state.config = save_config({"selected_tool": new_tool, "selected_model": new_model})
-                    add_log(f"Settings saved: {new_tool}, {new_model}")
+                    if st.session_state.get("last_known_auto_active", False):
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log(f"Tool/Model saved: {new_tool}, {new_model}. Will apply on next cycle.")
+                    else:
+                        add_log(f"Settings saved: {new_tool}, {new_model}")
                     st.rerun()
             
             with t_col4:
@@ -1262,6 +1269,9 @@ with col1:
                         if p not in st.session_state.selected_files:
                             st.session_state.selected_files.append(p)
                     st.session_state.config = save_config({"selected_files": st.session_state.selected_files})
+                    if st.session_state.get("last_known_auto_active", False):
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log("Files added. Will apply on next cycle.")
                     st.rerun()
             
             if st.session_state.selected_files:
@@ -1283,6 +1293,9 @@ with col1:
                                 if st.button("🗑️", key=f"del_{i}_{idx}_{hash(path)}", help="Delete this file"):
                                     st.session_state.selected_files.remove(path)
                                     st.session_state.config = save_config({"selected_files": st.session_state.selected_files})
+                                    if st.session_state.get("last_known_auto_active", False):
+                                        asyncio.run(st.session_state.client.request_new_chat())
+                                        add_log("File removed. Will apply on next cycle.")
                                     st.rerun()
                             else:
                                 st.error("LOST")
@@ -1301,6 +1314,9 @@ with col1:
                     asyncio.run(do_clear())
                     st.session_state.selected_files = []
                     st.session_state.config = save_config({"selected_files": st.session_state.selected_files})
+                    if st.session_state.get("last_known_auto_active", False):
+                        asyncio.run(st.session_state.client.request_new_chat())
+                        add_log("All files cleared. Will apply on next cycle.")
                     st.rerun()
                 
                 if u_col2.button("🚀 Send to Browser", width="stretch", disabled=not browser_active):
@@ -1330,6 +1346,9 @@ with col1:
                         st.session_state.save_dir = sel
                         st.session_state.widget_rerender_key += 1
                         st.session_state.config = save_config({"save_dir": sel})
+                        if st.session_state.get("last_known_auto_active", False):
+                            asyncio.run(st.session_state.client.request_new_chat())
+                            add_log("Save directory updated. Will apply on next cycle.")
                         st.rerun()
             
             n_col1, n_col2, n_col3 = st.columns([2, 1, 1])

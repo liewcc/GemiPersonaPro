@@ -107,8 +107,23 @@ def _build_duration_chart(detailed_data, y_scale_type, event_only_success=False)
         df["Event"] = range(1, len(df) + 1)
         
     df["Minutes"] = df["_dur_col"].str.replace("s", "").astype(float) / 60.0
-    df["cycle"] = df["session_index"].rank(method="dense").astype(int)
-    df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 1 else "Light")
+    # Alternate color variant on EITHER session_index OR account change,
+    # so that a manual profile switch during a "Continue Session" (same
+    # session_index) still produces a visible color distinction.
+    _seg = 0
+    _prev_si = None
+    _prev_acct = None
+    _seg_list = []
+    for _, row in df.iterrows():
+        si = row.get("session_index")
+        acct = str(row.get("account", "")).lower()
+        if _prev_si is not None and (si != _prev_si or acct != _prev_acct):
+            _seg += 1
+        _prev_si = si
+        _prev_acct = acct
+        _seg_list.append(_seg)
+    df["cycle"] = _seg_list
+    df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 0 else "Light")
     df["display_status"] = df["status"].replace({"Reject": "Refused"})
     ll = ['Success (Base)', 'Refused (Base)', 'Reset (Base)', 'Fail',
           'Success (Light)', 'Refused (Light)', 'Reset (Light)']
@@ -127,10 +142,11 @@ def _build_duration_chart(detailed_data, y_scale_type, event_only_success=False)
 
 def _build_reject_chart(detailed_data, y_scale_type):
     """Build a reject-rate line+point chart (X = successful images)."""
-    agg_data = []; curr_rej = 0; curr_res = 0; curr_dur = 0.0; seg_id = 0; prev_si = None
+    agg_data = []; curr_rej = 0; curr_res = 0; curr_dur = 0.0; seg_id = 0; prev_si = None; prev_acct = None
     for row in reversed(detailed_data):
         si = row["session_index"]
-        if prev_si is not None and si != prev_si:
+        acct = str(row.get("account", "")).lower()
+        if prev_si is not None and (si != prev_si or acct != prev_acct):
             curr_rej = 0; curr_res = 0; curr_dur = 0.0; seg_id += 1
         row_dur = float(row["health"].replace("s", ""))
         if row["status"] == "Reject":
@@ -152,7 +168,7 @@ def _build_reject_chart(detailed_data, y_scale_type):
             d["round"] = row.get("round", "N/A")
             agg_data.append(d)
             curr_rej = 0; curr_res = 0; curr_dur = 0.0
-        prev_si = si
+        prev_si = si; prev_acct = acct
 
     if not agg_data:
         return None
