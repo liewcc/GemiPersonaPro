@@ -74,7 +74,7 @@ def render_upscaler_tab():
                 
             profile_w = st.selectbox("Paid Account Profile", options=verified_accounts, index=prof_idx, help="Select your fixed paid account. These are loaded from your verified accounts list.")
             
-            input_col, in_btn = st.columns([4, 1])
+            input_col, in_btn, in_view_btn = st.columns([4, 1, 0.5])
             with input_col:
                 input_w = st.text_input("Input Directory (Images to Upscale)", value=st.session_state.up_input)
             with in_btn:
@@ -83,13 +83,18 @@ def render_upscaler_tab():
                     sel = select_folder()
                     if sel:
                         input_w = sel
+            with in_view_btn:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("📂", key="up_in_view_btn", help="Open Folder", width="stretch"):
+                    if input_w and os.path.exists(input_w):
+                        os.startfile(input_w)
 
             # Auto-fill output directory if input changed
             if input_w != st.session_state.up_input and input_w:
                 auto_output = os.path.join(input_w, "Upscale").replace("\\", "/")
                 st.session_state.up_output = auto_output
 
-            output_col, out_btn = st.columns([4, 1])
+            output_col, out_btn, out_view_btn = st.columns([4, 1, 0.5])
             with output_col:
                 output_w = st.text_input("Output Directory", value=st.session_state.up_output)
             with out_btn:
@@ -98,6 +103,11 @@ def render_upscaler_tab():
                     sel = select_folder()
                     if sel:
                         output_w = sel
+            with out_view_btn:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("📂", key="up_out_view_btn", help="Open Folder", width="stretch"):
+                    if output_w and os.path.exists(output_w):
+                        os.startfile(output_w)
 
             prompt_w = st.text_area("Upscale Prompt", value=st.session_state.up_prompt, height=100)
             
