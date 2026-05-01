@@ -11,6 +11,7 @@ import config_utils
 
 app_running = True
 current_dir_display = ""
+current_upscale_dir = ""
 tray_icon = None
 _status_popup_open   = False
 _download_popup_open = False
@@ -25,16 +26,23 @@ def load_notifier_state():
     if os.path.exists(_STATE_FILE):
         try:
             with open(_STATE_FILE, 'r', encoding='utf-8') as f:
-                return set(json.load(f).get('last_ack_files', []))
+                data = json.load(f)
+                return {
+                    'auto': set(data.get('last_ack_auto', data.get('last_ack_files', []))),
+                    'upscale': set(data.get('last_ack_upscale', []))
+                }
         except:
             pass
-    return set()
+    return {'auto': set(), 'upscale': set()}
 
-def save_notifier_state(files_set):
+def save_notifier_state(auto_set, upscale_set):
     """Save the current directory files as acknowledged."""
     try:
         with open(_STATE_FILE, 'w', encoding='utf-8') as f:
-            json.dump({'last_ack_files': list(files_set)}, f)
+            json.dump({
+                'last_ack_auto': list(auto_set),
+                'last_ack_upscale': list(upscale_set)
+            }, f)
     except:
         pass
 
@@ -62,13 +70,17 @@ def is_gemipersona_running():
 # Shared helper: build and show a themed tkinter popup near the taskbar
 # ---------------------------------------------------------------------------
 
-def _build_popup(title_text, rows, folder_path, auto_close_ms=None, on_manual_close=None):
+def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running, auto_folder=None, upscale_folder=None, auto_close_ms=None, on_manual_close=None):
     """Construct and run a dark-themed borderless popup window.
 
     Args:
         title_text     : string shown in the popup header
-        rows           : list of (label, value) tuples for the data card
-        folder_path    : path for the 'Open Folder' button, or None to hide it
+        auto_pending   : number of auto downloads
+        up_pending     : number of upscaler downloads
+        auto_running   : boolean indicating if automation is running
+        up_running     : boolean indicating if upscaler is running
+        auto_folder    : path for the Automation '📁 Download Folder' button
+        upscale_folder : path for the Upscaler '📁 Upscale Folder' button
         auto_close_ms  : if set, window auto-dismisses after this many milliseconds
         on_manual_close: callback triggered when user explicitly clicks a button or X
     """
@@ -123,40 +135,65 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None, on_manual_cl
     tk.Frame(body, bg=C_BORDER, height=1).pack(fill='x', pady=(0, 8))
 
     # -- Data card --
-    card = tk.Frame(body, bg=C_CARD, padx=12, pady=8)
+    card = tk.Frame(body, bg=C_CARD, padx=12, pady=12)
     card.pack(fill='x')
 
-    for label, value in rows:
-        row_frame = tk.Frame(card, bg=C_CARD)
-        row_frame.pack(fill='x', pady=2)
-        
-        # Use a special red color for 'Unseen' count
-        val_color = '#ff5555' if label == "Unseen" else C_TEXT
-        val_font  = ('Segoe UI Bold', 9) if label == "Unseen" else FONT_VALUE
-        
-        tk.Label(row_frame, text=label, width=8, anchor='w',
-                 bg=C_CARD, fg=C_MUTED, font=FONT_LABEL).pack(side='left')
-        tk.Label(row_frame, text=value, anchor='w',
-                 bg=C_CARD, fg=val_color, font=val_font,
-                 wraplength=260, justify='left').pack(side='left', fill='x', expand=True)
+    # Two columns: Left (Auto), Right (Upscaler)
+    left_col = tk.Frame(card, bg=C_CARD)
+    left_col.pack(side='left', expand=True, fill='both')
 
-    # -- Button row --
-    btn_bar = tk.Frame(body, bg=C_BG)
-    btn_bar.pack(fill='x', pady=(10, 0))
+    right_col = tk.Frame(card, bg=C_CARD)
+    right_col.pack(side='right', expand=True, fill='both')
 
-    def _open_folder():
-        if folder_path:
-            os.startfile(folder_path)
+    # Auto Section
+    tk.Label(left_col, text="Auto", bg=C_CARD, fg=C_TEXT if auto_running else C_MUTED, font=('Segoe UI', 10)).pack()
+    tk.Label(left_col, text=str(auto_pending), bg=C_CARD, fg='#ff5555' if (auto_pending > 0 and auto_running) else (C_TEXT if auto_running else C_MUTED), font=('Segoe UI Bold', 24)).pack()
+
+    # Upscaler Section
+    tk.Label(right_col, text="Upscaler", bg=C_CARD, fg=C_TEXT if up_running else C_MUTED, font=('Segoe UI', 10)).pack()
+    tk.Label(right_col, text=str(up_pending), bg=C_CARD, fg='#ff5555' if (up_pending > 0 and up_running) else (C_TEXT if up_running else C_MUTED), font=('Segoe UI Bold', 24)).pack()
+
+    # -- Action buttons row 1 (Folders) --
+    folder_bar = tk.Frame(body, bg=C_BG)
+    folder_bar.pack(fill='x', pady=(10, 0))
+
+    def _open_auto():
+        if auto_folder:
+            os.startfile(auto_folder)
         _manual_exit()
 
-    if folder_path:
+    def _open_upscale():
+        if upscale_folder:
+            os.startfile(upscale_folder)
+        _manual_exit()
+
+    has_folder_btn = False
+    if auto_folder:
         tk.Button(
-            btn_bar, text='Open Folder', relief='flat',
-            bg=C_BTN_PRI, fg='#ffffff', font=FONT_BTN,
+            folder_bar, text='📁 Download Folder', relief='flat',
+            bg=C_BTN_SEC, fg=C_TEXT, font=FONT_BTN,
             padx=10, pady=4, cursor='hand2',
-            activebackground='#6d28d9', activeforeground='#ffffff',
-            command=_open_folder
-        ).pack(side='left')
+            activebackground='#363d52', activeforeground=C_TEXT,
+            command=_open_auto
+        ).pack(side='left', expand=True, fill='x', padx=(0, 4))
+        has_folder_btn = True
+
+    if upscale_folder:
+        tk.Button(
+            folder_bar, text='📁 Upscale Folder', relief='flat',
+            bg=C_BTN_SEC, fg=C_TEXT, font=FONT_BTN,
+            padx=10, pady=4, cursor='hand2',
+            activebackground='#363d52', activeforeground=C_TEXT,
+            command=_open_upscale
+        ).pack(side='left', expand=True, fill='x', padx=(4 if has_folder_btn else 0, 0))
+        has_folder_btn = True
+
+    if not has_folder_btn:
+        folder_bar.destroy()
+
+    # -- Action buttons row 2 (Dismiss & Open GemiPersona) --
+    btn_bar = tk.Frame(body, bg=C_BG)
+    btn_bar.pack(fill='x', pady=(8 if has_folder_btn else 10, 0))
 
     tk.Button(
         btn_bar, text='Dismiss', relief='flat',
@@ -164,7 +201,7 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None, on_manual_cl
         padx=10, pady=4, cursor='hand2',
         activebackground='#363d52', activeforeground=C_TEXT,
         command=_manual_exit
-    ).pack(side='left', padx=(8 if folder_path else 0, 0))
+    ).pack(side='left', expand=True, fill='x', padx=(0, 4))
 
     def _open_gemipersona():
         run_bat = os.path.join(_SCRIPT_DIR, "run.bat")
@@ -196,7 +233,7 @@ def _build_popup(title_text, rows, folder_path, auto_close_ms=None, on_manual_cl
         activebackground='#6d28d9' if not running else gp_bg,
         activeforeground='#ffffff' if not running else gp_fg,
         command=gp_cmd
-    ).pack(side='left', padx=(8, 0))
+    ).pack(side='left', expand=True, fill='x', padx=(4, 0))
 
     # -- Position: bottom-right, above taskbar --
     root.update_idletasks()
@@ -230,43 +267,34 @@ def _show_status_popup():
     _status_popup_open = True
 
     try:
-        if not current_dir_display or current_dir_display == "Not set or not found":
-            rows = [
-                ("Status",    "Initializing..."),
-                ("Directory", "Not set or not found"),
-            ]
-            folder_path = None
-        else:
-            stats       = get_automation_stats()
-            active_acct = config_utils.load_config().get('active_user', 'N/A') or 'N/A'
-            
-            # Calculate total pending since LAST MANUAL ACK
-            current_files = set(os.listdir(current_dir_display))
-            last_ack_files = load_notifier_state()
-            image_pending = [f for f in (current_files - last_ack_files)
-                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
-            total_pending = len(image_pending)
+        stats = get_automation_stats()
+        auto_running = stats.get('is_running', False)
+        up_running = os.path.exists(os.path.join(_SCRIPT_DIR, "upscaler.lock"))
 
-            rows = [
-                ("Account", active_acct),
-                ("State",   "Running" if stats.get('is_running', False) else "Stopped"),
-                ("Cycle",   str(stats.get('cycles', 0))),
-                ("Saved",   str(stats.get('successes', 0))),
-                ("Refused", str(stats.get('refusals', 0))),
-                ("Resets",  str(stats.get('resets', 0))),
-            ]
+        last_ack = load_notifier_state()
+        
+        auto_pending = 0
+        if current_dir_display and os.path.exists(current_dir_display):
+            current_auto = set(os.listdir(current_dir_display))
+            auto_pending = len([f for f in (current_auto - last_ack.get('auto', set())) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))])
             
-            if total_pending > 0:
-                rows.append(("Unseen", f"{total_pending} image{'s' if total_pending > 1 else ''} since last visit"))
-                
-            rows.append(("Path", current_dir_display))
-            folder_path = current_dir_display
-
+        up_pending = 0
+        if current_upscale_dir and os.path.exists(current_upscale_dir):
+            current_up = set(os.listdir(current_upscale_dir))
+            up_pending = len([f for f in (current_up - last_ack.get('upscale', set())) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))])
+        
         def on_manual_ack():
-            if current_dir_display and os.path.exists(current_dir_display):
-                save_notifier_state(set(os.listdir(current_dir_display)))
+            auto_set = set(os.listdir(current_dir_display)) if current_dir_display and os.path.exists(current_dir_display) else set()
+            up_set = set(os.listdir(current_upscale_dir)) if current_upscale_dir and os.path.exists(current_upscale_dir) else set()
+            save_notifier_state(auto_set, up_set)
 
-        _build_popup("GemiPersona Notifier", rows, folder_path, on_manual_close=on_manual_ack)
+        _build_popup(
+            "GemiPersona Notifier", 
+            auto_pending=auto_pending, up_pending=up_pending,
+            auto_running=auto_running, up_running=up_running,
+            auto_folder=current_dir_display, upscale_folder=current_upscale_dir, 
+            on_manual_close=on_manual_ack
+        )
 
     finally:
         _status_popup_open = False
@@ -276,8 +304,9 @@ def _show_status_popup():
 # New Downloads popup  (auto-triggered when new images are detected)
 # ---------------------------------------------------------------------------
 
-def _show_new_files_popup(image_files, active_account, l_state,
-                          s_cycles, s_images, s_refused, s_resets, directory, total_pending, current_files):
+def _show_new_files_popup(auto_images, up_images, 
+                          total_auto_pending, total_up_pending, current_auto_files, current_up_files,
+                          current_auto_dir, current_up_dir):
     """Show a new-download alert popup — bypasses Windows notification system entirely.
     Auto-dismisses after 8 seconds if the user takes no action.
     """
@@ -287,36 +316,21 @@ def _show_new_files_popup(image_files, active_account, l_state,
     _download_popup_open = True
 
     try:
-        count   = len(image_files)
-        preview = image_files[:5]
-        extra   = count - len(preview)
-
-        file_summary = '\n'.join(preview)
-        if extra > 0:
-            file_summary += f'\n...and {extra} more'
-
-        rows = [
-            ("Account", active_account),
-            ("State",   l_state),
-            ("Cycle",   str(s_cycles)),
-            ("Saved",   str(s_images)),
-            ("Refused", str(s_refused)),
-            ("Resets",  str(s_resets)),
-            ("New",     file_summary),
-        ]
+        count = len(auto_images) + len(up_images)
         
-        if total_pending > count:
-            rows.append(("Unseen", f"+{total_pending - count} more since last visit"))
-            
-        rows.append(("Path", directory))
+        stats = get_automation_stats()
+        auto_running = stats.get('is_running', False)
+        up_running = os.path.exists(os.path.join(_SCRIPT_DIR, "upscaler.lock"))
 
         def on_manual_ack():
-            save_notifier_state(current_files)
+            save_notifier_state(current_auto_files, current_up_files)
 
         _build_popup(
             f"GemiPersona — {count} New Image{'s' if count > 1 else ''}",
-            rows,
-            folder_path=directory,
+            auto_pending=total_auto_pending, up_pending=total_up_pending,
+            auto_running=auto_running, up_running=up_running,
+            auto_folder=current_auto_dir,
+            upscale_folder=current_up_dir,
             auto_close_ms=8000,          # Auto-dismiss after 8 seconds
             on_manual_close=on_manual_ack
         )
@@ -330,21 +344,32 @@ def _show_new_files_popup(image_files, active_account, l_state,
 # ---------------------------------------------------------------------------
 
 def monitor_directory():
-    global app_running, current_dir_display
+    global app_running, current_dir_display, current_upscale_dir
 
-    last_files = set()
-    current_dir = ""
+    last_auto_files = set()
+    last_upscale_files = set()
+    
+    current_auto_dir = ""
+    current_up_dir = ""
 
-    # Run an initial config check instantly before the 5s loop begins
+    # Initial check
     try:
         config = config_utils.load_config()
-        initial_dir = config.get('save_dir', '')
-        if initial_dir and os.path.exists(initial_dir):
-            current_dir_display = initial_dir
-            current_dir = initial_dir
-            last_files = set(os.listdir(current_dir))
+        initial_auto = config.get('save_dir', '')
+        if initial_auto and os.path.exists(initial_auto):
+            current_dir_display = initial_auto
+            current_auto_dir = initial_auto
+            last_auto_files = set(os.listdir(current_auto_dir))
         else:
             current_dir_display = "Not set or not found"
+            
+        initial_up = config.get('upscaler', {}).get('output_dir', '')
+        if initial_up and os.path.exists(initial_up):
+            current_upscale_dir = initial_up
+            current_up_dir = initial_up
+            last_upscale_files = set(os.listdir(current_up_dir))
+        else:
+            current_upscale_dir = "Not set or not found"
     except Exception:
         pass
 
@@ -353,58 +378,83 @@ def monitor_directory():
             time.sleep(5)
 
             config  = config_utils.load_config()
-            new_dir = config.get('save_dir', '')
+            new_auto = config.get('save_dir', '')
+            new_up = config.get('upscaler', {}).get('output_dir', '')
 
-            if not new_dir or not os.path.exists(new_dir):
+            auto_changed = False
+            up_changed = False
+
+            if new_auto and os.path.exists(new_auto):
+                current_dir_display = new_auto
+                if new_auto != current_auto_dir:
+                    current_auto_dir = new_auto
+                    last_auto_files = set(os.listdir(current_auto_dir))
+                    auto_changed = True
+            else:
                 current_dir_display = "Not set or not found"
+                last_auto_files = set()
+
+            if new_up and os.path.exists(new_up):
+                current_upscale_dir = new_up
+                if new_up != current_up_dir:
+                    current_up_dir = new_up
+                    last_upscale_files = set(os.listdir(current_up_dir))
+                    up_changed = True
+            else:
+                current_upscale_dir = "Not set or not found"
+                last_upscale_files = set()
+
+            if auto_changed or up_changed:
+                state = load_notifier_state()
+                if auto_changed: state['auto'] = last_auto_files
+                if up_changed: state['upscale'] = last_upscale_files
+                save_notifier_state(state['auto'], state['upscale'])
                 continue
 
-            current_dir_display = new_dir
-            if new_dir != current_dir:
-                current_dir = new_dir
-                last_files = set(os.listdir(current_dir))
-                # On dir change, mark existing as seen
-                save_notifier_state(last_files)
-                continue
+            current_auto_files = set(os.listdir(current_auto_dir)) if current_auto_dir else set()
+            current_up_files = set(os.listdir(current_up_dir)) if current_up_dir else set()
 
-            current_files = set(os.listdir(current_dir))
-            new_files     = current_files - last_files
-            image_files   = [f for f in new_files
-                             if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
+            new_auto_files = current_auto_files - last_auto_files
+            new_up_files = current_up_files - last_upscale_files
 
-            if image_files:
+            auto_images = [f for f in new_auto_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
+            up_images = [f for f in new_up_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
+
+            if auto_images or up_images:
                 # Give the engine a short grace period to update its internal success counter
                 time.sleep(1.5)
                 
-                stats          = get_automation_stats()
-                l_state        = "Running" if stats.get('is_running', False) else "Stopped"
+                stats = get_automation_stats()
+                l_state = "Running" if stats.get('is_running', False) else "Stopped"
                 active_account = config.get('active_user', 'N/A') or 'N/A'
-                s_cycles       = stats.get('cycles', 0)
-                s_images       = stats.get('successes', 0)
-                s_refused      = stats.get('refusals', 0)
-                s_resets       = stats.get('resets', 0)
 
-                # Calculate total pending since LAST MANUAL ACK
-                last_ack_files = load_notifier_state()
-                if not last_ack_files:
-                    # First time: treat last_files as acknowledged
-                    save_notifier_state(last_files)
-                    last_ack_files = last_files
+                last_ack = load_notifier_state()
                 
-                total_pending_set = current_files - last_ack_files
-                image_pending = [f for f in total_pending_set 
-                                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
-                total_pending_count = len(image_pending)
+                save_needed = False
+                if not last_ack['auto'] and current_auto_files:
+                    last_ack['auto'] = last_auto_files
+                    save_needed = True
+                if not last_ack['upscale'] and current_up_files:
+                    last_ack['upscale'] = last_upscale_files
+                    save_needed = True
+                if save_needed:
+                    save_notifier_state(last_ack['auto'], last_ack['upscale'])
 
-                # Launch tkinter popup in its own daemon thread
-                threading.Thread(
-                    target=_show_new_files_popup,
-                    args=(image_files, active_account, l_state,
-                          s_cycles, s_images, s_refused, s_resets, current_dir, total_pending_count, current_files),
-                    daemon=True
-                ).start()
+                total_auto_pending = [f for f in (current_auto_files - last_ack['auto']) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
+                total_up_pending = [f for f in (current_up_files - last_ack['upscale']) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
 
-            last_files = current_files
+                if len(total_auto_pending) > 0 or len(total_up_pending) > 0:
+                    threading.Thread(
+                        target=_show_new_files_popup,
+                        args=(auto_images, up_images, 
+                              len(total_auto_pending), len(total_up_pending),
+                              current_auto_files, current_up_files,
+                              current_auto_dir, current_up_dir),
+                        daemon=True
+                    ).start()
+
+            last_auto_files = current_auto_files
+            last_upscale_files = current_up_files
 
         except Exception:
             time.sleep(5)
