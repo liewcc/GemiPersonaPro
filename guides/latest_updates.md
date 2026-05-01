@@ -14,6 +14,12 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - **Bug Fix (Max Redo Limit)**: Corrected an off-by-one arithmetic error where the worker required one additional refusal beyond the user's defined limit before triggering a skip.
 - **Bug Fix (Atomic Config Persistence)**: Fixed a critical state-management flaw in the UI where modifying one upscaler setting (like `Max Redo Limit`) would accidentally erase sibling parameters (like `Delete Activity`) from `config.json` via shallow dictionary overwriting. All upscaler settings are now securely bundled and written atomically.
 
+### Update: 2026-05-01 - Notifier UI Overhaul & Dual-Tracking
+- **Dual-Directory Monitoring**: The `image_notifier.py` background process now concurrently monitors both the Automation save directory and the 4K Upscaler output directory, providing unified alerts for all system activities.
+- **Side-by-Side Typography**: Overhauled the notification pop-up UI to feature a sleek, two-column layout showing "Auto" and "Upscaler" statistics side-by-side using large, easily readable font numbers.
+- **Dynamic State Highlighting**: The numbers and text labels will intelligently dim into a muted grey if a particular subsystem (Automation or Upscaler) is currently stopped or not configured, ensuring users instantly know what's active.
+- **Dedicated Folder Navigation**: Replaced the generic "Open Folder" button with dedicated `📁 Download Folder` and `📁 Upscale Folder` buttons, allowing one-click access directly to the specific image outputs right from the taskbar popup.
+
 ### Update: 2026-04-29 - Log Record Export & Loading Management
 - **Universal 'Load Record' Integration**: Added a new `📂 Load Record` button across the entire Account Health suite (Analysis, Insights, and Debugging tabs). This allows users to import and analyze historical `.log` files exported by the system.
 - **Save Record Logic**: Implemented a `💾 Save Record` feature in the Automation Cycle Management tab. Users can now select specific automation cycles and export them to a standalone `.log` file with custom filenames based on the cycle's start timestamp.
