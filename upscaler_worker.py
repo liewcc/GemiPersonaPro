@@ -604,6 +604,19 @@ def main():
                 if success:
                     status_data["history"][filename]["status"] = "success"
                     save_status()
+                    
+                    try:
+                        import config_utils
+                        lookup_data = config_utils.load_login_lookup()
+                        for item in lookup_data:
+                            if item.get("username", "").split('@')[0].lower() == args.profile.split('@')[0].lower():
+                                current_imgs = int(item.get("session_images", "0"))
+                                item["session_images"] = str(current_imgs + 1)
+                                break
+                        config_utils.save_login_lookup(lookup_data)
+                    except Exception as l_err:
+                        log(f"  -> ⚠️ Failed to update login lookup stats: {l_err}")
+
                     idx += 1
                     if base_headless and current_headless != base_headless:
                         log("✅ Succeeded. Reverting to headless mode.")
