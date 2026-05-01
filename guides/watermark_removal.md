@@ -59,4 +59,4 @@ To fully remove Google's embedded digital fingerprint, you must perform a **comp
 > These redraw methods fundamentally change the pixel distribution of the image, which is the only way to sever the statistical correlation that constitutes Google's digital watermark.
 
 ---
-*Next Step: Learn how to manage these files on the [🛡️ Asset Sanitizer Page](./asset_sanitizer.md).*
+*Next Step: Learn how to manage these files on the [🛠️ Utilities Page](./utilities.md).*

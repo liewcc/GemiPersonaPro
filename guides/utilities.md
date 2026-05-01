@@ -1,6 +1,6 @@
 # 🛠️ Utilities Page Guide
 
-The **Utilities** page is your dedicated workstation for both auditing/managing your generated assets and organizing your Gemini "Gems" to ensure character consistency. This page is divided into two main tabs: **Asset Sanitizer** and **Gems Bookmark**.
+The **Utilities** page is your dedicated workstation for auditing and managing generated assets, organizing Gemini "Gems", and performing post-generation enhancements like high-resolution upscaling. This page is divided into three main tabs: **Asset Sanitizer**, **Gems Bookmark**, and **4K Upscaler**.
 
 ---
 
@@ -29,7 +29,7 @@ While automation handles most cleaning, the Asset Sanitizer gives you ultimate c
 
 ### 4. Batch Processing
 You can trigger batch operations for entire sequences:
-- **Resequence & Export**: Automatically copy and rename all images into a new sibling folder, sequentially numbered starting from 1 (e.g. `001.png`, `002.png`). Padding is detected automatically, and the `processed/` subfolder is synchronized if present.
+- **Resequence & Export**: Automatically copy and rename all images into a new sibling folder, sequentially numbered starting from 1. Padding is detected automatically, and the `processed/` subfolder is synchronized.
 - **Range Control**: Specify a start and end image number (e.g., `1` to `50`).
 - **Batch Clean**: Click to run the AI sanitizer across the entire selected range.
 
@@ -58,4 +58,24 @@ Each saved bookmark has three main controls:
 - **Delete**: Remove the bookmark from your lab.
 
 ---
-*Tip: Use the Utilities page to do final quality control on your assets, and organize your Gems to switch between different "AI actors" seamlessly!*
+
+## 🖼️ Tab 3: 4K Upscaler
+
+The **4K Upscaler** is a dedicated background tool designed to enhance the resolution of your generated images using Gemini's native upscaling capabilities.
+
+### 1. Automated Workflow
+The upscaler operates autonomously via a dedicated background worker, ensuring your Streamlit UI remains responsive:
+- **Input & Output**: Select the directory containing the images you want to upscale, and the system will automatically suggest an `/Upscale` output folder.
+- **Headless Operation**: Runs entirely in the background (hidden browser) by default, but can be toggled to visible mode for debugging.
+
+### 2. Advanced Control Logic
+The upscaler includes built-in safeguards for reliability:
+- **🗑️ Delete Activity**: Automatically clean your Gemini history ("Last hour", "Last day", etc.) either before starting or after the upscaling job finishes. This prevents your Gemini history from becoming cluttered with upscaling requests.
+- **🔄 Max Redo Limit**: If the AI refuses to upscale an image, the system will attempt to click "Try Again". If it exceeds your defined retry limit, it will safely skip the image and continue to the next one to prevent the automation from stalling.
+
+### 3. Real-Time Monitoring
+- **Progressive Log**: Watch the background engine's live terminal output directly within the dashboard.
+- **Status Indicators**: The file list instantly reflects whether an image is Processing (`🔄`), Skipped (`💨`), Failed (`❌`), or Successfully Completed (`✅`).
+
+---
+*Tip: Use the Utilities page to do final quality control on your assets, organize your Gems to switch between different "AI actors" seamlessly, and finalize your work with the 4K Upscaler!*
