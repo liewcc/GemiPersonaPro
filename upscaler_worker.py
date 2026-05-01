@@ -141,6 +141,7 @@ def main():
     parser.add_argument("--delete-trigger", default="After Stop", help="When to trigger deletion: 'After Start' or 'After Stop'")
     parser.add_argument("--delete-only", action="store_true", help="Only perform delete activity, then exit (no image processing)")
     parser.add_argument("--max-redo", type=int, default=0, help="Maximum number of redos per image before skipping")
+    parser.add_argument("--start-index", type=int, default=1, help="Starting file index for upscaling (1-based)")
     args = parser.parse_args()
 
     # --- Delete-Only Mode: standalone delete activity then exit ---
@@ -396,7 +397,7 @@ def main():
                 page.wait_for_timeout(3000)
 
             files_to_process = files.copy()
-            idx = 0
+            idx = max(0, args.start_index - 1)
             total = len(files)
             
             status_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "upscaler_status.json"))

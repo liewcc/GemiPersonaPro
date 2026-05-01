@@ -38,6 +38,9 @@ def render_upscaler_tab():
     if "up_max_redo_enabled" not in st.session_state: st.session_state.up_max_redo_enabled = upscale_cfg.get("max_redo_enabled", False)
     if "up_max_redo" not in st.session_state: st.session_state.up_max_redo = upscale_cfg.get("max_redo", 3)
 
+    # Start Index state from config
+    if "up_start_index" not in st.session_state: st.session_state.up_start_index = upscale_cfg.get("start_index", 1)
+
     def _save_all_upscaler_settings():
         save_config({"upscaler": {
             "profile": st.session_state.up_profile,
@@ -51,7 +54,8 @@ def render_upscaler_tab():
                 "trigger": st.session_state.up_del_trigger
             },
             "max_redo_enabled": st.session_state.up_max_redo_enabled,
-            "max_redo": st.session_state.up_max_redo
+            "max_redo": st.session_state.up_max_redo,
+            "start_index": st.session_state.up_start_index
         }})
 
     col1, col2 = st.columns([1.5, 1])
@@ -152,17 +156,24 @@ def render_upscaler_tab():
                 _save_all_upscaler_settings()
                 st.rerun()
 
-            # --- Max Redo Limit Controls ---
-            redo_col_toggle, redo_col_input = st.columns([1.2, 2])
+            # --- Max Redo Limit & Start Index Controls ---
+            redo_col_toggle, redo_col_input, start_label_col, start_input_col = st.columns([1.2, 0.8, 0.6, 0.4])
             with redo_col_toggle:
                 redo_enabled_w = st.toggle("🔄 Max Redo Limit", value=st.session_state.up_max_redo_enabled, help="Automatically skip to the next image if Gemini refuses the prompt repeatedly.")
             
             with redo_col_input:
                 redo_val_w = st.number_input("Max Redos per Image", min_value=1, max_value=20, value=st.session_state.up_max_redo, step=1, label_visibility="collapsed", disabled=not redo_enabled_w)
 
-            if redo_enabled_w != st.session_state.up_max_redo_enabled or redo_val_w != st.session_state.up_max_redo:
+            with start_label_col:
+                st.markdown("<div style='margin-top: 4px; text-align: right;' title='Starting file number (1-based index)'>Start File No.</div>", unsafe_allow_html=True)
+
+            with start_input_col:
+                start_idx_w = st.number_input("Start File No.", min_value=1, value=st.session_state.up_start_index, step=1, help="Starting file number (1-based index)", label_visibility="collapsed")
+
+            if redo_enabled_w != st.session_state.up_max_redo_enabled or redo_val_w != st.session_state.up_max_redo or start_idx_w != st.session_state.up_start_index:
                 st.session_state.up_max_redo_enabled = redo_enabled_w
                 st.session_state.up_max_redo = redo_val_w
+                st.session_state.up_start_index = start_idx_w
                 _save_all_upscaler_settings()
                 st.rerun()
 
@@ -203,6 +214,8 @@ def render_upscaler_tab():
                         # Pass max redo args
                         if redo_enabled_w:
                             cmd.extend(["--max-redo", str(redo_val_w)])
+                        
+                        cmd.extend(["--start-index", str(start_idx_w)])
                         
                         try:
                             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
