@@ -32,6 +32,14 @@ else:
 
 # Fetch initial data for dropdowns and sidebar (non-fragmented)
 # Note: Full data fetching for charts will happen inside fragments
+
+@st.cache_data(show_spinner=False)
+def get_cached_cycles(log_path, mtime):
+    return parse_engine_cycles()
+
+def _get_current_mtime():
+    return os.path.getmtime(LOG_PATH) if os.path.exists(LOG_PATH) else 0
+
 summary_all, all_events_list, log_accs = parse_account_health(target_account="ALL_EVENTS", login_data=login_data)
 
 # Extract unique accounts for the view mode dropdown
@@ -419,7 +427,7 @@ with tab1:
         _last_cycle_end_idx = None
         _show_last_cycle_outer = st.session_state.get("widget_show_last_cycle", config.get("health_show_last_cycle", False))
         if _show_last_cycle_outer:
-            _outer_cycles = parse_engine_cycles()
+            _outer_cycles = get_cached_cycles(LOG_PATH, _get_current_mtime())
             if _outer_cycles:
                 _lc = _outer_cycles[-1]
                 _last_cycle_start_idx = _lc.get('start_idx')
@@ -648,7 +656,19 @@ with tab2:
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>AUTOMATION CYCLE MANAGEMENT</p>", unsafe_allow_html=True)
         st.write("This tool analyzes `engine.log` for complete automation cycles (Start -> Stop). **Continue Session** triggers are grouped within their original parent cycle.")
 
-        cycles = parse_engine_cycles()
+        editor_key = "automation_cycle_editor"
+        is_editing = False
+        if editor_key in st.session_state:
+            edits = st.session_state[editor_key].get("edited_rows", {})
+            if any(v.get("Select") for v in edits.values()):
+                is_editing = True
+
+        if not is_editing:
+            cycles = get_cached_cycles(LOG_PATH, _get_current_mtime())
+            st.session_state["cached_cycle_data"] = cycles
+        else:
+            cycles = st.session_state.get("cached_cycle_data", get_cached_cycles(LOG_PATH, _get_current_mtime()))
+
         if not cycles:
             st.info("No complete cycles found in the log.")
         else:
@@ -726,10 +746,20 @@ with tab2:
                 col_del, col_save = st.columns(2)
                 with col_del:
                     if st.button("🗑️ Delete Selected Cycles", type="primary", width="stretch"):
-                        cycles_to_del = [{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()]
+                        cycles_to_del = sorted([{'start_idx': row["_start_idx"], 'end_idx': row["_end_idx"]} for _, row in valid_rows.iterrows()], key=lambda x: x['start_idx'])
                         with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
-                        to_keep = [line for i, line in enumerate(lines) if not any(c['start_idx'] <= i <= c['end_idx'] for c in cycles_to_del)]
+                        
+                        to_keep = []
+                        current_idx = 0
+                        for c in cycles_to_del:
+                            to_keep.extend(lines[current_idx:c['start_idx']])
+                            current_idx = c['end_idx'] + 1
+                        to_keep.extend(lines[current_idx:])
+                        
                         with open(LOG_PATH, "w", encoding="utf-8") as f: f.writelines(to_keep)
+                        st.cache_data.clear()
+                        if editor_key in st.session_state:
+                            del st.session_state[editor_key]
                         st.success("Deleted."); st.rerun()
                 with col_save:
                     if st.button("💾 Save Record", width="stretch"):
@@ -742,7 +772,7 @@ with tab3:
     def _performance_insights_fragment():
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 2px; text-transform: uppercase;'>CYCLE PERFORMANCE INSIGHTS</p>", unsafe_allow_html=True)
         
-        cycles = parse_engine_cycles()
+        cycles = get_cached_cycles(LOG_PATH, _get_current_mtime())
         _, all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=load_login_lookup())
         
         cycle_opts = [f"Cycle {i+1} ({c.get('full_start_time', c['start_time_str'])} - {c.get('stop_time_str', 'Ongoing...')})" for i, c in enumerate(cycles)]
