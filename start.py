@@ -270,31 +270,42 @@ with st.status(_label, expanded=True, state=_state) as _s:
         msg = "Already in memory" if st.session_state.step_lama_skip else "Loaded successfully"
         st.write(f"✅ LaMa AI Model: {msg}")
 
-        # Inline Update Status
-        if not st.session_state.update_info["checked"]:
-            st.write("🔍 Checking for updates…")
-        elif st.session_state.update_info["available"]:
-            st.markdown(f"✨ **Update Available:** `{st.session_state.update_info['remote']}` is ready.")
-            if st.button("Update Repository Now", width="stretch", type="primary"):
-                with st.status("Updating repository...", expanded=True) as s:
-                    st.write("Checking for local changes...")
-                    status_res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
-                    if status_res.stdout.strip():
-                        s.update(label="❌ Update Aborted", state="error")
-                        st.warning("Please commit or stash changes before updating.")
-                    else:
-                        st.write("Pulling changes...")
-                        pull_res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
-                        if pull_res.returncode == 0:
-                            s.update(label="✅ Updated", state="complete")
-                            st.success("Updated! Restarting...")
-                            time.sleep(1.5)
-                            st.rerun()
+        # Inline Update Status — uses a polling fragment so the version
+        # hash is rendered as soon as the background thread finishes,
+        # without requiring a full page reload.
+        @st.fragment(run_every=1 if not st.session_state.update_info["checked"] else None)
+        def _render_update_status():
+            info = st.session_state.update_info
+            if not info["checked"]:
+                st.write("🔍 Checking for updates…")
+                return
+            if info["available"]:
+                st.markdown(f"✨ **Update Available:** `{info['remote']}` is ready.")
+                if st.button("Update Repository Now", width="stretch", type="primary", key="update_repo_btn"):
+                    with st.status("Updating repository...", expanded=True) as s:
+                        st.write("Checking for local changes...")
+                        status_res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+                        if status_res.stdout.strip():
+                            s.update(label="❌ Update Aborted", state="error")
+                            st.warning("Please commit or stash changes before updating.")
                         else:
-                            s.update(label="❌ Failed", state="error")
-                            st.error(pull_res.stderr)
-        else:
-            st.write(f"✅ Version: `{st.session_state.update_info['local']}` (Latest)")
+                            st.write("Pulling changes...")
+                            pull_res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
+                            if pull_res.returncode == 0:
+                                s.update(label="✅ Updated", state="complete")
+                                st.success("Updated! Restarting...")
+                                time.sleep(1.5)
+                                st.rerun()
+                            else:
+                                s.update(label="❌ Failed", state="error")
+                                st.error(pull_res.stderr)
+            else:
+                local_ver = info.get("local", "")
+                if local_ver:
+                    st.write(f"✅ Version: `{local_ver}` (Latest)")
+                else:
+                    st.write("✅ Version: up to date (git unavailable)")
+        _render_update_status()
 
     # Execute the next pending step (one per rerun — advance via st.rerun())
     if not st.session_state.step_engine_done:
