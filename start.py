@@ -167,20 +167,42 @@ def _kick_lama_thread():
 
 def _check_updates_worker():
     """Background worker to check for git updates."""
+    import shutil
+    
+    # Locate git executable robustly — Streamlit's venv may have a stripped PATH.
+    _git = shutil.which("git")
+    if not _git:
+        for candidate in [
+            r"C:\Program Files\Git\cmd\git.exe",
+            r"C:\Program Files\Git\bin\git.exe",
+            r"C:\Program Files (x86)\Git\cmd\git.exe",
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Git\cmd\git.exe"),
+        ]:
+            if os.path.isfile(candidate):
+                _git = candidate
+                break
+    
+    if not _git:
+        # git truly not found — mark as checked but leave local/remote empty
+        st.session_state.update_info["checked"] = True
+        return
+    
+    _cwd = os.path.abspath(os.path.dirname(__file__))
+    
     try:
         # 1. Get local commit
-        res_local = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5)
+        res_local = subprocess.run([_git, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=5, cwd=_cwd)
         local_hash = res_local.stdout.strip() if res_local.returncode == 0 else ""
         
         # 2. Fetch remote (assumes 'origin' and 'main')
-        subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, text=True, timeout=10)
+        subprocess.run([_git, "fetch", "origin", "main"], capture_output=True, text=True, timeout=10, cwd=_cwd)
         
         # 3. Get remote commit
-        res_remote = subprocess.run(["git", "rev-parse", "origin/main"], capture_output=True, text=True, timeout=5)
+        res_remote = subprocess.run([_git, "rev-parse", "origin/main"], capture_output=True, text=True, timeout=5, cwd=_cwd)
         remote_hash = res_remote.stdout.strip() if res_remote.returncode == 0 else ""
         
         # 4. Check if we are behind remote
-        res_behind = subprocess.run(["git", "rev-list", "--count", "HEAD..origin/main"], capture_output=True, text=True, timeout=5)
+        res_behind = subprocess.run([_git, "rev-list", "--count", "HEAD..origin/main"], capture_output=True, text=True, timeout=5, cwd=_cwd)
         is_behind = int(res_behind.stdout.strip()) > 0 if res_behind.returncode == 0 else False
         
         if local_hash and remote_hash:
@@ -189,6 +211,14 @@ def _check_updates_worker():
                 "available": is_behind,
                 "local": local_hash[:7],
                 "remote": remote_hash[:7]
+            }
+        elif local_hash:
+            # Remote fetch failed (no internet) — still show local version
+            st.session_state.update_info = {
+                "checked": True,
+                "available": False,
+                "local": local_hash[:7],
+                "remote": ""
             }
         else:
             st.session_state.update_info["checked"] = True
