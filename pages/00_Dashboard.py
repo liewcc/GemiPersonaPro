@@ -20,6 +20,7 @@ import os
 import threading
 import psutil
 import pandas as pd
+from processing_utils import open_file_foreground
 
 # Fix for Windows asyncio
 if sys.platform == 'win32':
@@ -959,7 +960,7 @@ def render_notifier_button():
         if st.button("🔕 Start Notifier", width="stretch", key="btn_start_notifier"):
             vbs = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "start_notifier.vbs")
             if os.path.exists(vbs):
-                os.startfile(vbs)
+                open_file_foreground(vbs)
             time.sleep(1)
             st.rerun()
 
@@ -1296,7 +1297,7 @@ with col_view:
     if st.button("📂 View Download Folder", width='stretch', help="Open the save directory in File Explorer"):
         save_dir = st.session_state.config.get("save_dir", "")
         if save_dir and os.path.isdir(save_dir):
-            os.startfile(save_dir)
+            open_file_foreground(save_dir)
         else:
             st.warning("Folder not set.")
 with col_loop_btn:
@@ -1507,7 +1508,7 @@ def render_image_gallery():
                     st.caption(filename)
                     bt_c1, bt_c2, bt_c3, bt_c4 = st.columns(4)
                     with bt_c1:
-                        if st.button("👁️", key=f"v_{filename}", help="View image in default viewer"): os.startfile(file_path)
+                        if st.button("👁️", key=f"v_{filename}", help="View image in default viewer"): open_file_foreground(file_path)
                     with bt_c2:
                         if st.button("📄", key=f"i_{filename}", help="View image metadata"): show_dash_metadata(file_path)
                     with bt_c3:

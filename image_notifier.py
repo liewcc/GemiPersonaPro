@@ -8,6 +8,24 @@ import tkinter as tk
 import pystray
 from PIL import Image
 import config_utils
+import ctypes
+
+def open_file_foreground(file_path):
+    """Opens a file or directory and ensures it comes to the foreground."""
+    abs_path = os.path.abspath(file_path)
+    if os.name == 'nt':
+        try:
+            # Simulate Alt key press to unlock focus permission on Windows
+            ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)
+        except: pass
+        os.startfile(abs_path)
+    else:
+        if hasattr(os, 'startfile'): os.startfile(abs_path)
+        else:
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            subprocess.Popen([opener, abs_path])
 
 app_running = True
 current_dir_display = ""
@@ -160,12 +178,12 @@ def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running,
 
     def _open_auto():
         if auto_folder:
-            os.startfile(auto_folder)
+            open_file_foreground(auto_folder)
         _manual_exit()
 
     def _open_upscale():
         if upscale_folder:
-            os.startfile(upscale_folder)
+            open_file_foreground(upscale_folder)
         _manual_exit()
 
     has_folder_btn = False

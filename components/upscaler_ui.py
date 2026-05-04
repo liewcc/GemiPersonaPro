@@ -7,6 +7,7 @@ import sys
 import tkinter as tk
 from tkinter import filedialog
 from config_utils import load_config, save_config, load_login_lookup
+from processing_utils import open_file_foreground
 
 def select_folder():
     """Opens a native Windows folder picker."""
@@ -91,7 +92,7 @@ def render_upscaler_tab():
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("📂", key="up_in_view_btn", help="Open Folder", width="stretch"):
                     if input_w and os.path.exists(input_w):
-                        os.startfile(input_w)
+                        open_file_foreground(input_w)
 
             # Auto-fill output directory if input changed
             if input_w != st.session_state.up_input and input_w:
@@ -111,7 +112,7 @@ def render_upscaler_tab():
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("📂", key="up_out_view_btn", help="Open Folder", width="stretch"):
                     if output_w and os.path.exists(output_w):
-                        os.startfile(output_w)
+                        open_file_foreground(output_w)
 
             prompt_w = st.text_area("Upscale Prompt", value=st.session_state.up_prompt, height=100)
             

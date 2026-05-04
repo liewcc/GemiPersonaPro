@@ -43,6 +43,7 @@ from config_utils import load_config, save_config
 from api_client import EngineClient
 import shared_state
 import base64
+from processing_utils import open_file_foreground
 
 def natural_sort_key(s):
     """Helper for natural alphanumeric string sorting."""
@@ -1256,7 +1257,7 @@ with tab_san:
                         btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns(5)
                         with btn_col1:
                             if st.button("👁️", key="v_btn", width="stretch", help="View image"):
-                                os.startfile(file_path)
+                                open_file_foreground(file_path)
                         with btn_col2:
                             if st.button("📝", key="e_btn", width="stretch", help="Edit metadata"):
                                 # Increment version → guarantees fresh widget keys on new dialog open
@@ -1315,7 +1316,7 @@ with tab_san:
                                     b1, b2, b3, b4, b5 = st.columns(5)
                                     with b1:
                                         if st.button("👁️", key=f"v_{fname}", width="stretch", help="View image"):
-                                            os.startfile(fpath)
+                                            open_file_foreground(fpath)
                                     with b2:
                                         if st.button("📝", key=f"e_{fname}", width="stretch", help="Edit metadata"):
                                             # Increment version → guarantees fresh widget keys on new dialog open

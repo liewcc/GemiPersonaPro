@@ -85,3 +85,35 @@ def save_with_metadata(p_img, original_img, output_path, extra_meta=None):
             
     # No EXIF preservation to avoid unnecessary elements.
     p_img.save(output_path, "PNG", pnginfo=meta)
+
+def open_file_foreground(file_path):
+    """
+    Opens a file or directory on Windows and attempts to ensure the window comes to the foreground.
+    Bypasses Windows focus-stealing prevention using ASFW_ANY.
+    """
+    import os
+    import subprocess
+    import ctypes
+    
+    abs_path = os.path.abspath(file_path)
+    
+    if os.name == 'nt':
+        # Simulate Alt key press to "unlock" foreground focus permission on Windows.
+        # This is a common hack to allow a background process (like Streamlit) 
+        # to launch a window that takes the foreground.
+        try:
+            ctypes.windll.user32.keybd_event(0x12, 0, 0, 0) # VK_MENU (Alt)
+            ctypes.windll.user32.keybd_event(0x12, 0, 2, 0)
+            ctypes.windll.user32.AllowSetForegroundWindow(-1) # ASFW_ANY
+        except Exception:
+            pass
+            
+        os.startfile(abs_path)
+    else:
+        # Cross-platform fallback
+        if hasattr(os, 'startfile'):
+            os.startfile(abs_path)
+        else:
+            import sys
+            opener = "open" if sys.platform == "darwin" else "xdg-open"
+            subprocess.Popen([opener, abs_path])

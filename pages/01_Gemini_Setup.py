@@ -11,6 +11,7 @@ import json
 import os
 import threading
 import psutil
+from processing_utils import open_file_foreground
 import tkinter as tk
 from tkinter import filedialog
 from config_utils import load_config as load_cfg_disk, save_config as save_cfg_disk
@@ -469,7 +470,7 @@ with st.sidebar:
         if st.button("👁️ View Last Capture", width="stretch"):
             abs_path = os.path.abspath(st.session_state.last_screenshot)
             try:
-                os.startfile(abs_path)
+                open_file_foreground(abs_path)
             except Exception as e:
                 add_log(f"Error opening viewer: {e}")
     
