@@ -16,7 +16,7 @@ from health_parser import LOG_PATH as _DEFAULT_LOG_PATH
 from style_utils import apply_premium_style, render_dashboard_header
 
 # --- Page Setup ---
-st.set_page_config(page_title="GemiPersona Pro | Account Health", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="GemiPersona Pro | Account Health", page_icon="sys_img/icon.png", layout="wide")
 apply_premium_style()
 
 # --- Page Data Initialization ---

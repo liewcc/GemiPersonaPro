@@ -3,12 +3,31 @@ import subprocess
 import time
 import threading
 import json
+import asyncio
 import urllib.request
 import tkinter as tk
 import pystray
 from PIL import Image
 import config_utils
 import ctypes
+
+# Suppress the harmless Windows asyncio cleanup noise:
+# "ConnectionResetError: [WinError 10054] An existing connection was forcibly closed"
+# This occurs when a remote HTTP server (FastAPI / Streamlit) closes its socket
+# abruptly and the ProactorEventLoop tries to call sock.shutdown() on an already-
+# closed socket.  It is a known CPython bug and has zero functional impact.
+def _silence_proactor_pipe_errors(loop, context):
+    exc = context.get('exception')
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+        return  # Suppress silently
+    loop.default_exception_handler(context)
+
+try:
+    _loop = asyncio.get_event_loop()
+except RuntimeError:
+    _loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop)
+_loop.set_exception_handler(_silence_proactor_pipe_errors)
 
 def open_file_foreground(file_path):
     """Opens a file or directory and ensures it comes to the foreground."""

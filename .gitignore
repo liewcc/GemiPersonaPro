@@ -28,3 +28,4 @@ rule.md
 # Local sensitive logs and configuration files
 *.json
 *.log
+upscaler_session_sandbox/

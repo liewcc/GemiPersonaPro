@@ -59,7 +59,7 @@ def select_multiple_files():
     return list(paths)
 
 # --- Page Config ---
-st.set_page_config(page_title="GemiPersona | HOME", page_icon="sys_img/logo.png", layout="wide")
+st.set_page_config(page_title="GemiPersona | HOME", page_icon="sys_img/icon.png", layout="wide")
 apply_premium_style()
 
 if st.session_state.get("current_page") != "Gemini_Setup":

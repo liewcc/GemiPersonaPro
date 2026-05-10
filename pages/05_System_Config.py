@@ -10,7 +10,7 @@ from config_utils import load_config as load_cfg_disk, save_config as save_cfg_d
 
 
 # --- Page Config ---
-st.set_page_config(page_title="GemiPersona | SYSTEM CONFIG", page_icon="sys_img/logo.png", layout="wide")
+st.set_page_config(page_title="GemiPersona | SYSTEM CONFIG", page_icon="sys_img/icon.png", layout="wide")
 apply_premium_style()
 
 # --- Data Loading Functions ---

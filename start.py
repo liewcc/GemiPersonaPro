@@ -61,7 +61,7 @@ def get_refiner():
 
 st.set_page_config(
     page_title="GemiPersona | Launcher",
-    page_icon="sys_img/logo.png",
+    page_icon="sys_img/icon.png",
     layout="centered",
     initial_sidebar_state="collapsed",
 )

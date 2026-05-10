@@ -19,7 +19,7 @@ nest_asyncio.apply()
 # ── Page Config ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="GemiPersona | API Generator (beta)",
-    page_icon="sys_img/logo.png",
+    page_icon="sys_img/icon.png",
     layout="wide",
 )
 apply_premium_style()
