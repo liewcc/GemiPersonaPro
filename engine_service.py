@@ -14,6 +14,24 @@ from config_utils import load_config, save_config
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
+# Suppress the harmless Windows asyncio cleanup noise printed to stderr:
+# "ConnectionResetError: [WinError 10054] An existing connection was forcibly closed"
+# This fires when a Streamlit/browser client closes its socket and the
+# ProactorEventLoop tries to call sock.shutdown() on the already-closed handle.
+# It is a well-known CPython / uvicorn + Windows bug with zero functional impact.
+def _silence_proactor_pipe_errors(loop, context):
+    exc = context.get('exception')
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+        return  # Suppress silently
+    loop.default_exception_handler(context)
+
+try:
+    _loop = asyncio.get_event_loop()
+except RuntimeError:
+    _loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop)
+_loop.set_exception_handler(_silence_proactor_pipe_errors)
+
 app = FastAPI(title="GemiPersona Engine Service")
 engine = BrowserEngine()
 
@@ -1483,4 +1501,6 @@ async def process_images(req: ProcessRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
+    # The _silence_proactor_pipe_errors handler is already installed on the
+    # event loop above (at module load time), so uvicorn will inherit it.
     uvicorn.run(app, host="127.0.0.1", port=8000)
