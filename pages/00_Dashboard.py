@@ -1505,8 +1505,26 @@ def render_image_gallery():
                         st.image(file_path, width="stretch")
                     except Exception:
                         st.caption("⏳ Loading...")
-                    st.caption(filename)
-                    bt_c1, bt_c2, bt_c3, bt_c4 = st.columns(4)
+                    try:
+                        fsize = os.path.getsize(file_path)
+                        if fsize >= 1024 * 1024:
+                            fsize_str = f"{fsize / (1024*1024):.1f} MB"
+                        elif fsize >= 1024:
+                            fsize_str = f"{fsize / 1024:.1f} KB"
+                        else:
+                            fsize_str = f"{fsize} B"
+                    except:
+                        fsize_str = ""
+                    st.markdown(
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                        f"font-size:0.8em;color:#6b7280;line-height:1.4;padding:2px 0;'>"
+                        f"<span style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;' title='{filename}'>{filename}</span>"
+                        f"<span style='flex-shrink:0;margin-left:4px;color:#9ca3af;'>{fsize_str}</span>"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+                    st.markdown("<div style='margin-top:-0.5rem;'></div>", unsafe_allow_html=True)
+                    bt_c1, bt_c2, bt_c3, bt_c4, bt_c5 = st.columns(5)
                     with bt_c1:
                         if st.button("👁️", key=f"v_{filename}", help="View image in default viewer"): open_file_foreground(file_path)
                     with bt_c2:
@@ -1517,6 +1535,35 @@ def render_image_gallery():
                             if is_auto_running and st.session_state.auto_remove_wm: show_model_busy_warning_dialog()
                             else: manual_watermark_removal_dialog(os.path.join(save_dir, filename) if os.path.exists(os.path.join(save_dir, filename)) else file_path)
                     with bt_c4:
+                        if st.button("📦", key=f"m_{filename}", help="Move image to another folder"):
+                            import tkinter as tk
+                            from tkinter import filedialog
+                            import shutil
+                            root = tk.Tk()
+                            root.withdraw()
+                            root.wm_attributes('-topmost', True)
+                            target_dest_dir = filedialog.askdirectory(title="Select Destination Folder", initialdir=save_dir)
+                            root.destroy()
+                            
+                            if target_dest_dir:
+                                try:
+                                    src_img = os.path.join(save_dir, filename)
+                                    src_proc = os.path.join(save_dir, "processed", filename)
+                                    
+                                    dst_img = os.path.join(target_dest_dir, filename)
+                                    dst_proc_dir = os.path.join(target_dest_dir, "processed")
+                                    dst_proc = os.path.join(dst_proc_dir, filename)
+                                    
+                                    if os.path.exists(src_img):
+                                        shutil.move(src_img, dst_img)
+                                    if os.path.exists(src_proc):
+                                        os.makedirs(dst_proc_dir, exist_ok=True)
+                                        shutil.move(src_proc, dst_proc)
+                                        
+                                    st.toast(f"Moved {filename}"); time.sleep(0.5); st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to move: {e}")
+                    with bt_c5:
                         if st.button("🗑️", key=f"d_{filename}", help="Delete image and generated files"):
                             for p in [os.path.join(save_dir, filename), os.path.join(save_dir, "processed", filename)]:
                                 if os.path.exists(p): send2trash.send2trash(os.path.abspath(os.path.normpath(p)))
