@@ -4,6 +4,10 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-15 - Account Health Chart Enhancements
+- **Cycle Performance Insights Y-Axis Toggle**: Added a new radio button to the "Cycle Performance Insights" tab, allowing users to instantly toggle the Y-axis of the "Account Switch Duration Chart" between **Duration** (minutes) and **Images Downloaded** counts.
+- **Dynamic Data Formatting**: The chart dynamically updates based on the selected Y-axis. The data labels above the bars have been removed for a cleaner look, while tooltips continue to provide full context on duration and image counts.
+
 ### Update: 2026-05-01 - 4K Upscaler Workflow & Reliability Enhancements
 - **Delete Activity Integration**: Added a dedicated `🗑️ Delete Activity` control panel to the 4K Upscaler dashboard. Users can now automatically delete Gemini activity history ("Last hour", "Last day", or "All time") directly from the upscaler workflow.
 - **Trigger Timing Control**: The activity deletion can be configured to execute either immediately `After Start` (cleaning history before processing begins) or `After Stop` (running a dedicated, lightweight cleanup process after the main worker is stopped), ensuring no interference with the actual upscaling tasks.

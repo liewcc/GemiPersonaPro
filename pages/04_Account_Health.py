@@ -785,10 +785,12 @@ with tab3:
                 del st.session_state["tab3_n_accounts"]
 
         with st.container(border=True):
-            c1, c2, c3, c_load = st.columns([1.4, 0.7, 0.4, 0.5])
+            c1, c2, c_rad, c3, c_load = st.columns([1.0, 0.7, 1.0, 0.4, 0.5])
             with c1:
                 selected_cycle_str = st.selectbox("Select Cycle", list(reversed(cycle_opts)), key="tab3_cycle_select", on_change=_reset_tab3_slider)
                 selected_cycle_id = int(selected_cycle_str.split(" ")[1])
+            with c_rad:
+                st.radio("Y-Axis", ["Duration", "Images Download"], key="tab3_y_axis", horizontal=True)
             with c3:
                 st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
                 if st.button("Refresh", icon="🔄", width="stretch", key="tab3_refresh_btn"):
@@ -841,24 +843,22 @@ with tab3:
         
         seq_order = [d["Seq"] for d in chart_data]
         
+        y_axis_choice = st.session_state.get("tab3_y_axis", "Duration")
+        if y_axis_choice == "Images Download":
+            y_col = 'Images:Q'
+            y_title = 'Images Downloaded'
+        else:
+            y_col = 'Duration (Minutes):Q'
+            y_title = 'Duration (minutes)'
+        
         bar = alt.Chart(df_chart).mark_bar().encode(
             x=alt.X('Seq:O', title="Seq", sort=seq_order, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y('Duration (Minutes):Q', title="Duration (minutes)"),
+            y=alt.Y(y_col, title=y_title),
             color=alt.Color('Color:N', scale=alt.Scale(domain=["No Image (Base)", "No Image (Light)", "With Image (Base)", "With Image (Light)"], range=["#4f8bf9", "#a0c0ff", "#2ecc71", "#a0e6b5"]), legend=alt.Legend(title=None, orient='bottom', columns=4)),
             tooltip=['Display', 'Account', 'Duration', 'Events', 'Images', 'Refused', 'Reset']
         )
-        text = alt.Chart(df_chart).mark_text(
-            align='center',
-            baseline='bottom',
-            dy=-3,
-            fontSize=11,
-            fontWeight='bold'
-        ).encode(
-            x=alt.X('Seq:O', sort=seq_order),
-            y=alt.Y('Duration (Minutes):Q'),
-            text=alt.Text('Images:Q')
-        )
-        chart = alt.layer(bar, text).properties(height=400).interactive(bind_y=False)
+        
+        chart = bar.properties(height=400).interactive(bind_y=False)
         st.altair_chart(chart, width="stretch")
         st.dataframe(df_chart, column_config={"Duration (Minutes)": None, "Color": None}, width="stretch", hide_index=True)
 
