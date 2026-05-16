@@ -1062,6 +1062,7 @@ with col1:
                     root.destroy()
                     if picked:
                         st.session_state.meta_file_path = picked
+                        st.session_state["meta_file_path_widget"] = picked
                         st.rerun()
             with meta_col_apply:
                 if st.button("✅ Apply", key="meta_apply_btn", width="stretch", type="primary"):
