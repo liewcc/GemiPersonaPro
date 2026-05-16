@@ -1,10 +1,10 @@
 """
-health_window.py — Standalone Account Health Analysis window.
+monitor_window.py — Standalone Monitor window.
 
 Launched as a SEPARATE PROCESS by image_notifier.py via subprocess.Popen
 so that Tkinter's Tcl interpreter is completely isolated from the notifier
 popup's Tk() instance.  This prevents the PopQuitMessage cross-contamination
-that caused the health window to exit whenever the popup was dismissed.
+that caused the monitor window to exit whenever the popup was dismissed.
 """
 
 import os, sys, json, socket, subprocess, threading, tkinter as tk
@@ -255,7 +255,7 @@ def main():
 
     # ── build window ─────────────────────────────────────────────────────────
     win = tk.Tk()
-    win.title('Account Health — GemiPersona')
+    win.title('Monitor — GemiPersona')
     win.configure(bg=C_BORDER)
     win.resizable(False, False)
     win.attributes('-topmost', True)
@@ -273,7 +273,7 @@ def main():
     # title bar
     tbar = tk.Frame(body, bg=C_BG, padx=14, pady=8)
     tbar.pack(fill='x')
-    tk.Label(tbar, text='📊  Account Health Analysis', bg=C_BG, fg=C_TEXT,
+    tk.Label(tbar, text='📊  Monitor Analysis', bg=C_BG, fg=C_TEXT,
              font=('Segoe UI Semibold', 10)).pack(side='left')
 
     def _close():

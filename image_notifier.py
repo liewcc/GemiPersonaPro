@@ -53,7 +53,6 @@ current_upscale_dir = ""
 tray_icon = None
 _status_popup_open   = False
 _download_popup_open = False
-_disable_auto_popup  = False
 
 # Resolve icon path relative to this script's location
 _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -83,20 +82,24 @@ def load_notifier_state():
                 data = json.load(f)
                 return {
                     'auto': set(data.get('last_ack_auto', data.get('last_ack_files', []))),
-                    'upscale': set(data.get('last_ack_upscale', []))
+                    'upscale': set(data.get('last_ack_upscale', [])),
+                    'disable_auto_popup': data.get('disable_auto_popup', False)
                 }
         except:
             pass
-    return {'auto': set(), 'upscale': set()}
+    return {'auto': set(), 'upscale': set(), 'disable_auto_popup': False}
 
 def save_notifier_state(auto_set, upscale_set):
     """Save the current directory files as acknowledged."""
     try:
+        data = {}
+        if os.path.exists(_STATE_FILE):
+            with open(_STATE_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        data['last_ack_auto'] = list(auto_set)
+        data['last_ack_upscale'] = list(upscale_set)
         with open(_STATE_FILE, 'w', encoding='utf-8') as f:
-            json.dump({
-                'last_ack_auto': list(auto_set),
-                'last_ack_upscale': list(upscale_set)
-            }, f)
+            json.dump(data, f)
     except:
         pass
 
@@ -123,26 +126,26 @@ def is_gemipersona_running():
         return False
 
 # ---------------------------------------------------------------------------
-# Account Health window — launched as a SEPARATE PROCESS (health_window.py)
+# Monitor window — launched as a SEPARATE PROCESS (monitor_window.py)
 # Running it in-process via tk.Tk() in a thread shared Tcl interpreter state
 # with the popup; destroying the popup sent PostQuitMessage / cleared
-# _default_root and crashed the health window.  A subprocess is immune.
+# _default_root and crashed the monitor window.  A subprocess is immune.
 # ---------------------------------------------------------------------------
 
-_health_proc = None   # subprocess.Popen handle
+_monitor_proc = None   # subprocess.Popen handle
 
-def _show_health_window():
-    """Launch health_window.py as a separate pythonw process.
+def _show_monitor_window():
+    """Launch monitor_window.py as a separate pythonw process.
     If one is already running, bring it to the foreground instead.
     """
-    global _health_proc
+    global _monitor_proc
     # If a previous instance is still alive, don't open another one
-    if _health_proc is not None and _health_proc.poll() is None:
+    if _monitor_proc is not None and _monitor_proc.poll() is None:
         return   # already running — do nothing (process manages its own focus)
 
-    hw_script = os.path.join(_SCRIPT_DIR, 'health_window.py')
+    hw_script = os.path.join(_SCRIPT_DIR, 'monitor_window.py')
     if not os.path.exists(hw_script):
-        _logging.error(f'health_window.py not found at {hw_script}')
+        _logging.error(f'monitor_window.py not found at {hw_script}')
         return
 
     pythonw = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
@@ -150,248 +153,37 @@ def _show_health_window():
         pythonw = sys.executable  # fallback to python.exe on non-Windows
 
     try:
-        _health_proc = subprocess.Popen(
+        _monitor_proc = subprocess.Popen(
             [pythonw, hw_script],
             cwd=_SCRIPT_DIR,
             close_fds=True
         )
     except Exception as _e:
-        _logging.error(f'_show_health_window: failed to launch: {_e}', exc_info=True)
+        _logging.error(f'_show_monitor_window: failed to launch: {_e}', exc_info=True)
 
 
 # ---------------------------------------------------------------------------
-# Shared helper: build and show a themed tkinter popup near the taskbar
+# Shared helper: launch popup_window.py as a subprocess
 # ---------------------------------------------------------------------------
 
-def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running, auto_folder=None, upscale_folder=None, auto_close_ms=None, on_manual_close=None):
-    """Construct and run a dark-themed borderless popup window.
+def _launch_popup_subprocess(data_dict):
+    """Launch popup_window.py as a separate pythonw process to avoid Tcl crashes."""
+    popup_script = os.path.join(_SCRIPT_DIR, 'popup_window.py')
+    if not os.path.exists(popup_script):
+        return
 
-    Args:
-        title_text     : string shown in the popup header
-        auto_pending   : number of auto downloads
-        up_pending     : number of upscaler downloads
-        auto_running   : boolean indicating if automation is running
-        up_running     : boolean indicating if upscaler is running
-        auto_folder    : path for the Automation '📁 Download Folder' button
-        upscale_folder : path for the Upscaler '📁 Upscale Folder' button
-        auto_close_ms  : if set, window auto-dismisses after this many milliseconds
-        on_manual_close: callback triggered when user explicitly clicks a button or X
-    """
-    C_BG      = '#0f1117'
-    C_CARD    = '#1a1f2e'
-    C_BORDER  = '#7c3aed'
-    C_TEXT    = '#e2e8f0'
-    C_MUTED   = '#8892a4'
-    C_BTN_PRI = '#7c3aed'
-    C_BTN_SEC = '#272d3d'
+    pythonw = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
+    if not os.path.exists(pythonw):
+        pythonw = sys.executable
 
-    FONT_TITLE = ('Segoe UI Semibold', 10)
-    FONT_LABEL = ('Segoe UI', 9)
-    FONT_VALUE = ('Segoe UI', 9)
-    FONT_BTN   = ('Segoe UI Semibold', 9)
-
-    root = tk.Tk()
-    root.withdraw()
-    root.overrideredirect(True)
-    root.attributes('-topmost', True)
-    root.configure(bg=C_BORDER)
-
-    def _manual_exit(callback=None):
-        if on_manual_close:
-            on_manual_close()
-        if callback:
-            callback()
-        root.destroy()
-
-    # 1-px accent border via outer frame
-    outer = tk.Frame(root, bg=C_BORDER, padx=1, pady=1)
-    outer.pack(fill='both', expand=True)
-
-    body = tk.Frame(outer, bg=C_BG, padx=14, pady=10)
-    body.pack(fill='both', expand=True)
-
-    # -- Title bar --
-    title_bar = tk.Frame(body, bg=C_BG)
-    title_bar.pack(fill='x', pady=(0, 8))
-
-    tk.Label(title_bar, text=title_text, bg=C_BG, fg=C_TEXT,
-             font=FONT_TITLE).pack(side='left')
-
-    close_lbl = tk.Label(title_bar, text='  ✕  ', bg=C_BG, fg=C_MUTED,
-                         font=('Segoe UI', 9), cursor='hand2')
-    close_lbl.pack(side='right')
-    close_lbl.bind('<Button-1>', lambda e: _manual_exit())
-    close_lbl.bind('<Enter>',    lambda e: close_lbl.config(fg=C_TEXT))
-    close_lbl.bind('<Leave>',    lambda e: close_lbl.config(fg=C_MUTED))
-
-    # -- Separator --
-    tk.Frame(body, bg=C_BORDER, height=1).pack(fill='x', pady=(0, 8))
-
-    # -- Data card --
-    card = tk.Frame(body, bg=C_CARD, padx=12, pady=12)
-    card.pack(fill='x')
-
-    # Two columns: Left (Auto), Right (Upscaler)
-    left_col = tk.Frame(card, bg=C_CARD)
-    left_col.pack(side='left', expand=True, fill='both')
-
-    right_col = tk.Frame(card, bg=C_CARD)
-    right_col.pack(side='right', expand=True, fill='both')
-
-    # Auto Section
-    tk.Label(left_col, text="Auto", bg=C_CARD, fg=C_TEXT if auto_running else C_MUTED, font=('Segoe UI', 10)).pack()
-    tk.Label(left_col, text=str(auto_pending), bg=C_CARD, fg='#ff5555' if (auto_pending > 0 and auto_running) else (C_TEXT if auto_running else C_MUTED), font=('Segoe UI Bold', 24)).pack()
-
-    # Upscaler Section
-    tk.Label(right_col, text="Upscaler", bg=C_CARD, fg=C_TEXT if up_running else C_MUTED, font=('Segoe UI', 10)).pack()
-    tk.Label(right_col, text=str(up_pending), bg=C_CARD, fg='#ff5555' if (up_pending > 0 and up_running) else (C_TEXT if up_running else C_MUTED), font=('Segoe UI Bold', 24)).pack()
-
-    # -- Action buttons row 1 (Folders) --
-    folder_bar = tk.Frame(body, bg=C_BG)
-    folder_bar.pack(fill='x', pady=(10, 0))
-
-    def _open_auto():
-        if auto_folder:
-            open_file_foreground(auto_folder)
-        _manual_exit()
-
-    def _open_upscale():
-        if upscale_folder:
-            open_file_foreground(upscale_folder)
-        _manual_exit()
-
-    has_folder_btn = False
-    if auto_folder:
-        tk.Button(
-            folder_bar, text='📁 Download Folder', relief='flat',
-            bg=C_BTN_SEC, fg=C_TEXT, font=FONT_BTN,
-            padx=10, pady=4, cursor='hand2',
-            activebackground='#363d52', activeforeground=C_TEXT,
-            command=_open_auto
-        ).pack(side='left', expand=True, fill='x', padx=(0, 4))
-        has_folder_btn = True
-
-    if upscale_folder:
-        tk.Button(
-            folder_bar, text='📁 Upscale Folder', relief='flat',
-            bg=C_BTN_SEC, fg=C_TEXT, font=FONT_BTN,
-            padx=10, pady=4, cursor='hand2',
-            activebackground='#363d52', activeforeground=C_TEXT,
-            command=_open_upscale
-        ).pack(side='left', expand=True, fill='x', padx=(4 if has_folder_btn else 0, 0))
-        has_folder_btn = True
-
-    if not has_folder_btn:
-        folder_bar.destroy()
-
-    # -- Action buttons row 2 (Dismiss, Health, Open GemiPersona) --
-    btn_bar = tk.Frame(body, bg=C_BG)
-    btn_bar.pack(fill='x', pady=(8 if has_folder_btn else 10, 0))
-
-    tk.Button(
-        btn_bar, text='Dismiss', relief='flat',
-        bg=C_BTN_SEC, fg=C_MUTED, font=FONT_BTN,
-        padx=10, pady=4, cursor='hand2',
-        activebackground='#363d52', activeforeground=C_TEXT,
-        command=_manual_exit
-    ).pack(side='left', expand=True, fill='x', padx=(0, 4))
-
-    def _open_health():
-        # Health runs completely independently in its own thread + tk.Tk().
-        # The TclError bug (pady tuple) that originally caused silent failure
-        # has been fixed — threading is now the correct and stable approach.
-        threading.Thread(target=_show_health_window, daemon=True).start()
-
-    tk.Button(
-        btn_bar, text='📊 Health', relief='flat',
-        bg=C_BTN_SEC, fg='#a0c4ff', font=FONT_BTN,
-        padx=10, pady=4, cursor='hand2',
-        activebackground='#363d52', activeforeground=C_TEXT,
-        command=_open_health
-    ).pack(side='left', expand=True, fill='x', padx=(0, 4))
-
-    def _open_gemipersona():
-        run_bat = os.path.join(_SCRIPT_DIR, "run.bat")
-        if os.path.exists(run_bat):
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", run_bat],
-                shell=False,
-                close_fds=True
-            )
-        _manual_exit()
-
-    running = is_gemipersona_running()
-
-    gp_btn = tk.Button(
-        btn_bar, text='Open GemiPersona', relief='flat',
-        bg=C_BTN_SEC, fg=C_MUTED if running else C_TEXT, font=FONT_BTN,
-        padx=10, pady=4, cursor='arrow' if running else 'hand2',
-        activebackground=C_BTN_SEC, activeforeground=C_TEXT,
-        command=(lambda: None) if running else _open_gemipersona,
-        state='disabled' if running else 'normal'
-    )
-    gp_btn.pack(side='left', expand=True, fill='x', padx=(4, 0))
-
-    # -- Checkbox row (Disable auto popup) --
-    chk_bar = tk.Frame(body, bg=C_BG)
-    chk_bar.pack(fill='x', pady=(8, 0))
-
-    chk_var = tk.BooleanVar(value=_disable_auto_popup)
-    
-    def on_chk_toggle():
-        global _disable_auto_popup
-        _disable_auto_popup = chk_var.get()
-
-    tk.Checkbutton(
-        chk_bar, text="Do not show popups automatically",
-        variable=chk_var, command=on_chk_toggle,
-        bg=C_BG, fg=C_MUTED, selectcolor=C_CARD,
-        activebackground=C_BG, activeforeground=C_TEXT,
-        font=('Segoe UI', 8), cursor='hand2'
-    ).pack(side='left')
-
-    # -- Position: bottom-right, above taskbar --
-    root.update_idletasks()
-    win_w = root.winfo_reqwidth()
-    win_h = root.winfo_reqheight()
-    scr_w = root.winfo_screenwidth()
-    scr_h = root.winfo_screenheight()
-    x_pos = scr_w - win_w - 20
-    y_pos = scr_h - win_h - 55     # 55px clears standard taskbar
-    root.geometry(f'{win_w}x{win_h}+{x_pos}+{y_pos}')
-    root.deiconify()
-
-    root.bind('<Escape>', lambda e: _manual_exit())
-
-    if auto_close_ms:
-        root.after(auto_close_ms, lambda: root.destroy() if root.winfo_exists() else None)
-
-    # Poll every 3s to dynamically enable/disable the Open GemiPersona button
-    _gp_btn_ref = [None]
-    for w in btn_bar.winfo_children():
-        if isinstance(w, tk.Button) and 'GemiPersona' in (w.cget('text') or ''):
-            _gp_btn_ref[0] = w
-            break
-
-    def _poll_gp_btn():
-        try:
-            if not root.winfo_exists():
-                return
-            btn = _gp_btn_ref[0]
-            if btn:
-                alive = is_gemipersona_running()
-                if alive:
-                    btn.config(state='disabled', fg=C_MUTED, cursor='arrow',
-                               activebackground=C_BTN_SEC, command=lambda: None)
-                else:
-                    btn.config(state='normal', fg=C_TEXT, cursor='hand2',
-                               activebackground=C_BTN_SEC, command=_open_gemipersona)
-            root.after(3000, _poll_gp_btn)
-        except Exception:
-            pass
-
-    root.after(3000, _poll_gp_btn)
-    root.mainloop()
+    try:
+        subprocess.Popen(
+            [pythonw, popup_script, json.dumps(data_dict)],
+            cwd=_SCRIPT_DIR,
+            close_fds=True
+        )
+    except Exception as _e:
+        _logging.error(f'_launch_popup_subprocess failed: {_e}', exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -422,18 +214,16 @@ def _show_status_popup():
             current_up = set(os.listdir(current_upscale_dir))
             up_pending = len([f for f in (current_up - last_ack.get('upscale', set())) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))])
         
-        def on_manual_ack():
-            auto_set = set(os.listdir(current_dir_display)) if current_dir_display and os.path.exists(current_dir_display) else set()
-            up_set = set(os.listdir(current_upscale_dir)) if current_upscale_dir and os.path.exists(current_upscale_dir) else set()
-            save_notifier_state(auto_set, up_set)
-
-        _build_popup(
-            "GemiPersona Notifier", 
-            auto_pending=auto_pending, up_pending=up_pending,
-            auto_running=auto_running, up_running=up_running,
-            auto_folder=current_dir_display, upscale_folder=current_upscale_dir, 
-            on_manual_close=on_manual_ack
-        )
+        data = {
+            "title_text": "GemiPersona Notifier",
+            "auto_pending": auto_pending,
+            "up_pending": up_pending,
+            "auto_running": auto_running,
+            "up_running": up_running,
+            "auto_folder": current_dir_display,
+            "upscale_folder": current_upscale_dir
+        }
+        _launch_popup_subprocess(data)
 
     finally:
         _status_popup_open = False
@@ -461,18 +251,17 @@ def _show_new_files_popup(auto_images, up_images,
         auto_running = stats.get('is_running', False)
         up_running = os.path.exists(os.path.join(_SCRIPT_DIR, "upscaler.lock"))
 
-        def on_manual_ack():
-            save_notifier_state(current_auto_files, current_up_files)
-
-        _build_popup(
-            f"GemiPersona — {count} New Image{'s' if count > 1 else ''}",
-            auto_pending=total_auto_pending, up_pending=total_up_pending,
-            auto_running=auto_running, up_running=up_running,
-            auto_folder=current_auto_dir,
-            upscale_folder=current_up_dir,
-            auto_close_ms=8000,          # Auto-dismiss after 8 seconds
-            on_manual_close=on_manual_ack
-        )
+        data = {
+            "title_text": f"GemiPersona — {count} New Image{'s' if count > 1 else ''}",
+            "auto_pending": total_auto_pending,
+            "up_pending": total_up_pending,
+            "auto_running": auto_running,
+            "up_running": up_running,
+            "auto_folder": current_auto_dir,
+            "upscale_folder": current_up_dir,
+            "auto_close_ms": 8000
+        }
+        _launch_popup_subprocess(data)
 
     finally:
         _download_popup_open = False
@@ -583,7 +372,7 @@ def monitor_directory():
                 total_up_pending = [f for f in (current_up_files - last_ack['upscale']) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))]
 
                 if len(total_auto_pending) > 0 or len(total_up_pending) > 0:
-                    if not _disable_auto_popup:
+                    if not last_ack.get('disable_auto_popup', False):
                         threading.Thread(
                             target=_show_new_files_popup,
                             args=(auto_images, up_images, 
@@ -609,9 +398,31 @@ def show_status(icon, item):
 
 
 def quit_app(icon, item):
-    global app_running
+    global app_running, _monitor_proc
     app_running = False
     icon.stop()
+    
+    # Try to gracefully kill the tracked monitor process
+    if _monitor_proc is not None and _monitor_proc.poll() is None:
+        try:
+            _monitor_proc.terminate()
+        except:
+            pass
+            
+    # Also aggressively clean up any orphaned monitor or popup windows
+    try:
+        import psutil
+        for p in psutil.process_iter(['cmdline']):
+            try:
+                cmd = p.info.get('cmdline')
+                if cmd:
+                    joined = ' '.join(cmd)
+                    if 'monitor_window.py' in joined or 'popup_window.py' in joined:
+                        p.terminate()
+            except:
+                pass
+    except:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -624,12 +435,12 @@ def main():
     monitor_thread.start()
 
     icon_img = Image.open(_TRAY_ICON_PATH)
-    def show_health(icon, item):
-        threading.Thread(target=_show_health_window, daemon=True).start()
+    def show_monitor(icon, item):
+        threading.Thread(target=_show_monitor_window, daemon=True).start()
 
     menu = pystray.Menu(
         pystray.MenuItem("Show Status", show_status, default=True),
-        pystray.MenuItem("Account Health", show_health),
+        pystray.MenuItem("Monitor", show_monitor),
         pystray.MenuItem("Quit", quit_app)
     )
 

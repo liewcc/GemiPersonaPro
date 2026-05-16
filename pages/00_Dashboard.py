@@ -953,7 +953,7 @@ def render_notifier_button():
                     cmdline = p.info.get('cmdline')
                     if cmdline:
                         joined = ' '.join(cmdline)
-                        if 'image_notifier.py' in joined or 'health_window.py' in joined:
+                        if 'image_notifier.py' in joined or 'monitor_window.py' in joined or 'popup_window.py' in joined:
                             p.terminate()
                 except:
                     pass
