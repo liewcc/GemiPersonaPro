@@ -4,6 +4,10 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-16 - Notifier Account Health Aesthetics
+- **Account Differentiation via Background Stripes**: Enhanced the standalone Notifier Account Health window (`health_window.py`) by implementing alternating background color bands behind the chart bars. This elegantly distinguishes the sequence of different accounts or sessions without adding complex color variants to the bars themselves, maintaining a clean and simple aesthetic for the event statuses (Success, Refused, Reset, Fail).
+- **Gridline Visibility Optimization**: Lightened the Y-axis horizontal gridlines (time intervals like 1s, 10s, 1m) in the Notifier's dark-themed chart from a very dark `#1e2535` to a more visible, crisp Slate gray (`#475569`), significantly improving readability without overpowering the data.
+
 ### Update: 2026-05-16 - Account Health Optimization & Tray Notifier
 - **Real-Time Log Polling (Decoupled)**: Engineered a dual-loop polling system that decouples the fast 1s log-line updater from the heavy 5s chart parser. This ensures the latest engine status appears instantly upon window opening without freezing the UI.
 - **Robust Character Sanitization**: Implemented aggressive string filtering to strip out control characters and non-BMP Unicode codepoints (emojis) that would otherwise trigger `TclError` crashes in the Tkinter text renderer.

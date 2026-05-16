@@ -197,6 +197,25 @@ def main():
             if log_max == 0: return PAD_T + chart_h
             ratio = math.log1p(max(dur, 0)) / log_max
             return PAD_T + chart_h - int(chart_h * ratio)
+            
+        spacing = chart_w / n
+        
+        # Draw alternating background segments for accounts/sessions
+        _seg = 0
+        _prev_si = None
+        _prev_acct = None
+        for i, rec in enumerate(events):
+            si = rec.get('session_index')
+            acct = str(rec.get('account', '')).lower()
+            if _prev_si is not None and (si != _prev_si or acct != _prev_acct):
+                _seg += 1
+            _prev_si = si
+            _prev_acct = acct
+            if _seg % 2 == 1:
+                x0 = PAD_L + i * spacing
+                x1 = PAD_L + (i + 1) * spacing
+                canvas.create_rectangle(x0, PAD_T, x1, PAD_T + chart_h, fill='#333f5c', outline='')
+
         GRIDLINE_VALS = [1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200]
         drawn_y = []
         for val in GRIDLINE_VALS:
@@ -204,12 +223,12 @@ def main():
             y_px = _dur_to_y(val)
             if any(abs(y_px - prev) < 12 for prev in drawn_y): continue
             drawn_y.append(y_px)
-            canvas.create_line(PAD_L, y_px, PAD_L + chart_w, y_px, fill='#1e2535', width=1)
+            canvas.create_line(PAD_L, y_px, PAD_L + chart_w, y_px, fill='#475569', width=1)
             canvas.create_text(PAD_L - 8, y_px, text=_fmt_dur(val),
                                fill=C_MUTED, font=('Segoe UI', 7), anchor='e')
         y_top = _dur_to_y(max_dur)
         if not any(abs(y_top - prev) < 12 for prev in drawn_y):
-            canvas.create_line(PAD_L, y_top, PAD_L + chart_w, y_top, fill='#1e2535', width=1)
+            canvas.create_line(PAD_L, y_top, PAD_L + chart_w, y_top, fill='#475569', width=1)
             canvas.create_text(PAD_L - 8, y_top, text=_fmt_dur(max_dur),
                                fill=C_MUTED, font=('Segoe UI', 7), anchor='e')
         bar_w   = max(2, chart_w / n - 1)
