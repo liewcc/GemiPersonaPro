@@ -951,8 +951,10 @@ def render_notifier_button():
             for p in psutil.process_iter(['name', 'cmdline']):
                 try:
                     cmdline = p.info.get('cmdline')
-                    if cmdline and 'image_notifier.py' in ' '.join(cmdline):
-                        p.terminate()
+                    if cmdline:
+                        joined = ' '.join(cmdline)
+                        if 'image_notifier.py' in joined or 'health_window.py' in joined:
+                            p.terminate()
                 except:
                     pass
             st.rerun()
