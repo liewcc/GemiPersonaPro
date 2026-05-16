@@ -1085,6 +1085,8 @@ with col1:
                                 _updates["prompt"] = _meta_prompt
                             # 2. URL: save to config and update session state for the url widget
                             if _meta_url:
+                                if not _meta_url.startswith("https://gemini.google.com/gem/"):
+                                    _meta_url = "https://gemini.google.com"
                                 _updates["browser_url"] = _meta_url
                                 st.session_state["url_bar"] = _meta_url
                                 st.session_state["url_bar_widget"] = _meta_url
