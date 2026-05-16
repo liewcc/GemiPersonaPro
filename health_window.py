@@ -288,7 +288,7 @@ def main():
 
     _make_stat(stats_frame, 'account',   '👤 Account')
     _make_stat(stats_frame, 'images',    '✅ Images')
-    _make_stat(stats_frame, 'auto_new',  '📥 New')
+    _make_stat(stats_frame, 'auto_new',  '📥 New Images')
     _make_stat(stats_frame, 'refused',   '🚫 Refused')
     _make_stat(stats_frame, 'reset',     '🔄 Reset')
     _make_stat(stats_frame, 'cycle_dur', '⏱ Cycle Duration')
@@ -352,6 +352,27 @@ def main():
     if _gemi_running:
         _gemi_btn.config(state='disabled', fg=C_MUTED, cursor='arrow')
     _gemi_btn.pack(side='left', padx=(0, 6))
+
+    def _reset_new_images():
+        last_ack = _load_notifier_state()
+        if auto_folder and os.path.exists(auto_folder):
+            last_ack['auto'] = set(os.listdir(auto_folder))
+            try:
+                with open(_STATE_FILE, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        'last_ack_auto': list(last_ack['auto']),
+                        'last_ack_upscale': list(last_ack.get('upscale', set()))
+                    }, f)
+            except Exception:
+                pass
+            if 'auto_new' in stat_labels:
+                stat_labels['auto_new'].config(text='0', fg=C_TEXT)
+
+    tk.Button(btn_frame, text='Reset New Images Count', relief='flat',
+              bg=C_SUB, fg=C_TEXT, font=('Segoe UI Semibold', 9),
+              padx=10, pady=4, cursor='hand2',
+              activebackground='#363d52', activeforeground=C_TEXT,
+              command=_reset_new_images).pack(side='left', padx=(0, 6))
 
     tk.Button(btn_frame, text='Close', relief='flat',
               bg=C_SUB, fg=C_MUTED, font=('Segoe UI Semibold', 9),
