@@ -255,7 +255,7 @@ def main():
 
     # ── build window ─────────────────────────────────────────────────────────
     win = tk.Tk()
-    win.title('Monitor — GemiPersona')
+    win.title('GemiPersona Monitor')
     win.configure(bg=C_BORDER)
     win.resizable(False, False)
     win.attributes('-topmost', True)
@@ -270,25 +270,11 @@ def main():
     body = tk.Frame(outer, bg=C_BG)
     body.pack(fill='both', expand=True)
 
-    # title bar
-    tbar = tk.Frame(body, bg=C_BG, padx=14, pady=8)
-    tbar.pack(fill='x')
-    tk.Label(tbar, text='📊  Monitor Analysis', bg=C_BG, fg=C_TEXT,
-             font=('Segoe UI Semibold', 10)).pack(side='left')
-
     def _close():
         win.destroy()
 
-    x_lbl = tk.Label(tbar, text='  ✕  ', bg=C_BG, fg=C_MUTED,
-                     font=('Segoe UI', 9), cursor='hand2')
-    x_lbl.pack(side='right')
-    x_lbl.bind('<Button-1>', lambda e: _close())
-    x_lbl.bind('<Enter>',    lambda e: x_lbl.config(fg=C_TEXT))
-    x_lbl.bind('<Leave>',    lambda e: x_lbl.config(fg=C_MUTED))
     win.protocol('WM_DELETE_WINDOW', _close)
     win.bind('<Escape>', lambda e: _close())
-
-    tk.Frame(body, bg=C_BORDER, height=1).pack(fill='x')
 
     # stats row
     stats_frame = tk.Frame(body, bg=C_BG, padx=14, pady=8)
