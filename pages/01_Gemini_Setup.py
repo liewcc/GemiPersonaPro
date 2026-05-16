@@ -1041,12 +1041,16 @@ with col1:
         # --- Load from File Metadata Section ---
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>LOAD FROM FILE METADATA</p>", unsafe_allow_html=True)
         with st.container(border=True):
+            # Pre-render sync: propagate the backing variable to the widget key
+            # BEFORE the widget is instantiated to avoid StreamlitAPIException.
+            if st.session_state.get("meta_file_path_widget", "") != st.session_state.meta_file_path:
+                st.session_state["meta_file_path_widget"] = st.session_state.meta_file_path
+
             meta_col_path, meta_col_file, meta_col_apply = st.columns([5, 1, 1])
             with meta_col_path:
                 st.text_input(
                     "Metadata File Path",
                     key="meta_file_path_widget",
-                    value=st.session_state.meta_file_path,
                     label_visibility="collapsed",
                     placeholder="Select a PNG file to load metadata from..."
                 )
@@ -1062,7 +1066,6 @@ with col1:
                     root.destroy()
                     if picked:
                         st.session_state.meta_file_path = picked
-                        st.session_state["meta_file_path_widget"] = picked
                         st.rerun()
             with meta_col_apply:
                 if st.button("✅ Apply", key="meta_apply_btn", width="stretch", type="primary"):
