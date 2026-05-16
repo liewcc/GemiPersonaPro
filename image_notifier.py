@@ -219,9 +219,13 @@ def _show_health_window_inner():
     # ── draw bar chart on canvas ──────────────────────────────────────────────
     def _draw_chart(canvas, data, canvas_w, canvas_h):
         canvas.delete('all')
+        
+        # Filter out 'Ongoing' events to match the Streamlit dashboard
+        data = [r for r in data if r.get('status') != 'Ongoing']
+        
         if not data:
             canvas.create_text(canvas_w // 2, canvas_h // 2,
-                               text='No events recorded yet.', fill=C_MUTED,
+                               text='No completed events recorded yet.', fill=C_MUTED,
                                font=('Segoe UI', 10))
             return
 
@@ -307,6 +311,12 @@ def _show_health_window_inner():
     win.configure(bg=C_BORDER)
     win.resizable(False, False)
     win.attributes('-topmost', True)
+    # Prevent any after() callback exception from propagating to pythonw.exe's
+    # sys.excepthook, which would silently terminate the whole process.
+    def _safe_report_exception(exc, val, tb):
+        import traceback as _tb
+        _tb.print_exception(exc, val, tb)
+    win.report_callback_exception = _safe_report_exception
 
     # 1-px border wrapper
     outer = tk.Frame(win, bg=C_BORDER, padx=1, pady=1)
@@ -342,7 +352,7 @@ def _show_health_window_inner():
     stat_labels = {}   # key → (title_lbl, value_lbl)
 
     def _make_stat(parent, key, title):
-        col = tk.Frame(parent, bg=C_CARD, padx=12, pady=8)
+        col = tk.Frame(parent, bg=C_CARD, padx=4, pady=8)
         col.pack(side='left', expand=True, fill='both', padx=(0, 6))
         tk.Label(col, text=title, bg=C_CARD, fg=C_MUTED,
                  font=('Segoe UI', 8)).pack()
@@ -353,6 +363,7 @@ def _show_health_window_inner():
 
     _make_stat(stats_frame, 'account',   '👤 Account')
     _make_stat(stats_frame, 'images',    '✅ Images')
+    _make_stat(stats_frame, 'auto_new',  '📥 New')
     _make_stat(stats_frame, 'refused',   '🚫 Refused')
     _make_stat(stats_frame, 'reset',     '🔄 Reset')
     _make_stat(stats_frame, 'cycle_dur', '⏱ Cycle Duration')
@@ -369,11 +380,13 @@ def _show_health_window_inner():
                             font=('Segoe UI Semibold', 8))
     status_badge.pack(side='left')
 
-    # ── chart section label ───────────────────────────────────────────────────
-    lbl_frame = tk.Frame(body, bg=C_BG, padx=14, pady=4)
-    lbl_frame.pack(fill='x')
-    tk.Label(lbl_frame, text=f'Loading Duration — Last {N_EVENTS} Events',
-             bg=C_BG, fg=C_MUTED, font=('Segoe UI', 8)).pack(side='left')
+    # ── latest log line (above chart) ────────────────────────────────────────
+    log_line_lbl = tk.Label(
+        body, text='reading log...', bg=C_BG, fg='#a8d8ff',
+        font=('Segoe UI', 9), anchor='w', padx=14, pady=3,
+        wraplength=580, justify='left'
+    )
+    log_line_lbl.pack(fill='x')
 
     # ── chart canvas ─────────────────────────────────────────────────────────
     CANVAS_W, CANVAS_H = 580, 180
@@ -385,9 +398,41 @@ def _show_health_window_inner():
     btn_frame = tk.Frame(body, bg=C_BG, padx=14, pady=10)
     btn_frame.pack(fill='x')
 
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def _get_last_log_line():
+        """Read last non-empty line from engine.log; always returns a visible string."""
+        log_path = os.path.join(_SCRIPT_DIR, 'engine.log')
+        try:
+            if not os.path.exists(log_path):
+                return f'[log not found: {log_path}]'
+            with open(log_path, 'rb') as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size == 0:
+                    return '[engine.log is empty]'
+                chunk = min(size, 4096)
+                f.seek(-chunk, 2)
+                tail = f.read(chunk).decode('utf-8', errors='replace')
+            lines = [l.strip() for l in tail.splitlines() if l.strip()]
+            if not lines:
+                return '[no recent log lines]'
+            raw = lines[-1]
+            if raw.startswith('{'):
+                try:
+                    obj    = json.loads(raw)
+                    ev     = obj.get('event', '')
+                    msg    = obj.get('message', '')[:120]
+                    ts_raw = obj.get('ts', obj.get('timestamp', obj.get('time', '')))
+                    ts     = ts_raw.split('T')[-1][:8] if 'T' in ts_raw else ts_raw[:8]
+                    raw    = f'[{ts}] {ev}: {msg}' if (ts or ev) else msg
+                except Exception:
+                    pass
+            return raw[:160]
+        except Exception as _e:
+            return f'[log read error: {_e}]'
+
     def _refresh():
         detailed, cycles, stats = _load_data()
-        # Show error in chart area if data loading failed
         if '_error' in stats:
             chart_canvas.delete('all')
             chart_canvas.create_text(
@@ -396,9 +441,24 @@ def _show_health_window_inner():
                 fill='#ff6666', font=('Segoe UI', 9), justify='center')
             status_badge.config(text='⚠ Load Error', fg='#ff6666')
             return
-        # Update stat cards
         stat_labels['account'].config(text=stats.get('account', 'N/A'))
         stat_labels['images'].config(text=str(stats.get('images', 0)))
+        
+        # Calculate auto pending exactly like the notifier
+        auto_pending = 0
+        try:
+            last_ack = load_notifier_state()
+            if current_dir_display and os.path.exists(current_dir_display):
+                current_auto = set(os.listdir(current_dir_display))
+                auto_pending = len([f for f in (current_auto - last_ack.get('auto', set())) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))])
+        except Exception:
+            pass
+            
+        stat_labels['auto_new'].config(
+            text=str(auto_pending),
+            fg='#2ecc71' if auto_pending > 0 else C_TEXT
+        )
+        
         stat_labels['refused'].config(
             text=str(stats.get('refused', 0)),
             fg='#a0a0ff' if stats.get('refused', 0) > 0 else C_TEXT)
@@ -406,12 +466,10 @@ def _show_health_window_inner():
             text=str(stats.get('reset', 0)),
             fg='#f39c12' if stats.get('reset', 0) > 0 else C_TEXT)
         stat_labels['cycle_dur'].config(text=stats.get('cycle_dur', '—') or '—')
-        # Status badge
         if stats.get('is_running'):
             status_badge.config(text='● Running', fg='#2ecc71')
         else:
             status_badge.config(text='○ Stopped', fg=C_MUTED)
-        # Redraw chart
         _draw_chart(chart_canvas, detailed, CANVAS_W, CANVAS_H)
 
     tk.Button(
@@ -430,27 +488,43 @@ def _show_health_window_inner():
         command=_close_health
     ).pack(side='left')
 
-    # ── initial data load & auto-refresh ─────────────────────────────────────
-    def _auto_refresh():
+    # ── Background Polling Loops ──────────────────────────────────────────────
+    # 1. Fast loop (1s): Read only the last 4KB to update the log line instantly.
+    #    This avoids parsing the entire 18MB log and keeps the UI responsive.
+    def _poll_log_line():
         try:
             if not _health_window_open or not win.winfo_exists():
                 return
-            _refresh()
-            if _health_window_open and win.winfo_exists():
-                win.after(5000, _auto_refresh)
+            line = _get_last_log_line()
+            # Aggressive sanitize: keep only printable BMP chars to prevent Tkinter crashes
+            line = ''.join(c for c in line if 0x20 <= ord(c) <= 0xFFFF or c in '\n\r\t')
+            log_line_lbl.config(text=line)
         except Exception:
-            pass  # Never let an after() callback crash the process
+            pass
+        finally:
+            try:
+                if _health_window_open and win.winfo_exists():
+                    win.after(1000, _poll_log_line)
+            except Exception:
+                pass
 
-    # Override tkinter's default exception handler for this window:
-    # without this, any exception inside an after() callback on pythonw.exe
-    # calls sys.excepthook which can terminate the whole process silently.
-    def _safe_report_exception(exc, val, tb):
-        import traceback as _tb
-        print(f'[health tkinter] suppressed exception: {val}')
-        _tb.print_exception(exc, val, tb)
-    win.report_callback_exception = _safe_report_exception
+    # 2. Heavy loop (5s): Parse the entire log to rebuild the performance chart.
+    def _poll_chart():
+        if not _health_window_open or not win.winfo_exists():
+            return
+        try:
+            _refresh()
+        except Exception:
+            pass
+        try:
+            if _health_window_open and win.winfo_exists():
+                win.after(5000, _poll_chart)
+        except Exception:
+            pass
 
-    _auto_refresh()
+    # Start both loops instantly (1ms delay) without blocking the window creation
+    win.after(1, _poll_log_line)
+    win.after(1, _poll_chart)
 
     # ── centre window on screen ──────────────────────────────────────────────
     win.update_idletasks()
