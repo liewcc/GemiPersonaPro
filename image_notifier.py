@@ -58,6 +58,21 @@ _disable_auto_popup  = False
 _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 _TRAY_ICON_PATH = os.path.join(_SCRIPT_DIR, 'sys_img', 'icon_no_BG.png')
 _STATE_FILE = os.path.join(_SCRIPT_DIR, 'notifier_state.json')
+_LOG_FILE   = os.path.join(_SCRIPT_DIR, 'notifier_error.log')
+
+# ── Global error logger (critical for pythonw.exe which has no console) ─────
+import logging as _logging, sys as _sys
+_logging.basicConfig(
+    filename=_LOG_FILE, level=_logging.ERROR,
+    format='%(asctime)s [%(threadName)s] %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+def _global_excepthook(exc_type, exc_val, exc_tb):
+    _logging.error('Unhandled exception', exc_info=(exc_type, exc_val, exc_tb))
+    _sys.__excepthook__(exc_type, exc_val, exc_tb)
+
+_sys.excepthook = _global_excepthook
 
 def load_notifier_state():
     """Load the last acknowledged file list."""
@@ -102,6 +117,352 @@ def is_gemipersona_running():
             return response.status == 200
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Account Health standalone window  (pure tkinter, no matplotlib)
+# ---------------------------------------------------------------------------
+
+_health_window_open = False
+
+def _show_health_window():
+    """Open a standalone dark-themed tkinter window showing Account Health charts.
+    Runs in its own thread + tk.Tk() — completely independent of any popup.
+    Draws bar charts directly on a Canvas — zero extra dependencies.
+    """
+    global _health_window_open
+    if _health_window_open:
+        return
+    _health_window_open = True
+    try:
+        _show_health_window_inner()
+    except Exception as _e:
+        import traceback
+        print(f'[health window] fatal error: {_e}')
+        traceback.print_exc()
+    finally:
+        _health_window_open = False
+
+
+def _show_health_window_inner():
+
+    # ── colour palette (matches notifier theme) ──────────────────────────────
+    C_BG     = '#0f1117'
+    C_CARD   = '#1a1f2e'
+    C_BORDER = '#7c3aed'
+    C_TEXT   = '#e2e8f0'
+    C_MUTED  = '#8892a4'
+    C_ACCENT = '#7c3aed'
+    C_SUB    = '#272d3d'
+
+    STATUS_COLORS = {
+        'Success': '#2ecc71',
+        'Reject':  '#a0a0ff',
+        'Reset':   '#f39c12',
+        'Fail':    '#ff4444',
+        'Ongoing': '#888888',
+    }
+
+    N_EVENTS = 60   # how many recent events to plot
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+    def _fmt_dur(secs):
+        secs = max(0, int(secs))
+        h = secs // 3600; m = (secs % 3600) // 60; s = secs % 60
+        if h > 0:  return f"{h}h {m:02d}m"
+        if m > 0:  return f"{m}m {s:02d}s"
+        return f"{s}s"
+
+    def _load_data():
+        """Parse health log and return (detailed_list, cycles_list, stats_dict)."""
+        try:
+            import sys, traceback as _tb
+            if _SCRIPT_DIR not in sys.path:
+                sys.path.insert(0, _SCRIPT_DIR)
+            import health_parser as hp
+            _, detailed, _ = hp.parse_account_health(target_account="ALL_EVENTS", login_data=[])
+            cycles = hp.parse_engine_cycles()
+        except Exception as _e:
+            print(f"[notifier health] _load_data failed: {_e}")
+            import traceback; traceback.print_exc()
+            return [], [], {'_error': str(_e)}
+
+        # Compute aggregate stats from the last (running) cycle if available
+        stats = {'images': 0, 'refused': 0, 'reset': 0, 'cycle_dur': '', 'account': 'N/A', 'is_running': False}
+        if cycles:
+            lc = cycles[-1]
+            stats['images']     = lc.get('success_count', 0)
+            stats['refused']    = lc.get('reject_count', 0)
+            stats['reset']      = lc.get('reset_count', 0)
+            stats['is_running'] = lc.get('is_running', False)
+            try:
+                from datetime import datetime
+                s = lc.get('full_start_time', lc.get('start_time_str', ''))
+                e = lc.get('stop_time_str', s)
+                fmt_s = '%Y-%m-%d %H:%M:%S' if '-' in s else '%H:%M:%S'
+                fmt_e = '%Y-%m-%d %H:%M:%S' if '-' in e else '%H:%M:%S'
+                ds = (datetime.strptime(e, fmt_e) - datetime.strptime(s, fmt_s)).total_seconds()
+                if ds < 0: ds += 86400
+                stats['cycle_dur'] = _fmt_dur(ds)
+            except Exception:
+                stats['cycle_dur'] = ''
+
+        # Grab active account from the most recent event
+        for rec in detailed:
+            acct = rec.get('account', '')
+            if acct and acct.lower() not in ('unknown', ''):
+                stats['account'] = acct
+                break
+
+        return detailed, cycles, stats
+
+    # ── draw bar chart on canvas ──────────────────────────────────────────────
+    def _draw_chart(canvas, data, canvas_w, canvas_h):
+        canvas.delete('all')
+        if not data:
+            canvas.create_text(canvas_w // 2, canvas_h // 2,
+                               text='No events recorded yet.', fill=C_MUTED,
+                               font=('Segoe UI', 10))
+            return
+
+        import math
+        PAD_L, PAD_R, PAD_T, PAD_B = 48, 18, 16, 32
+        chart_w = canvas_w - PAD_L - PAD_R
+        chart_h = canvas_h - PAD_T - PAD_B
+
+        # Take last N events (data is newest-first → reverse for chronological)
+        events = list(reversed(data[:N_EVENTS]))
+        n = len(events)
+
+        # Durations in seconds
+        durations = []
+        for r in events:
+            try:    durations.append(max(0, float(r.get('health', '0s').replace('s', ''))))
+            except: durations.append(0)
+
+        max_dur = max(durations) if durations else 1
+        if max_dur == 0: max_dur = 1
+
+        log_max = math.log1p(max_dur)
+
+        def _dur_to_y(dur):
+            """Map duration (seconds) → canvas Y pixel using log1p scale."""
+            if log_max == 0: return PAD_T + chart_h
+            ratio = math.log1p(max(dur, 0)) / log_max
+            return PAD_T + chart_h - int(chart_h * ratio)
+
+        # ── Y-axis gridlines & labels (meaningful log-spaced breakpoints) ────
+        GRIDLINE_VALS = [1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200]
+        drawn_y = []
+        for val in GRIDLINE_VALS:
+            if val > max_dur * 1.05:
+                break
+            y_px = _dur_to_y(val)
+            if any(abs(y_px - prev) < 12 for prev in drawn_y):
+                continue
+            drawn_y.append(y_px)
+            canvas.create_line(PAD_L, y_px, PAD_L + chart_w, y_px,
+                               fill='#1e2535', width=1)
+            canvas.create_text(PAD_L - 4, y_px, text=_fmt_dur(val),
+                               fill=C_MUTED, font=('Segoe UI', 7), anchor='e')
+        # Always label the top (max)
+        y_top = _dur_to_y(max_dur)
+        if not any(abs(y_top - prev) < 12 for prev in drawn_y):
+            canvas.create_line(PAD_L, y_top, PAD_L + chart_w, y_top,
+                               fill='#1e2535', width=1)
+            canvas.create_text(PAD_L - 4, y_top, text=_fmt_dur(max_dur),
+                               fill=C_MUTED, font=('Segoe UI', 7), anchor='e')
+
+        # ── bars ─────────────────────────────────────────────────────────────
+        bar_w   = max(2, chart_w / n - 1)
+        spacing = chart_w / n
+
+        for i, (rec, dur) in enumerate(zip(events, durations)):
+            status = rec.get('status', 'Fail')
+            color  = STATUS_COLORS.get(status, '#888888')
+            y0 = _dur_to_y(max(dur, 0.5))   # min 0.5s so bar always visible
+            y1 = PAD_T + chart_h
+            x0 = PAD_L + i * spacing
+            x1 = x0 + bar_w
+            canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline='')
+
+        # ── X-axis baseline ──────────────────────────────────────────────────
+        canvas.create_line(PAD_L, PAD_T + chart_h, PAD_L + chart_w, PAD_T + chart_h,
+                           fill=C_MUTED, width=1)
+
+        # ── legend ───────────────────────────────────────────────────────────
+        legend_items = [('Success', '#2ecc71'), ('Refused', '#a0a0ff'),
+                        ('Reset', '#f39c12'), ('Fail', '#ff4444')]
+        lx = PAD_L
+        ly = PAD_T + chart_h + 14
+        for label, clr in legend_items:
+            canvas.create_rectangle(lx, ly - 5, lx + 10, ly + 5, fill=clr, outline='')
+            canvas.create_text(lx + 14, ly, text=label, fill=C_MUTED,
+                               font=('Segoe UI', 7), anchor='w')
+            lx += 68
+
+    # ── build window ─────────────────────────────────────────────────────────
+    win = tk.Tk()   # always standalone — runs in its own thread
+    win.title('Account Health — GemiPersona')
+    win.configure(bg=C_BORDER)
+    win.resizable(False, False)
+    win.attributes('-topmost', True)
+
+    # 1-px border wrapper
+    outer = tk.Frame(win, bg=C_BORDER, padx=1, pady=1)
+    outer.pack(fill='both', expand=True)
+    body = tk.Frame(outer, bg=C_BG)
+    body.pack(fill='both', expand=True)
+
+    # ── title bar ────────────────────────────────────────────────────────────
+    tbar = tk.Frame(body, bg=C_BG, padx=14, pady=8)
+    tbar.pack(fill='x')
+    tk.Label(tbar, text='📊  Account Health Analysis', bg=C_BG, fg=C_TEXT,
+             font=('Segoe UI Semibold', 10)).pack(side='left')
+    def _close_health():
+        global _health_window_open
+        _health_window_open = False
+        win.destroy()
+    x_lbl = tk.Label(tbar, text='  ✕  ', bg=C_BG, fg=C_MUTED,
+                     font=('Segoe UI', 9), cursor='hand2')
+    x_lbl.pack(side='right')
+    x_lbl.bind('<Button-1>', lambda e: _close_health())
+    x_lbl.bind('<Enter>',    lambda e: x_lbl.config(fg=C_TEXT))
+    x_lbl.bind('<Leave>',    lambda e: x_lbl.config(fg=C_MUTED))
+    win.protocol('WM_DELETE_WINDOW', _close_health)
+    win.bind('<Escape>', lambda e: _close_health())
+
+    # separator
+    tk.Frame(body, bg=C_BORDER, height=1).pack(fill='x')
+
+    # ── stats row ────────────────────────────────────────────────────────────
+    stats_frame = tk.Frame(body, bg=C_BG, padx=14, pady=8)
+    stats_frame.pack(fill='x')
+
+    stat_labels = {}   # key → (title_lbl, value_lbl)
+
+    def _make_stat(parent, key, title):
+        col = tk.Frame(parent, bg=C_CARD, padx=12, pady=8)
+        col.pack(side='left', expand=True, fill='both', padx=(0, 6))
+        tk.Label(col, text=title, bg=C_CARD, fg=C_MUTED,
+                 font=('Segoe UI', 8)).pack()
+        val_lbl = tk.Label(col, text='—', bg=C_CARD, fg=C_TEXT,
+                           font=('Segoe UI Semibold', 15))
+        val_lbl.pack()
+        stat_labels[key] = val_lbl
+
+    _make_stat(stats_frame, 'account',   '👤 Account')
+    _make_stat(stats_frame, 'images',    '✅ Images')
+    _make_stat(stats_frame, 'refused',   '🚫 Refused')
+    _make_stat(stats_frame, 'reset',     '🔄 Reset')
+    _make_stat(stats_frame, 'cycle_dur', '⏱ Cycle Duration')
+
+    # fix last card: no right padding
+    for w in stats_frame.winfo_children():
+        w.pack_configure(padx=(0, 6))
+    stats_frame.winfo_children()[-1].pack_configure(padx=0)
+
+    # ── status badge ─────────────────────────────────────────────────────────
+    badge_frame = tk.Frame(body, bg=C_BG, padx=14)
+    badge_frame.pack(fill='x')
+    status_badge = tk.Label(badge_frame, text='', bg=C_BG,
+                            font=('Segoe UI Semibold', 8))
+    status_badge.pack(side='left')
+
+    # ── chart section label ───────────────────────────────────────────────────
+    lbl_frame = tk.Frame(body, bg=C_BG, padx=14, pady=4)
+    lbl_frame.pack(fill='x')
+    tk.Label(lbl_frame, text=f'Loading Duration — Last {N_EVENTS} Events',
+             bg=C_BG, fg=C_MUTED, font=('Segoe UI', 8)).pack(side='left')
+
+    # ── chart canvas ─────────────────────────────────────────────────────────
+    CANVAS_W, CANVAS_H = 580, 180
+    chart_canvas = tk.Canvas(body, width=CANVAS_W, height=CANVAS_H,
+                             bg=C_CARD, highlightthickness=0)
+    chart_canvas.pack(padx=14, pady=(4, 0))
+
+    # ── buttons ───────────────────────────────────────────────────────────────
+    btn_frame = tk.Frame(body, bg=C_BG, padx=14, pady=10)
+    btn_frame.pack(fill='x')
+
+    def _refresh():
+        detailed, cycles, stats = _load_data()
+        # Show error in chart area if data loading failed
+        if '_error' in stats:
+            chart_canvas.delete('all')
+            chart_canvas.create_text(
+                CANVAS_W // 2, CANVAS_H // 2,
+                text=f"Error loading data:\n{stats['_error']}",
+                fill='#ff6666', font=('Segoe UI', 9), justify='center')
+            status_badge.config(text='⚠ Load Error', fg='#ff6666')
+            return
+        # Update stat cards
+        stat_labels['account'].config(text=stats.get('account', 'N/A'))
+        stat_labels['images'].config(text=str(stats.get('images', 0)))
+        stat_labels['refused'].config(
+            text=str(stats.get('refused', 0)),
+            fg='#a0a0ff' if stats.get('refused', 0) > 0 else C_TEXT)
+        stat_labels['reset'].config(
+            text=str(stats.get('reset', 0)),
+            fg='#f39c12' if stats.get('reset', 0) > 0 else C_TEXT)
+        stat_labels['cycle_dur'].config(text=stats.get('cycle_dur', '—') or '—')
+        # Status badge
+        if stats.get('is_running'):
+            status_badge.config(text='● Running', fg='#2ecc71')
+        else:
+            status_badge.config(text='○ Stopped', fg=C_MUTED)
+        # Redraw chart
+        _draw_chart(chart_canvas, detailed, CANVAS_W, CANVAS_H)
+
+    tk.Button(
+        btn_frame, text='🔄 Refresh', relief='flat',
+        bg=C_SUB, fg=C_TEXT, font=('Segoe UI Semibold', 9),
+        padx=10, pady=4, cursor='hand2',
+        activebackground='#363d52', activeforeground=C_TEXT,
+        command=_refresh
+    ).pack(side='left', padx=(0, 6))
+
+    tk.Button(
+        btn_frame, text='Close', relief='flat',
+        bg=C_SUB, fg=C_MUTED, font=('Segoe UI Semibold', 9),
+        padx=10, pady=4, cursor='hand2',
+        activebackground='#363d52', activeforeground=C_TEXT,
+        command=_close_health
+    ).pack(side='left')
+
+    # ── initial data load & auto-refresh ─────────────────────────────────────
+    def _auto_refresh():
+        try:
+            if not _health_window_open or not win.winfo_exists():
+                return
+            _refresh()
+            if _health_window_open and win.winfo_exists():
+                win.after(5000, _auto_refresh)
+        except Exception:
+            pass  # Never let an after() callback crash the process
+
+    # Override tkinter's default exception handler for this window:
+    # without this, any exception inside an after() callback on pythonw.exe
+    # calls sys.excepthook which can terminate the whole process silently.
+    def _safe_report_exception(exc, val, tb):
+        import traceback as _tb
+        print(f'[health tkinter] suppressed exception: {val}')
+        _tb.print_exception(exc, val, tb)
+    win.report_callback_exception = _safe_report_exception
+
+    _auto_refresh()
+
+    # ── centre window on screen ──────────────────────────────────────────────
+    win.update_idletasks()
+    sw = win.winfo_screenwidth()
+    sh = win.winfo_screenheight()
+    ww = win.winfo_reqwidth()
+    wh = win.winfo_reqheight()
+    win.geometry(f'{ww}x{wh}+{(sw - ww) // 2}+{(sh - wh) // 2}')
+    win.deiconify()
+
+    # Own the mainloop — this thread lives until the user closes the window
+    win.mainloop()
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +590,7 @@ def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running,
     if not has_folder_btn:
         folder_bar.destroy()
 
-    # -- Action buttons row 2 (Dismiss & Open GemiPersona) --
+    # -- Action buttons row 2 (Dismiss, Health, Open GemiPersona) --
     btn_bar = tk.Frame(body, bg=C_BG)
     btn_bar.pack(fill='x', pady=(8 if has_folder_btn else 10, 0))
 
@@ -239,6 +600,20 @@ def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running,
         padx=10, pady=4, cursor='hand2',
         activebackground='#363d52', activeforeground=C_TEXT,
         command=_manual_exit
+    ).pack(side='left', expand=True, fill='x', padx=(0, 4))
+
+    def _open_health():
+        # Health runs completely independently in its own thread + tk.Tk().
+        # The TclError bug (pady tuple) that originally caused silent failure
+        # has been fixed — threading is now the correct and stable approach.
+        threading.Thread(target=_show_health_window, daemon=True).start()
+
+    tk.Button(
+        btn_bar, text='📊 Health', relief='flat',
+        bg=C_BTN_SEC, fg='#a0c4ff', font=FONT_BTN,
+        padx=10, pady=4, cursor='hand2',
+        activebackground='#363d52', activeforeground=C_TEXT,
+        command=_open_health
     ).pack(side='left', expand=True, fill='x', padx=(0, 4))
 
     def _open_gemipersona():
@@ -305,7 +680,6 @@ def _build_popup(title_text, auto_pending, up_pending, auto_running, up_running,
     root.bind('<Escape>', lambda e: _manual_exit())
 
     if auto_close_ms:
-        # Note: auto-close uses root.destroy() directly, bypassing _manual_exit's callback
         root.after(auto_close_ms, lambda: root.destroy() if root.winfo_exists() else None)
 
     root.mainloop()
@@ -541,13 +915,33 @@ def main():
     monitor_thread.start()
 
     icon_img = Image.open(_TRAY_ICON_PATH)
+    def show_health(icon, item):
+        threading.Thread(target=_show_health_window, daemon=True).start()
+
     menu = pystray.Menu(
         pystray.MenuItem("Show Status", show_status, default=True),
+        pystray.MenuItem("Account Health", show_health),
         pystray.MenuItem("Quit", quit_app)
     )
 
     tray_icon = pystray.Icon("GemiPersonaNotifier", icon_img, "GemiPersona Notifier", menu)
-    tray_icon.run()
+
+    # Restart loop: if pystray exits unexpectedly, re-launch it.
+    # A deliberate quit via quit_app() sets app_running=False first.
+    while app_running:
+        try:
+            tray_icon.run()
+        except Exception as _e:
+            _logging.error(f'tray_icon.run() crashed: {_e}', exc_info=True)
+            if not app_running:
+                break
+            time.sleep(3)   # brief pause before restarting the tray icon
+            try:
+                tray_icon = pystray.Icon("GemiPersonaNotifier", icon_img, "GemiPersona Notifier", menu)
+            except Exception:
+                break
+        else:
+            break   # clean exit (quit_app called)
 
 
 if __name__ == '__main__':

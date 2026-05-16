@@ -4,6 +4,14 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-16 - Tray-Integrated Account Health Notifier
+- **Standalone Health Dashboard**: Introduced a lightweight, native `tkinter` Account Health Analysis window accessible directly from the system tray menu (`Account Health`) or the notification popup (`📊 Health`).
+- **Canvas-Based Visualization**: Implemented custom hand-drawn bar charts using `tkinter.Canvas`, providing real-time performance insights (Duration, Success/Reject/Reset status) without requiring external plotting libraries like Matplotlib.
+- **Logarithmic Y-Axis Scale**: Integrated a logarithmic scale for the duration axis (using `log1p`), ensuring that short-duration successes remain clearly visible even when significant delays or timeouts (e.g., 20m+) occur in the same batch.
+- **Real-Time Auto-Refresh**: The dashboard automatically refreshes every **5 seconds**, synchronized with the system log parser to provide up-to-the-minute engine performance metrics.
+- **Decoupled Lifecycle**: Engineered a persistent window management system that allows the Health dashboard to remain open and active even after the primary notification popup is dismissed or auto-closed.
+- **Enterprise Stability**: Added robust crash protection, including a background tray restart loop, file-based error logging (`notifier_error.log`), and safe exception handling for all background UI threads.
+
 ### Update: 2026-05-16 - Load Metadata from File in Gemini Setup
 - **Metadata Extraction & Auto-fill**: Added a new **LOAD FROM FILE METADATA** container directly above the BROWSER URL section in the `Gemini Setup` page. Users can now select an existing generated PNG image file to automatically extract its embedded metadata (`prompt`, `url`, `upload_path`).
 - **Seamless State Synchronization**: Clicking "Apply" instantly updates the workspace configuration, injecting the extracted `prompt` into the text area, the `url` into the browser navigation bar, and automatically overriding the **UPLOAD FILES TO BROWSER** queue with the extracted image paths. This creates a powerful preset-loading workflow straight from historical outputs.

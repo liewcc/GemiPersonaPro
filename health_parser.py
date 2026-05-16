@@ -516,9 +516,14 @@ def parse_account_health(target_account=None, login_data=None):
         else:
             detailed_results = []
     except Exception as e:
-        import traceback, streamlit as st
-        st.error(f"Error parsing log: {e}")
+        import traceback
+        print(f"[health_parser] Error parsing log: {e}")
         print(traceback.format_exc())
+        try:
+            import streamlit as st
+            st.error(f"Error parsing log: {e}")
+        except Exception:
+            pass  # Not running inside Streamlit — skip UI error display
     summary_list = list(reversed(list(summary_results.values())))
     detailed_list = list(reversed(detailed_results))
     valid_accounts = [acc for acc in found_accounts_set if acc is not None and isinstance(acc, str)]
