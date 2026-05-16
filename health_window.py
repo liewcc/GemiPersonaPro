@@ -7,7 +7,7 @@ popup's Tk() instance.  This prevents the PopQuitMessage cross-contamination
 that caused the health window to exit whenever the popup was dismissed.
 """
 
-import os, sys, json, socket, subprocess, tkinter as tk
+import os, sys, json, socket, subprocess, threading, tkinter as tk
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _STATE_FILE  = os.path.join(_SCRIPT_DIR, 'notifier_state.json')
@@ -360,62 +360,88 @@ def main():
               command=_close).pack(side='left')
 
     # ── polling loops ─────────────────────────────────────────────────────────
+    # 所有阻塞 I/O（文件读取、socket 连接、log 解析）均在 daemon 线程中执行，
+    # 仅通过 win.after(0, callback) 回调在 UI 线程更新控件，避免卡顿。
 
-    def _refresh():
-        detailed, cycles, stats = _load_data()
-        if '_error' in stats:
-            chart_canvas.delete('all')
-            chart_canvas.create_text(
-                CANVAS_W // 2, CANVAS_H // 2,
-                text=f"Error loading data:\n{stats['_error']}",
-                fill='#ff6666', font=('Segoe UI', 9), justify='center')
-            status_badge.config(text='⚠ Load Error', fg='#ff6666')
-            return
-        stat_labels['account'].config(text=stats.get('account', 'N/A'))
-        stat_labels['images'].config(text=str(stats.get('images', 0)))
-
-        auto_pending = 0
-        try:
-            last_ack = _load_notifier_state()
-            if auto_folder and os.path.exists(auto_folder):
-                cur = set(os.listdir(auto_folder))
-                auto_pending = len([
-                    f for f in (cur - last_ack.get('auto', set()))
-                    if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))
-                ])
-        except Exception:
-            pass
-
-        stat_labels['auto_new'].config(
-            text=str(auto_pending),
-            fg='#2ecc71' if auto_pending > 0 else C_TEXT)
-        stat_labels['refused'].config(
-            text=str(stats.get('refused', 0)),
-            fg='#a0a0ff' if stats.get('refused', 0) > 0 else C_TEXT)
-        stat_labels['reset'].config(
-            text=str(stats.get('reset', 0)),
-            fg='#f39c12' if stats.get('reset', 0) > 0 else C_TEXT)
-        stat_labels['cycle_dur'].config(text=stats.get('cycle_dur', '—') or '—')
-        if stats.get('is_running'):
-            status_badge.config(text='● Running', fg='#2ecc71')
-        else:
-            status_badge.config(text='○ Stopped', fg=C_MUTED)
-        _draw_chart(chart_canvas, detailed, CANVAS_W, CANVAS_H)
-
-    def _poll_log():
+    def _apply_chart_data(detailed, cycles, stats):
+        """在 UI 线程中将解析结果写入控件。"""
         try:
             if not win.winfo_exists():
                 return
-            line = _get_last_log_line()
+            if '_error' in stats:
+                chart_canvas.delete('all')
+                chart_canvas.create_text(
+                    CANVAS_W // 2, CANVAS_H // 2,
+                    text=f"Error loading data:\n{stats['_error']}",
+                    fill='#ff6666', font=('Segoe UI', 9), justify='center')
+                status_badge.config(text='⚠ Load Error', fg='#ff6666')
+                return
+            stat_labels['account'].config(text=stats.get('account', 'N/A'))
+            stat_labels['images'].config(text=str(stats.get('images', 0)))
+
+            auto_pending = 0
+            try:
+                last_ack = _load_notifier_state()
+                if auto_folder and os.path.exists(auto_folder):
+                    cur = set(os.listdir(auto_folder))
+                    auto_pending = len([
+                        f for f in (cur - last_ack.get('auto', set()))
+                        if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.mp4'))
+                    ])
+            except Exception:
+                pass
+
+            stat_labels['auto_new'].config(
+                text=str(auto_pending),
+                fg='#2ecc71' if auto_pending > 0 else C_TEXT)
+            stat_labels['refused'].config(
+                text=str(stats.get('refused', 0)),
+                fg='#a0a0ff' if stats.get('refused', 0) > 0 else C_TEXT)
+            stat_labels['reset'].config(
+                text=str(stats.get('reset', 0)),
+                fg='#f39c12' if stats.get('reset', 0) > 0 else C_TEXT)
+            stat_labels['cycle_dur'].config(text=stats.get('cycle_dur', '—') or '—')
+            if stats.get('is_running'):
+                status_badge.config(text='● Running', fg='#2ecc71')
+            else:
+                status_badge.config(text='○ Stopped', fg=C_MUTED)
+            _draw_chart(chart_canvas, detailed, CANVAS_W, CANVAS_H)
+        except Exception:
+            pass
+
+    def _apply_log_data(line, alive):
+        """在 UI 线程中将日志行与按钮状态写入控件。"""
+        try:
+            if not win.winfo_exists():
+                return
             line = ''.join(c for c in line if 0x20 <= ord(c) <= 0xFFFF)
             line = line.split('\n')[0]
             log_line_lbl.config(text=line)
-            # Update GemiPersona button state
-            alive = _is_gemipersona_running()
             if alive:
                 _gemi_btn.config(state='disabled', fg=C_MUTED, cursor='arrow')
             else:
                 _gemi_btn.config(state='normal', fg=C_TEXT, cursor='hand2')
+        except Exception:
+            pass
+
+    def _poll_log():
+        """每 1 秒轮询一次：I/O 在后台线程，UI 更新回调至主线程。"""
+        def _worker():
+            try:
+                line  = _get_last_log_line()       # 文件 I/O — 后台线程
+                alive = _is_gemipersona_running()  # socket  — 后台线程
+            except Exception:
+                line, alive = '[read error]', False
+            try:
+                if win.winfo_exists():
+                    win.after(0, lambda: _apply_log_data(line, alive))
+            except Exception:
+                pass
+
+        try:
+            if not win.winfo_exists():
+                return
+            threading.Thread(target=_worker, daemon=True).start()
         except Exception:
             pass
         finally:
@@ -426,17 +452,30 @@ def main():
                 pass
 
     def _poll_chart():
-        if not win.winfo_exists():
-            return
+        """每 5 秒轮询一次：解析在后台线程，UI 更新回调至主线程。"""
+        def _worker():
+            try:
+                detailed, cycles, stats = _load_data()  # 解析 log — 后台线程
+            except Exception as e:
+                detailed, cycles, stats = [], [], {'_error': str(e)}
+            try:
+                if win.winfo_exists():
+                    win.after(0, lambda: _apply_chart_data(detailed, cycles, stats))
+            except Exception:
+                pass
+
         try:
-            _refresh()
+            if not win.winfo_exists():
+                return
+            threading.Thread(target=_worker, daemon=True).start()
         except Exception:
             pass
-        try:
-            if win.winfo_exists():
-                win.after(5000, _poll_chart)
-        except Exception:
-            pass
+        finally:
+            try:
+                if win.winfo_exists():
+                    win.after(5000, _poll_chart)
+            except Exception:
+                pass
 
     win.after(1, _poll_log)
     win.after(1, _poll_chart)
