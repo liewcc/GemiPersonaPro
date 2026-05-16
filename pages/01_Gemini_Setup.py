@@ -109,6 +109,8 @@ if "is_busy" not in st.session_state:
     st.session_state.is_busy = False
 if "widget_rerender_key" not in st.session_state:
     st.session_state.widget_rerender_key = 0
+if "meta_file_path" not in st.session_state:
+    st.session_state.meta_file_path = ""
 if "needs_rerun" not in st.session_state:
     st.session_state.needs_rerun = False
 if "last_known_auto_active" not in st.session_state:
@@ -1033,6 +1035,76 @@ with col1:
                             st.error(f"Switch failed: {e}")
                             add_log(f"Switch direct failed: {e}")
                 st.rerun()
+
+        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+
+        # --- Load from File Metadata Section ---
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>LOAD FROM FILE METADATA</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            meta_col_path, meta_col_file, meta_col_apply = st.columns([5, 1, 1])
+            with meta_col_path:
+                st.text_input(
+                    "Metadata File Path",
+                    key="meta_file_path_widget",
+                    value=st.session_state.meta_file_path,
+                    label_visibility="collapsed",
+                    placeholder="Select a PNG file to load metadata from..."
+                )
+            with meta_col_file:
+                if st.button("📁 File", key="meta_file_pick_btn", width="stretch"):
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.wm_attributes('-topmost', True)
+                    picked = filedialog.askopenfilename(
+                        title="Select Metadata File",
+                        filetypes=[("PNG images", "*.png"), ("All image files", "*.png *.jpg *.jpeg *.webp"), ("All files", "*.*")]
+                    )
+                    root.destroy()
+                    if picked:
+                        st.session_state.meta_file_path = picked
+                        st.rerun()
+            with meta_col_apply:
+                if st.button("✅ Apply", key="meta_apply_btn", width="stretch", type="primary"):
+                    _meta_path = st.session_state.get("meta_file_path_widget", "").strip() or st.session_state.meta_file_path.strip()
+                    if _meta_path and os.path.exists(_meta_path):
+                        try:
+                            from PIL import Image as _PIL_Image
+                            with _PIL_Image.open(_meta_path) as _meta_img:
+                                _img_info = _meta_img.info
+                            _meta_prompt = _img_info.get("prompt", "")
+                            _meta_url = _img_info.get("url", "")
+                            _meta_upload = _img_info.get("upload_path", "")
+                            
+                            _updates = {}
+                            # 1. Prompt: save to config, then use _load_from_config to re-populate widget on rerun
+                            if _meta_prompt:
+                                _updates["prompt"] = _meta_prompt
+                            # 2. URL: save to config and update session state for the url widget
+                            if _meta_url:
+                                _updates["browser_url"] = _meta_url
+                                st.session_state["url_bar"] = _meta_url
+                                st.session_state["url_bar_widget"] = _meta_url
+                            # 3. Upload path: upload_path stores the selected_files list (comma-separated)
+                            #    → replace selected_files entirely (UPLOAD FILES TO BROWSER)
+                            if _meta_upload:
+                                _parsed_files = [p.strip() for p in _meta_upload.split(",") if p.strip()]
+                                if _parsed_files:
+                                    st.session_state.selected_files = _parsed_files
+                                    _updates["selected_files"] = _parsed_files
+                            
+                            if _updates:
+                                st.session_state.config = save_config(_updates)
+                                _applied_fields = ", ".join(_updates.keys())
+                                add_log(f"Metadata applied from file: {os.path.basename(_meta_path)} → [{_applied_fields}]")
+                                # Use _load_from_config so the sync block re-populates prompt_input_widget correctly
+                                st.session_state["_load_from_config"] = True
+                                st.rerun()
+                            else:
+                                st.warning("No metadata fields (prompt / url / upload_path) found in this file.")
+                        except Exception as _meta_e:
+                            st.error(f"Failed to read metadata: {_meta_e}")
+                    else:
+                        st.warning("Please select a valid file first.")
 
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
