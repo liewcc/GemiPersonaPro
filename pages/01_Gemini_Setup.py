@@ -1068,7 +1068,7 @@ with col1:
                         st.session_state.meta_file_path = picked
                         st.rerun()
             with meta_col_apply:
-                if st.button("✅ Apply", key="meta_apply_btn", width="stretch", type="primary"):
+                if st.button("✅ Apply", key="meta_apply_btn", width="stretch"):
                     _meta_path = st.session_state.get("meta_file_path_widget", "").strip() or st.session_state.meta_file_path.strip()
                     if _meta_path and os.path.exists(_meta_path):
                         try:
