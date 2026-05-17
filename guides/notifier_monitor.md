@@ -53,4 +53,10 @@ When a notification pops up, you can perform quick actions directly:
   - **By Account Chart**: Displays the image production capacity per session with alternating colors (dark and light green) based on accounts. Sessions with zero output are intelligently filtered out to keep the interface clean.
   - **Interactive Tooltip**: When you hover your mouse near a bar, the bottom right corner of the chart elegantly displays the account name and exact numbers for that bar. It is intuitive and never spawns an out-of-bounds popup that causes the program to flicker.
 
+### Quick Actions Panel (Process Latest Download Image)
+Located directly beneath the performance charts, this panel allows you to interact with the most recently generated automation output without leaving the Monitor window:
+- **View Image**: Instantly opens the single most recently downloaded image in the default Windows photo viewer.
+- **Move to New Folder**: Prompts for a destination folder (defaulting to the current download directory) and instantly moves the latest image. If a sanitized version exists in the `processed/` subfolder, it automatically recreates the structure and moves that file as well.
+- **Delete**: A native, safe integration with the Windows Recycle Bin (using no external dependencies) to quickly discard the most recently downloaded image and its `processed` counterpart, keeping your workflow clean and distraction-free.
+
 With the combination of the Notifier and Monitor, GemiPersonaPro truly achieves a "fully automated background production black box," freeing you from browser constraints.

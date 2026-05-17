@@ -274,7 +274,7 @@ def main():
                                fill=C_MUTED, font=('Microsoft YaHei UI', 10))
             return
         import math
-        PAD_L, PAD_R, PAD_T, PAD_B = 80, 18, 16, 32
+        PAD_L, PAD_R, PAD_T, PAD_B = 55, 18, 16, 32
         chart_w = cw - PAD_L - PAD_R
         chart_h = ch - PAD_T - PAD_B
         N_EVENTS = max(30, int(chart_w / 7.5))
@@ -355,7 +355,7 @@ def main():
                                fill=C_MUTED, font=('Microsoft YaHei UI', 10))
             return
         import math
-        PAD_L, PAD_R, PAD_T, PAD_B = 80, 18, 16, 50
+        PAD_L, PAD_R, PAD_T, PAD_B = 55, 18, 16, 50
         chart_w = cw - PAD_L - PAD_R
         chart_h = ch - PAD_T - PAD_B
         
@@ -445,7 +445,7 @@ def main():
             else:
                 stats.append({"session_index": s_id, "account": acct, "images": success_val})
             
-        PAD_L, PAD_R, PAD_T, PAD_B = 80, 18, 16, 50
+        PAD_L, PAD_R, PAD_T, PAD_B = 55, 18, 16, 50
         chart_w = cw - PAD_L - PAD_R
         chart_h = ch - PAD_T - PAD_B
         
@@ -628,14 +628,118 @@ def main():
                             bg=C_CARD, highlightthickness=0)
     perf_canvas.pack(fill='both', expand=True)
 
-    # buttons
-    btn_frame = tk.Frame(body, bg=C_BG, padx=14, pady=10)
-    btn_frame.pack(fill='x')
-
+    # buttons & image processing styles
     _btn_style = dict(relief='flat', bg=C_SUB, fg=C_TEXT,
                       font=('Microsoft YaHei UI Bold', 9), padx=8, pady=4,
                       cursor='hand2', activebackground='#363d52',
                       activeforeground=C_TEXT)
+
+    # image processing frame
+    img_proc_frame = tk.LabelFrame(body, text='Process Latest Download Image', bg=C_BG, fg=C_MUTED, font=('Microsoft YaHei UI Bold', 9), padx=14, pady=0)
+    img_proc_frame.pack(fill='x', padx=14, pady=(10, 0))
+    
+    def _get_latest_image():
+        if not auto_folder or not os.path.exists(auto_folder):
+            return []
+        try:
+            files = [os.path.join(auto_folder, f) for f in os.listdir(auto_folder) 
+                     if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+            files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            return files[:1]
+        except Exception:
+            return []
+
+    def _do_move_to():
+        from tkinter import filedialog, messagebox
+        import shutil
+        latest_imgs = _get_latest_image()
+        if not latest_imgs:
+            messagebox.showinfo("Move", "No images found.", parent=win)
+            return
+        dest = filedialog.askdirectory(title="Move to New Folder", initialdir=auto_folder, parent=win)
+        if not dest: return
+        errors = []
+        for img in latest_imgs:
+            try: shutil.move(img, os.path.join(dest, os.path.basename(img)))
+            except Exception as e: errors.append(f"Move original failed: {e}")
+            try:
+                proc_file = os.path.join(os.path.dirname(img), "processed", os.path.basename(img))
+                if os.path.exists(proc_file):
+                    proc_dest = os.path.join(dest, "processed")
+                    os.makedirs(proc_dest, exist_ok=True)
+                    shutil.move(proc_file, os.path.join(proc_dest, os.path.basename(proc_file)))
+            except Exception as e: errors.append(f"Move processed failed: {e}")
+        if errors:
+            messagebox.showerror("Move Errors", "\n".join(errors), parent=win)
+
+    def _do_delete():
+        from tkinter import messagebox
+        import ctypes
+        from ctypes import wintypes
+        
+        def _send_to_recycle_bin(path):
+            class SHFILEOPSTRUCTW(ctypes.Structure):
+                _fields_ = [
+                    ("hwnd", wintypes.HWND),
+                    ("wFunc", wintypes.UINT),
+                    ("pFrom", wintypes.LPCWSTR),
+                    ("pTo", wintypes.LPCWSTR),
+                    ("fFlags", wintypes.WORD),
+                    ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", wintypes.LPVOID),
+                    ("lpszProgressTitle", wintypes.LPCWSTR)
+                ]
+            path_with_double_null = os.path.abspath(path) + '\0'
+            shfos = SHFILEOPSTRUCTW()
+            shfos.hwnd = None
+            shfos.wFunc = 3  # FO_DELETE
+            shfos.pFrom = path_with_double_null
+            shfos.pTo = None
+            shfos.fFlags = 0x40 | 0x10  # FOF_ALLOWUNDO | FOF_NOCONFIRMATION
+            shfos.fAnyOperationsAborted = False
+            shfos.hNameMappings = None
+            shfos.lpszProgressTitle = None
+            result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(shfos))
+            if result != 0:
+                raise Exception(f"Error code {result}")
+
+        latest_imgs = _get_latest_image()
+        if not latest_imgs:
+            messagebox.showinfo("Delete", "No images found.", parent=win)
+            return
+            
+        errors = []
+        for img in latest_imgs:
+            try: _send_to_recycle_bin(img)
+            except Exception as e: errors.append(f"Delete original failed: {e}")
+            try:
+                proc_file = os.path.join(os.path.dirname(img), "processed", os.path.basename(img))
+                if os.path.exists(proc_file):
+                    _send_to_recycle_bin(proc_file)
+            except Exception as e: errors.append(f"Delete processed failed: {e}")
+            
+        if errors:
+            messagebox.showerror("Delete Errors", "\n".join(errors), parent=win)
+
+    def _do_view_image():
+        from tkinter import messagebox
+        latest_imgs = _get_latest_image()
+        if not latest_imgs:
+            messagebox.showinfo("View", "No images found.", parent=win)
+            return
+        for img in latest_imgs:
+            try:
+                _open_file_foreground(img)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to open image:\n{e}", parent=win)
+
+    tk.Button(img_proc_frame, text='View Image', command=_do_view_image, **_btn_style).pack(side='left', expand=True, fill='x', padx=(0, 6), pady=(8, 6))
+    tk.Button(img_proc_frame, text='Move to New Folder', command=_do_move_to, **_btn_style).pack(side='left', expand=True, fill='x', padx=(0, 6), pady=(8, 6))
+    tk.Button(img_proc_frame, text='Delete', command=_do_delete, **_btn_style).pack(side='left', expand=True, fill='x', padx=0, pady=(8, 6))
+
+    # main action buttons
+    btn_frame = tk.Frame(body, bg=C_BG, padx=14, pady=10)
+    btn_frame.pack(fill='x')
 
     def _open_auto():
         if auto_folder and os.path.exists(auto_folder):

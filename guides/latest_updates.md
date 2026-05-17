@@ -4,6 +4,12 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-17 - Monitor Image Processing Controls
+- **Quick Actions Container**: Added a new "Process Latest Download Image" control panel directly below the performance charts in the standalone GemiPersona Monitor.
+- **View Image**: Added a dedicated button that instantly opens the most recently downloaded image using the default Windows photo viewer.
+- **Move to New Folder**: Enables users to quickly select a destination folder (defaults to the current download directory) and move the most recently downloaded image out of the auto-download directory with a single click. If a sanitized version exists in the `processed/` subfolder, it will automatically be moved to a `processed/` folder in the new destination.
+- **Delete to Recycle Bin**: Added a quick-delete function that safely moves the most recently downloaded image directly to the Windows Recycle Bin (using the native `send2trash` mechanism). It simultaneously deletes the corresponding file in the `processed/` subfolder if it exists, streamlining the workflow for discarding unwanted generations.
+
 ### Update: 2026-05-17 - Monitor Dashboard Comprehensive Optimization
 
 #### New "By Account" Chart Tab
