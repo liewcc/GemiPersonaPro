@@ -309,28 +309,32 @@ with st.status(_label, expanded=True, state=_state) as _s:
             if not info["checked"]:
                 st.write("🔍 Checking for updates…")
                 return
+            
+            local_ver = info.get("local", "")
             if info["available"]:
-                st.markdown(f"✨ **Update Available:** `{info['remote']}` is ready.")
-                if st.button("Update Repository Now", width="stretch", type="primary", key="update_repo_btn"):
-                    with st.status("Updating repository...", expanded=True) as s:
-                        st.write("Checking for local changes...")
-                        status_res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
-                        if status_res.stdout.strip():
-                            s.update(label="❌ Update Aborted", state="error")
-                            st.warning("Please commit or stash changes before updating.")
-                        else:
-                            st.write("Pulling changes...")
-                            pull_res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
-                            if pull_res.returncode == 0:
-                                s.update(label="✅ Updated", state="complete")
-                                st.success("Updated! Restarting...")
-                                time.sleep(1.5)
-                                st.rerun()
+                col1, col2 = st.columns([0.7, 0.3])
+                with col1:
+                    st.write(f"✅ Version: `{local_ver}` (Update: `{info['remote']}`)")
+                with col2:
+                    if st.button("Update Now", use_container_width=True, type="primary", key="update_repo_btn"):
+                        with st.status("Updating repository...", expanded=True) as s:
+                            st.write("Checking for local changes...")
+                            status_res = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True)
+                            if status_res.stdout.strip():
+                                s.update(label="❌ Update Aborted", state="error")
+                                st.warning("Please commit or stash changes before updating.")
                             else:
-                                s.update(label="❌ Failed", state="error")
-                                st.error(pull_res.stderr)
+                                st.write("Pulling changes...")
+                                pull_res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True)
+                                if pull_res.returncode == 0:
+                                    s.update(label="✅ Updated", state="complete")
+                                    st.success("Updated! Restarting...")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    s.update(label="❌ Failed", state="error")
+                                    st.error(pull_res.stderr)
             else:
-                local_ver = info.get("local", "")
                 if local_ver:
                     st.write(f"✅ Version: `{local_ver}` (Latest)")
                 else:
@@ -400,7 +404,7 @@ if all_done:
     cfg = load_config()
     current_redirect = cfg.get("startup_redirect", "gemini_setup")
 
-    left, right = st.columns(2)
+    left, right = st.columns([0.3, 0.7])
 
     with left:
         st.markdown("**Default redirect:**")
@@ -419,10 +423,24 @@ if all_done:
 
     with right:
         st.markdown("**Navigate now:**")
-        if st.button("→ Gemini Setup", width="stretch", type="primary"):
-            st.switch_page("pages/01_Gemini_Setup.py")
-        if st.button("→ Dashboard", width="stretch"):
-            st.switch_page("pages/00_Dashboard.py")
-        st.link_button("github repository", "https://github.com/liewcc/GemiPersonaPro", width="stretch")
+        nav_col1, nav_col2 = st.columns(2)
+        with nav_col1:
+            if st.button("→ Gemini Setup", use_container_width=True, type="primary"):
+                st.switch_page("pages/01_Gemini_Setup.py")
+        with nav_col2:
+            if st.button("→ Dashboard", use_container_width=True):
+                st.switch_page("pages/00_Dashboard.py")
+        
+        link_col1, link_col2 = st.columns(2)
+        with link_col1:
+            st.link_button("GitHub Repo", "https://github.com/liewcc/GemiPersonaPro", use_container_width=True)
+        with link_col2:
+            if st.button("Program Folder", use_container_width=True):
+                import os
+                if hasattr(os, 'startfile'):
+                    os.startfile(os.path.abspath(os.path.dirname(__file__)))
+                else:
+                    import subprocess
+                    subprocess.Popen(['explorer', os.path.abspath(os.path.dirname(__file__))])
 
     render_countdown()
