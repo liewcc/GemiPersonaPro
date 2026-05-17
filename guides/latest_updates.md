@@ -55,7 +55,7 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - **Enterprise Stability**: Added background tray restart loops and safe exception handling for all background UI threads.
 
 ### Update: 2026-05-16 - Load Metadata from File in Gemini Setup
-- **Metadata Extraction & Auto-fill**: Added a new **LOAD FROM FILE METADATA** container directly above the BROWSER URL section in the `Gemini Setup` page. Users can now select an existing generated PNG image file to automatically extract its embedded metadata (`prompt`, `url`, `upload_path`).
+- **Metadata Extraction & Auto-fill**: Added a new **EXTRACT METADATA FROM IMAGE** container directly above the BROWSER URL section in the `Gemini Setup` page. Users can now select an existing generated PNG image file to automatically extract its embedded metadata (`prompt`, `url`, `upload_path`).
 - **Seamless State Synchronization**: Clicking "Apply" instantly updates the workspace configuration, injecting the extracted `prompt` into the text area, the `url` into the browser navigation bar, and automatically overriding the **UPLOAD FILES TO BROWSER** queue with the extracted image paths. This creates a powerful preset-loading workflow straight from historical outputs.
 - **Native File Picker**: Utilizes a robust, always-on-top `tkinter` file dialog specifically filtered for images (`.png`, `.webp`, `.jpg`), ensuring a smooth native Windows browsing experience.
 

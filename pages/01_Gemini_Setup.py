@@ -1039,7 +1039,7 @@ with col1:
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
         # --- Load from File Metadata Section ---
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>LOAD FROM FILE METADATA</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>EXTRACT METADATA FROM IMAGE</p>", unsafe_allow_html=True)
         with st.container(border=True):
             # Pre-render sync: propagate the backing variable to the widget key
             # BEFORE the widget is instantiated to avoid StreamlitAPIException.
