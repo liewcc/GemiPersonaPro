@@ -4,6 +4,14 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-18 - Gemini Setup Image Reference Improvements
+- **IMAGE REFERENCE Section**: Renamed the container from "EXTRACT METADATA FROM IMAGE" to "IMAGE REFERENCE" for a cleaner and more professional presentation.
+- **Dual-Mode Image Handling**: Added two horizontal radio buttons (`extract metadata from image` and `modify image`) directly below the file path text box:
+  - **extract metadata from image**: Retains the original functionality of parsing embedded generation prompt, URL, and uploaded files list from the PNG metadata.
+  - **modify image**: A new workflow for modifying existing images. When selected and applied, the system generates the prefix `modify image "filename.png":` and automatically injects it into the prompt text area.
+- **Automatic File Synchronisation**: In `modify image` mode, clicking "Apply" also automatically clears the existing **UPLOAD FILES TO BROWSER** queue and replaces it entirely with the selected reference image, ensuring the target image is attached for modification.
+- **Streamlit State Hydration & Rerun**: Implemented an explicit state hydration flow. By updating the backend configuration and setting `st.session_state["_load_from_config"] = True` before triggering a rerun, the page reliably reads the fresh prompt and updates the text area UI immediately, preventing the native Streamlit widget state lag.
+
 ### Update: 2026-05-17 - Monitor Image Processing Controls
 - **Quick Actions Container**: Added a new "Process Latest Download Image" control panel directly below the performance charts in the standalone GemiPersona Monitor.
 - **View Image**: Added a dedicated button that instantly opens the most recently downloaded image using the default Windows photo viewer.
