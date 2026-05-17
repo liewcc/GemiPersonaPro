@@ -363,11 +363,16 @@ def main():
         if auto_folder and os.path.exists(auto_folder):
             last_ack['auto'] = set(os.listdir(auto_folder))
             try:
+                data = {}
+                if os.path.exists(_STATE_FILE):
+                    with open(_STATE_FILE, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        
+                data['last_ack_auto'] = list(last_ack['auto'])
+                data['last_ack_upscale'] = list(last_ack.get('upscale', set()))
+                
                 with open(_STATE_FILE, 'w', encoding='utf-8') as f:
-                    json.dump({
-                        'last_ack_auto': list(last_ack['auto']),
-                        'last_ack_upscale': list(last_ack.get('upscale', set()))
-                    }, f)
+                    json.dump(data, f)
             except Exception:
                 pass
             if 'auto_new' in stat_labels:
