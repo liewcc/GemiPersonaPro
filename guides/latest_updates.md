@@ -4,35 +4,35 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
-### Update: 2026-05-17 - Monitor Dashboard 全面优化
+### Update: 2026-05-17 - Monitor Dashboard Comprehensive Optimization
 
-#### 新增 "By Account" 图表 Tab
-- 在 GemiPersona Monitor 新增了第三个图表标签页 **"By Account"**，专门展示按账号切换顺序聚合的图片下载量。
-- X 轴代表每次账号 Session（以切换顺序排列，不显示文字避免拥挤），Y 轴为每个 Session 成功下载的图片数量。
-- 配色方案与主 Dashboard 的 "Account Switch Duration Chart"（Images Download 模式）完全一致：
-  - 成功下载图片 (>0)：深浅交替绿色（`#2ecc71` / `#a0e6b5`）
-  - 零图片 Session：不绘制 bar，保持留白（改善视觉清洁度）。
-- **Mouse-over Tooltip**：鼠标悬停在任意 bar 列时，图表右下角会显示对应账号名（去除 `@domain` 后缀）和图片数量，完全不跟随鼠标，避免弹出框超出程序窗口。
+#### New "By Account" Chart Tab
+- Added a third chart tab **"By Account"** in the GemiPersona Monitor, specifically designed to display the aggregated image downloads ordered by the account switching sequence.
+- The X-axis represents each account Session (ordered by switch sequence, without text labels to avoid clutter), and the Y-axis represents the number of successfully downloaded images for each Session.
+- The color scheme is perfectly aligned with the main Dashboard's "Account Switch Duration Chart" (Images Download mode):
+  - Successful image downloads (>0): Alternating dark and light green (`#2ecc71` / `#a0e6b5`).
+  - Zero-image Sessions: No bar is drawn, leaving it blank (improving visual cleanliness).
+- **Mouse-over Tooltip**: When hovering over any bar, the account name (with the `@domain` suffix removed) and the exact image count will be displayed in the bottom right corner of the chart. It does not track the mouse, preventing the popup from extending beyond the application window.
 
-#### 数据同步修正（与主 Dashboard 完全对齐）
-- **Total Images**：改为从 `reject_stat_log.json` 历史记录行数计算，与 Dashboard 一致。
-- **Total Refused / Total Reset**：
-  - 运行中：直接使用 API `/browser/automation/stats` 的 `refusals` / `resets` 字段（与 Dashboard 状态栏相同来源）。
-  - 已停止：从 `reject_stat_log.json` 汇总各 cycle 的 `refused_count` / `reset_count`。
-- **Total Cycles**：修正为使用 API 的 `cycles` 字段（引擎真实 cycle 计数器），不再错误使用 `round`（per-image 序列号）。
+#### Data Synchronization Fixes (Perfectly Aligned with Main Dashboard)
+- **Total Images**: Now calculated from the row count of `reject_stat_log.json`, consistent with the Dashboard.
+- **Total Refused / Total Reset**:
+  - While Running: Directly utilizes the `refusals` / `resets` fields from the `/browser/automation/stats` API (the same source as the Dashboard status bar).
+  - While Stopped: Aggregates the historical `refused_count` / `reset_count` for each cycle from `reject_stat_log.json`.
+- **Total Cycles**: Corrected to use the `cycles` field from the API (the true engine cycle counter), no longer mistakenly using `round` (which is a per-image sequence number).
 
-#### 第二行账号统计修复
-- 修正了账号名匹配逻辑：API 返回完整 email（如 `dapmuar@gmail.com`），而 `user_login_lookup.json` 存储的是短名（如 `dapmuar`）。现在统一取 `@` 前缀再比对，确保 Switch At、Images、Refused、Reset 正确显示。
-- 将 `user_login_lookup.json` 查找逻辑移至最外层，无论 log 缓存是否已加载都会立刻执行，避免第二行数据在启动初期不显示。
+#### Second Row Account Stats Fixes
+- Fixed the account name matching logic: The API returns the full email (e.g., `dapmuar@gmail.com`), while `user_login_lookup.json` stores the short name (e.g., `dapmuar`). The comparison now uniformly extracts the prefix before the `@` symbol, ensuring Switch At, Images, Refused, and Reset statistics are displayed correctly.
+- Moved the `user_login_lookup.json` lookup logic to the outermost layer. It now executes immediately regardless of whether the log cache is loaded, preventing the second row of data from missing during initial startup.
 
-#### CPU 占用优化（智能增量解析）
-- 之前每 5 秒强制完整解析 21MB 的 `engine.log`，导致 CPU 风扇狂转。
-- 新增 `_count_events_tail()` 函数：每次轮询只读取日志末尾约 64KB，统计关键事件行数。只有在检测到新事件时才触发完整重解析。
-- 数字统计板优先从轻量 API 获取，日志解析仅用于图表渲染。CPU 占用在无新事件时接近 0%。
+#### CPU Usage Optimization (Smart Incremental Parsing)
+- Previously, the 21MB `engine.log` was forcibly and fully parsed every 5 seconds, causing high CPU fan speeds.
+- Introduced the `_count_events_tail()` function: Each polling cycle now only reads the last ~64KB of the log to count key event lines. A full re-parse is triggered only when new events are detected.
+- The numeric dashboard prioritizes fetching from the lightweight API, and log parsing is strictly used for chart rendering. CPU usage now drops to near 0% when there are no new events.
 
-#### 字体与界面改善
-- 全面统一使用 `Microsoft YaHei UI` 字体，正确渲染中英文混合内容。
-- 图表 Bar 数量改为根据 Canvas 实际宽度动态计算（约每 7.5px 一个 bar），不再出现右侧大量空白。
+#### Typography and Interface Improvements
+- Uniformly applied the `Microsoft YaHei UI` font across the interface for correct rendering of mixed English and CJK content.
+- The number of chart bars is now dynamically calculated based on the actual Canvas width (~7.5px per bar), eliminating large blank spaces on the right side.
 
 
 ### Update: 2026-05-16 - Notifier Monitor Aesthetics
