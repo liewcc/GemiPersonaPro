@@ -9,6 +9,7 @@
 - [📖 Documentation](#-documentation)
   - [⏱️ Quick Start Guide](./guides/quick_start.md)
   - [📊 Monitoring & Stats](./guides/monitoring_stats.md)
+  - [🔔 Notifier & Monitor](./guides/notifier_monitor.md)
   - [👥 Multi-Account Management](./guides/multi_account.md)
   - [🔄 Loop Control Config](./guides/loop_control.md)
   - [🛠️ System Config Guide](./guides/system_config.md)

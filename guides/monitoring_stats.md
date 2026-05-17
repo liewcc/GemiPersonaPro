@@ -88,17 +88,4 @@ When automation stops, the dialog displays a final summary:
 - **Avg/Img**: Average time taken to acquire one final image (including all retries).
 
 ---
-
-## 7. Background Image Notifier
-GemiPersonaPro natively supports a silent **Background Image Notifier** (`image_notifier.py` / `start_notifier.vbs`) that runs as an **independent program** in your Windows System Tray.
-- **Independent Operation**: Because it runs entirely independent from the Streamlit UI, **it will continue to operate even after you close the Streamlit browser window**. This is designed so you can step away from the setup page and still receive updates.
-- **Dual-Directory Tracking**: It concurrently monitors both your configured **Automation Save Directory** and your **4K Upscaler Output Directory**, providing unified alerts for all system generation activities.
-- **Function**: It pops up a sleek, borderless UI notification whenever new images are successfully downloaded. The UI displays large, side-by-side unacknowledged counts for both the Automation and Upscaler pipelines, intelligently greying out text for pipelines that are not currently running.
-- **Enhanced Taskbar UI**: The notifier popup includes interactive buttons:
-  - **📁 Download Folder** & **📁 Upscale Folder**: Dedicated buttons to instantly open the specific directory where the new images were saved.
-  - **📊 Monitor**: Launches the standalone `monitor_window.py` process to view a detailed performance and account health analysis chart directly from the desktop.
-  - **Open GemiPersona**: A smart launch button. If the GemiPersona main application or engine is not running, this button is active; clicking it will launch the `run.bat` automatically. If the application is already running, the button will be disabled to prevent duplicate processes.
-- **How to Control**: You can toggle the notifier on/off directly from the **Dashboard UI**, using the **Start/Stop Notifier** button on the bottom left. Alternatively, to stop it completely when the UI is closed, look for its blue `GemiPersona Notifier` icon in your Windows right-bottom SystemTray, right-click, and select **"Quit"**. Doing so will also safely terminate any linked monitor and popup windows to ensure a completely clean exit.
-
----
 *Stay informed, optimize your prompts.*
