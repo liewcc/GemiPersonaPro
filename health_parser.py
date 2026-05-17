@@ -80,7 +80,8 @@ def parse_engine_cycles():
                             'stop_time_str': full_ts, 'success_count': 0,
                             'reject_count': 0, 'reset_count': 0,
                             'reject_duration': 0, 'reset_duration': 0,
-                            'last_ts': full_ts
+                            'last_ts': full_ts,
+                            'account': acct
                         }
                 if current_cycle is not None:
                     current_cycle['lines_count'] += 1
