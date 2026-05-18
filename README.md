@@ -11,6 +11,7 @@
   - [📊 Monitoring & Stats](./guides/monitoring_stats.md)
   - [🔔 Notifier & Monitor](./guides/notifier_monitor.md)
   - [👥 Multi-Account Management](./guides/multi_account.md)
+  - [🖼️ Image Reference Modes](./guides/image_reference.md)
   - [🔄 Loop Control Config](./guides/loop_control.md)
   - [🛠️ System Config Guide](./guides/system_config.md)
   - [🧠 AI Watermark Technology](./guides/watermark_removal.md)
