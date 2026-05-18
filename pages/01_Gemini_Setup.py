@@ -116,10 +116,10 @@ if "meta_file_path" not in st.session_state:
 # plain variable survives, allowing the radio to be restored on page re-entry.
 if "_image_ref_mode_value" not in st.session_state:
     st.session_state._image_ref_mode_value = "extract metadata from image"
-# Restore the widget key from the backing store every time the page loads.
-# On a fresh page entry the widget key will be absent; on a normal rerun it
-# will already match, so this is effectively a no-op in the steady state.
-st.session_state["image_ref_mode"] = st.session_state._image_ref_mode_value
+# Only restore the widget key when it is genuinely absent (cross-page entry).
+# Do NOT overwrite it on normal reruns — that would clobber the user's selection.
+if "image_ref_mode" not in st.session_state:
+    st.session_state["image_ref_mode"] = st.session_state._image_ref_mode_value
 if "needs_rerun" not in st.session_state:
     st.session_state.needs_rerun = False
 if "last_known_auto_active" not in st.session_state:
