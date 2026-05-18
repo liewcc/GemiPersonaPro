@@ -1045,10 +1045,8 @@ with col1:
                             add_log(f"Switch direct failed: {e}")
                 st.rerun()
 
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
-
         # --- Image Reference Section ---
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>IMAGE REFERENCE</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>IMAGE REFERENCE</p>", unsafe_allow_html=True)
         with st.container(border=True):
             # Pre-render sync: propagate the backing variable to the widget key
             # BEFORE the widget is instantiated to avoid StreamlitAPIException.
@@ -1177,10 +1175,8 @@ with col1:
             # so that cross-page navigation can restore it on the next entry.
             st.session_state._image_ref_mode_value = st.session_state["image_ref_mode"]
 
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
-
         # --- Browser URL Section ---
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>BROWSER URL</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>BROWSER URL</p>", unsafe_allow_html=True)
         with st.container(border=True):
             st.text_input(
                 "URL Input",
@@ -1256,7 +1252,7 @@ with col1:
             pass
 
         # --- Aspect Ratio Setting Section ---
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>ASPECT RATIO SETTING</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>ASPECT RATIO SETTING</p>", unsafe_allow_html=True)
         with st.container(border=True):
             # Load current state from config
             cfg_pm = config.get("prompt_matrix", {})
@@ -1310,10 +1306,8 @@ with col1:
                         if k.startswith("pm_editor_setup_"): del st.session_state[k]
                     show_prompt_prefix_dialog()
 
-        st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
-        
         # --- Prompt Section ---
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>PROMPT</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>PROMPT</p>", unsafe_allow_html=True)
         with st.container(border=True):
             p_area_col, p_btn_col = st.columns([4, 1])
             with p_area_col:
@@ -1350,7 +1344,7 @@ with col1:
 
 
         # --- Tool & Model Selection Section ---
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>TOOL & MODEL SELECTION</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>TOOL & MODEL SELECTION</p>", unsafe_allow_html=True)
         with st.container(border=True):
             # Load dynamic options from config (discovery field)
             discovery = config.get("discovery", {})
@@ -1403,8 +1397,7 @@ with col1:
                     st.rerun()
 
         # --- Add File Section (Isolated Container) ---
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>UPLOAD FILES TO BROWSER</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>UPLOAD FILES TO BROWSER</p>", unsafe_allow_html=True)
         with st.container(border=True):
             if st.button("➕ Add File(s)", width="stretch"):
                 paths = select_multiple_files()
@@ -1476,8 +1469,7 @@ with col1:
                     st.rerun()
 
         # --- Storage & Naming Section ---
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>STORAGE & NAMING</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>STORAGE & NAMING</p>", unsafe_allow_html=True)
         with st.container(border=True):
             k = st.session_state.widget_rerender_key
             p_col1, p_col2 = st.columns([4, 1])
@@ -1504,8 +1496,7 @@ with col1:
                 st.number_input("Start No.", min_value=0, value=st.session_state.name_start, key=f"name_start_widget_{k}", on_change=on_naming_change)
 
         # --- Gemini Submit & Stop Section ---
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>GEMINI ACTIONS</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>GEMINI ACTIONS</p>", unsafe_allow_html=True)
         with st.container(border=True):
             sub_col_nc, sub_col1, sub_col2, sub_col3 = st.columns([1, 1, 1, 1])
             
@@ -1648,8 +1639,7 @@ with col1:
                     st.rerun()
 
         # --- Watermark Settings Section ---
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>WATERMARK SETTINGS</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>WATERMARK SETTINGS</p>", unsafe_allow_html=True)
         with st.container(border=True):
             wm_col1, wm_col2 = st.columns(2)
             with wm_col1:
@@ -1678,8 +1668,7 @@ with col1:
                 st.rerun()
 
         # --- Gemini Automation Section ---
-        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #a0a0ff;'>GEMINI AUTOMATION</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>GEMINI AUTOMATION</p>", unsafe_allow_html=True)
         with st.container(border=True):
             # --- Automation Stats Fragment (Moved to top) ---
 

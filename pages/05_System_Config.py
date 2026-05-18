@@ -221,7 +221,7 @@ if menu_selection == "Engine Settings":
             with c2: st.toggle("Headless Mode", key="cfg_headless", on_change=on_change_headless)
             st.selectbox("Startup Redirect", options=["dashboard", "gemini_setup", "asset_sanitizer"], key="cfg_startup_redirect", on_change=on_change_redirect)
 
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>TIMING & WATCHDOG</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; text-transform: uppercase;'>TIMING & WATCHDOG</p>", unsafe_allow_html=True)
         with st.container(border=True):
             st.number_input("Heartbeat Timeout (s)", min_value=0, max_value=86400, key="cfg_timeout", on_change=on_change_timeout, step=1)
             st.number_input("Watchdog Initial Delay (s)", min_value=5, max_value=120, step=5, key="cfg_watchdog_delay", on_change=on_change_watchdog_delay)
@@ -229,7 +229,7 @@ if menu_selection == "Engine Settings":
             with c1: st.number_input("Quota Cooldown (h)", min_value=0, max_value=168, step=1, key="cfg_quota_cooldown_hrs", on_change=on_change_quota_cooldown)
             with c2: st.number_input("Quota Cooldown (m)", min_value=0, max_value=59, step=1, key="cfg_quota_cooldown_min", on_change=on_change_cooldown_min)
 
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>AUTOMATION OPTIONS</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; text-transform: uppercase;'>AUTOMATION OPTIONS</p>", unsafe_allow_html=True)
         with st.container(border=True):
             st.toggle("Remove AI Watermark", key="cfg_watermark", on_change=on_change_watermark)
             st.toggle("Use GPU Acceleration", key="cfg_gpu", on_change=on_change_gpu)
@@ -243,7 +243,7 @@ if menu_selection == "Engine Settings":
             with c1: st.number_input("Prefix Padding", min_value=0, max_value=10, key="cfg_name_padding", on_change=on_change_padding, step=1)
             with c2: st.number_input("Starting Index", min_value=1, key="cfg_name_start", on_change=on_change_start_num, step=1)
 
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>WATCHDOG LOG</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; text-transform: uppercase;'>WATCHDOG LOG</p>", unsafe_allow_html=True)
         with st.container(border=True):
             log_content = get_watchdog_log()
             btn_col1, btn_col2 = st.columns([1, 1])
@@ -268,7 +268,7 @@ elif menu_selection == "Automation Settings":
             st.selectbox("Default Tool", options=discovery.get("available_tools", []), key="cfg_selected_tool", on_change=on_change_tool)
             st.selectbox("Default Model", options=discovery.get("available_models", []), key="cfg_selected_model", on_change=on_change_model)
 
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>ASPECT RATIO SETTING</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; text-transform: uppercase;'>ASPECT RATIO SETTING</p>", unsafe_allow_html=True)
         pm_config = config.get("prompt_matrix", {})
         pm_enabled = pm_config.get("enabled", False)
 
@@ -450,7 +450,7 @@ elif menu_selection == "Automation Settings":
                     st.success("Progress reset!")
                     st.rerun()
 
-        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase;'>AUTOMATION GOALS</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; text-transform: uppercase;'>AUTOMATION GOALS</p>", unsafe_allow_html=True)
         with st.container(border=True):
             st.toggle("Auto-Looping Enabled", key="cfg_auto_looping", on_change=on_change_auto_looping)
             st.selectbox("Execution Mode", options=["images", "rounds"], key="cfg_auto_mode", on_change=on_change_auto_mode)
