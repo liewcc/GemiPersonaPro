@@ -150,9 +150,8 @@ class BrowserEngine:
                 # Small delay to release file handles
                 import shutil
                 shutil.rmtree(self._sandbox_dir, ignore_errors=True)
-                print(f"[DEBUG] Sandbox {self._sandbox_dir} cleaned up.")
             except Exception as e:
-                print(f"[DEBUG] Sandbox cleanup failed: {e}")
+                pass  # Sandbox cleanup failed silently
             self._sandbox_dir = None
 
     async def start(self, headless=True, url="https://gemini.google.com/app", profile_name="Default"):
@@ -197,7 +196,7 @@ class BrowserEngine:
                     print(f"[ERROR] Junction failed (Code {res.returncode}): {res.stderr.strip()}")
                 else:
                     if os.path.exists(sandbox_default):
-                        print(f"[DEBUG] Sandbox junction verified: {profile_name} -> {sandbox_default}")
+                        pass  # Junction verified
                     else:
                         print(f"[ERROR] Junction reported success but path does not exist!")
             else:
@@ -222,7 +221,7 @@ class BrowserEngine:
                                 state["profile"]["last_active_profiles"] = ["Default"]
                             with open(dest, "w", encoding="utf-8") as f:
                                 json.dump(state, f)
-                            print(f"[DEBUG] Local State forced to 'Default' profile.")
+                            pass  # Local State patched
                         except Exception as e:
                             print(f"[ERROR] Failed to patch Local State: {e}")
             
@@ -231,7 +230,7 @@ class BrowserEngine:
                 last_profile_path = os.path.join(self._sandbox_dir, "Last Profile")
                 with open(last_profile_path, "w", encoding="utf-8") as f:
                     f.write("Default")
-                print(f"[DEBUG] Forced 'Last Profile' file created.")
+                pass  # 'Last Profile' file created
             except Exception as e:
                 print(f"[ERROR] Failed to create 'Last Profile': {e}")
 
@@ -295,7 +294,7 @@ class BrowserEngine:
                 "bounds": {"windowState": "minimized"}
             })
         except Exception as e:
-            print(f"[DEBUG] CDP minimize failed: {e}")
+            pass  # CDP minimize failed silently
 
     async def stop(self):
         """Stops the browser session and cleans up sandbox."""
@@ -439,8 +438,7 @@ class BrowserEngine:
         def log_debug(msg):
             timestamp = datetime.now().strftime("[%H:%M:%S]")
             with open(LOG_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{timestamp} [DEBUG_SYNC] {msg}\n")
-            print(f"[DEBUG_SYNC] {msg}")
+                f.write(f"{timestamp} [SYNC] {msg}\n")
 
         # 1. Detection Phase: Get filenames currently in Gemini
         raw_labels = await self._page.evaluate('''() => {

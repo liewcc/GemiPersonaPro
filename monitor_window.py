@@ -96,7 +96,11 @@ def _get_last_log_line():
                 msg    = obj.get('message', '')[:120]
                 ts_raw = obj.get('ts', obj.get('timestamp', obj.get('time', '')))
                 ts     = ts_raw.split('T')[-1][:8] if 'T' in ts_raw else ts_raw[:8]
-                raw    = f'[{ts}] {ev}: {msg}' if (ts or ev) else msg
+                # Omit the "DEBUG" prefix to avoid confusion in the monitor display
+                if ev and ev != 'DEBUG':
+                    raw = f'[{ts}] {ev}: {msg}' if ts else f'{ev}: {msg}'
+                else:
+                    raw = f'[{ts}] {msg}' if ts else msg
             except Exception:
                 pass
         return raw[:160]
