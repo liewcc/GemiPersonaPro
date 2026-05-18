@@ -97,6 +97,16 @@ st.markdown("""
             color: #0366d6 !important;
             background-color: transparent !important;
         }
+
+        /* Center-align emoji icons in gallery action buttons */
+        [data-testid="stHorizontalBlock"] button[kind="secondary"] p,
+        [data-testid="stHorizontalBlock"] button[kind="secondaryFormSubmit"] p {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            width: 100% !important;
+            text-align: center !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -1433,6 +1443,58 @@ def manual_watermark_removal_dialog(file_path):
             else:
                 st.info("Start drawing to see the AI result.")
 
+@st.dialog("✏️ Rename File")
+def rename_image_dialog(file_path, save_dir):
+    filename = os.path.basename(file_path)
+    name_root, ext = os.path.splitext(filename)
+    parent_dir = os.path.dirname(file_path)
+
+    st.markdown(f"**Current name:** `{filename}`")
+    new_name_root = st.text_input(
+        "New filename (without extension)",
+        value=name_root,
+        key=f"rename_input_{filename}"
+    )
+    new_filename = new_name_root.strip() + ext if new_name_root.strip() else ""
+
+    # Conflict detection
+    conflict_main = False
+    conflict_proc = False
+    if new_filename and new_filename != filename:
+        new_path_main = os.path.join(save_dir, new_filename)
+        new_path_proc = os.path.join(save_dir, "processed", new_filename)
+        if os.path.exists(new_path_main):
+            conflict_main = True
+        if os.path.exists(new_path_proc):
+            conflict_proc = True
+
+    if conflict_main or conflict_proc:
+        locations = []
+        if conflict_main: locations.append("the save folder")
+        if conflict_proc: locations.append("the processed folder")
+        st.warning(f"⚠️ A file named **{new_filename}** already exists in {' and '.join(locations)}. Saving will overwrite it.")
+
+    btn_disabled = (not new_filename) or (new_filename == filename)
+    if st.button("💾 Rename", type="primary", width="stretch", disabled=btn_disabled, key=f"rename_confirm_{filename}"):
+        try:
+            # Rename in main save_dir
+            src_main = os.path.join(save_dir, filename)
+            dst_main = os.path.join(save_dir, new_filename)
+            if os.path.exists(src_main):
+                os.rename(src_main, dst_main)
+
+            # Rename in processed sub-dir if it exists
+            src_proc = os.path.join(save_dir, "processed", filename)
+            dst_proc = os.path.join(save_dir, "processed", new_filename)
+            if os.path.exists(src_proc):
+                os.rename(src_proc, dst_proc)
+
+            st.toast(f"Renamed to {new_filename}", icon="✅")
+            time.sleep(0.5)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to rename: {e}")
+
 @st.dialog("Image Metadata")
 def show_dash_metadata(img_path):
     from PIL.ExifTags import TAGS
@@ -1526,7 +1588,7 @@ def render_image_gallery():
                         unsafe_allow_html=True
                     )
                     st.markdown("<div style='margin-top:-0.5rem;'></div>", unsafe_allow_html=True)
-                    bt_c1, bt_c2, bt_c3, bt_c4, bt_c5 = st.columns(5)
+                    bt_c1, bt_c2, bt_c3, bt_c4, bt_c5, bt_c6 = st.columns(6)
                     with bt_c1:
                         if st.button("👁️", key=f"v_{filename}", help="View image in default viewer"): open_file_foreground(file_path)
                     with bt_c2:
@@ -1566,6 +1628,9 @@ def render_image_gallery():
                                 except Exception as e:
                                     st.error(f"Failed to move: {e}")
                     with bt_c5:
+                        if st.button("✏️", key=f"r_{filename}", help="Rename file"):
+                            rename_image_dialog(file_path, save_dir)
+                    with bt_c6:
                         if st.button("🗑️", key=f"d_{filename}", help="Delete image and generated files"):
                             for p in [os.path.join(save_dir, filename), os.path.join(save_dir, "processed", filename)]:
                                 if os.path.exists(p): send2trash.send2trash(os.path.abspath(os.path.normpath(p)))

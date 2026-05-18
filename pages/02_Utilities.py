@@ -253,6 +253,16 @@ st.markdown("""
         background-color: transparent !important;
     }
 
+    /* Center-align emoji icons in gallery action buttons */
+    [data-testid="stHorizontalBlock"] button[kind="secondary"] p,
+    [data-testid="stHorizontalBlock"] button[kind="secondaryFormSubmit"] p {
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        width: 100% !important;
+        text-align: center !important;
+    }
+
     </style>
 """, unsafe_allow_html=True)
 
@@ -967,6 +977,62 @@ def perform_asset_delete(file_path):
     except Exception as e:
         st.error(f"Delete failed: {e}")
 
+@st.dialog("✏️ Rename File")
+def rename_san_image_dialog(file_path):
+    filename = os.path.basename(file_path)
+    name_root, ext = os.path.splitext(filename)
+    parent_dir = os.path.dirname(file_path)
+
+    # If we're inside a 'processed' subfolder, use parent as base
+    if os.path.basename(parent_dir.rstrip("/\\")).lower() == "processed":
+        base_dir = os.path.dirname(parent_dir)
+    else:
+        base_dir = parent_dir
+
+    st.markdown(f"**Current name:** `{filename}`")
+    new_name_root = st.text_input(
+        "New filename (without extension)",
+        value=name_root,
+        key=f"san_rename_input_{filename}"
+    )
+    new_filename = new_name_root.strip() + ext if new_name_root.strip() else ""
+
+    # Conflict detection
+    conflict_main = False
+    conflict_proc = False
+    if new_filename and new_filename != filename:
+        if os.path.exists(os.path.join(base_dir, new_filename)):
+            conflict_main = True
+        if os.path.exists(os.path.join(base_dir, "processed", new_filename)):
+            conflict_proc = True
+
+    if conflict_main or conflict_proc:
+        locations = []
+        if conflict_main: locations.append("the main folder")
+        if conflict_proc: locations.append("the processed folder")
+        st.warning(f"⚠️ A file named **{new_filename}** already exists in {' and '.join(locations)}. Saving will overwrite it.")
+
+    btn_disabled = (not new_filename) or (new_filename == filename)
+    if st.button("💾 Rename", type="primary", width="stretch", disabled=btn_disabled, key=f"san_rename_confirm_{filename}"):
+        try:
+            # Rename in main dir
+            src_main = os.path.join(base_dir, filename)
+            dst_main = os.path.join(base_dir, new_filename)
+            if os.path.exists(src_main):
+                os.rename(src_main, dst_main)
+
+            # Rename in processed subdir
+            src_proc = os.path.join(base_dir, "processed", filename)
+            dst_proc = os.path.join(base_dir, "processed", new_filename)
+            if os.path.exists(src_proc):
+                os.rename(src_proc, dst_proc)
+
+            st.toast(f"Renamed to {new_filename}", icon="✅")
+            time.sleep(0.5)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to rename: {e}")
+
 @st.dialog("Complete Metadata", width="large")
 def view_metadata_dialog(file_path):
     st.markdown("### ℹ️ Complete Metadata")
@@ -1254,7 +1320,7 @@ with tab_san:
                             <p style='text-align:center; font-size:0.8rem; color:#888; margin:4px 0 8px 0;'>{filename}</p>
                         """, unsafe_allow_html=True)
     
-                        btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns(5)
+                        btn_col1, btn_col2, btn_col3, btn_col4, btn_col5, btn_col6, btn_col7 = st.columns(7)
                         with btn_col1:
                             if st.button("👁️", key="v_btn", width="stretch", help="View image"):
                                 open_file_foreground(file_path)
@@ -1278,6 +1344,31 @@ with tab_san:
                                 else:
                                     manual_watermark_removal_dialog(file_path)
                         with btn_col5:
+                            if st.button("📦", key="m_btn", width="stretch", help="Move image to another folder"):
+                                import shutil
+                                root = tk.Tk()
+                                root.withdraw()
+                                root.wm_attributes('-topmost', True)
+                                dest_dir = filedialog.askdirectory(title="Select Destination Folder", initialdir=os.path.dirname(file_path))
+                                root.destroy()
+                                if dest_dir:
+                                    try:
+                                        base_dir = os.path.dirname(file_path)
+                                        fname = os.path.basename(file_path)
+                                        shutil.move(file_path, os.path.join(dest_dir, fname))
+                                        proc_src = os.path.join(base_dir, "processed", fname)
+                                        if os.path.exists(proc_src):
+                                            proc_dst_dir = os.path.join(dest_dir, "processed")
+                                            os.makedirs(proc_dst_dir, exist_ok=True)
+                                            shutil.move(proc_src, os.path.join(proc_dst_dir, fname))
+                                        st.session_state.sanitizer_path = ""
+                                        st.toast(f"Moved {fname}"); time.sleep(0.5); st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Failed to move: {e}")
+                        with btn_col6:
+                            if st.button("✏️", key="r_btn", width="stretch", help="Rename file"):
+                                rename_san_image_dialog(file_path)
+                        with btn_col7:
                             if st.button("🗑️", key="d_btn", width="stretch", help="Delete asset"):
                                 perform_asset_delete(file_path)
     
@@ -1313,7 +1404,7 @@ with tab_san:
                                         </div>
                                     """, unsafe_allow_html=True)
                                     st.caption(fname)
-                                    b1, b2, b3, b4, b5 = st.columns(5)
+                                    b1, b2, b3, b4, b5, b6, b7 = st.columns(7)
                                     with b1:
                                         if st.button("👁️", key=f"v_{fname}", width="stretch", help="View image"):
                                             open_file_foreground(fpath)
@@ -1337,6 +1428,28 @@ with tab_san:
                                             else:
                                                 manual_watermark_removal_dialog(fpath)
                                     with b5:
+                                        if st.button("📦", key=f"m_{fname}", width="stretch", help="Move image to another folder"):
+                                            import shutil
+                                            root = tk.Tk()
+                                            root.withdraw()
+                                            root.wm_attributes('-topmost', True)
+                                            dest_dir = filedialog.askdirectory(title="Select Destination Folder", initialdir=folder_path)
+                                            root.destroy()
+                                            if dest_dir:
+                                                try:
+                                                    shutil.move(fpath, os.path.join(dest_dir, fname))
+                                                    proc_src = os.path.join(st.session_state.sanitizer_path, "processed", fname)
+                                                    if os.path.exists(proc_src):
+                                                        proc_dst_dir = os.path.join(dest_dir, "processed")
+                                                        os.makedirs(proc_dst_dir, exist_ok=True)
+                                                        shutil.move(proc_src, os.path.join(proc_dst_dir, fname))
+                                                    st.toast(f"Moved {fname}"); time.sleep(0.5); st.rerun()
+                                                except Exception as e:
+                                                    st.error(f"Failed to move: {e}")
+                                    with b6:
+                                        if st.button("✏️", key=f"r_{fname}", width="stretch", help="Rename file"):
+                                            rename_san_image_dialog(fpath)
+                                    with b7:
                                         if st.button("🗑️", key=f"d_{fname}", width="stretch", help="Delete asset"):
                                             perform_asset_delete(fpath)
                                 except Exception as e:
