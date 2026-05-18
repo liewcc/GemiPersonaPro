@@ -506,90 +506,115 @@ def main():
         if getattr(canvas, '_last_x', -1) >= 0 and getattr(canvas, '_last_y', -1) >= 0:
             _update_tooltip(canvas._last_x, canvas._last_y)
 
-    def _draw_perf_chart(canvas, detailed_data, cw, ch):
+    def _draw_perf_chart(canvas, detailed_data, cw, ch, mode='images'):
         canvas.delete('all')
         if not detailed_data:
             canvas.create_text(cw // 2, ch // 2,
                                text='No records yet.',
                                fill=C_MUTED, font=('Microsoft YaHei UI', 10))
             return
-            
+
+        import math
         stats = []
         for e in reversed(detailed_data):
             if e.get('status') == 'Ongoing': continue
             s_id = e.get("session_index")
             acct = str(e.get("account", "Unknown"))
-            
             st_val = e.get("status", "")
             success_val = 1 if st_val == "Success" else 0
-            
+            try:    dur_val = max(0, float(e.get('health', '0s').replace('s', '')))
+            except: dur_val = 0
             if stats and stats[-1]["session_index"] == s_id and stats[-1]["account"].lower() == acct.lower():
                 stats[-1]["images"] += success_val
+                stats[-1]["duration"] += dur_val
             else:
-                stats.append({"session_index": s_id, "account": acct, "images": success_val})
-            
+                stats.append({"session_index": s_id, "account": acct,
+                              "images": success_val, "duration": dur_val})
+
         PAD_L, PAD_R, PAD_T, PAD_B = 55, 18, 16, 50
         chart_w = cw - PAD_L - PAD_R
         chart_h = ch - PAD_T - PAD_B
-        
         N_EVENTS = max(30, int(chart_w / 7.5))
         view_stats = stats[-N_EVENTS:]
         n = len(view_stats)
         if n == 0: return
-        
-        counts = [s["images"] for s in view_stats]
-        max_c = max(counts) if counts else 1
-        if max_c == 0: max_c = 1
-        def _c_to_y(c): return PAD_T + chart_h - int(chart_h * (max(0, c) / max_c))
-            
+
+        if mode == 'time':
+            values = [s["duration"] for s in view_stats]
+            max_v = max(values) if values else 1
+            if max_v == 0: max_v = 1
+            log_max = math.log1p(max_v)
+            def _v_to_y(v):
+                if log_max == 0: return PAD_T + chart_h
+                return PAD_T + chart_h - int(chart_h * math.log1p(max(v, 0)) / log_max)
+            GRIDLINE_VALS = [1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200]
+            drawn_y = []
+            for val in GRIDLINE_VALS:
+                if val > max_v * 1.05: break
+                y_px = _v_to_y(val)
+                if any(abs(y_px - prev) < 12 for prev in drawn_y): continue
+                drawn_y.append(y_px)
+                canvas.create_line(PAD_L, y_px, PAD_L + chart_w, y_px, fill='#475569', width=1)
+                canvas.create_text(PAD_L - 8, y_px, text=_fmt_dur(val),
+                                   fill=C_MUTED, font=('Microsoft YaHei UI', 7), anchor='e')
+            y_top = _v_to_y(max_v)
+            if not any(abs(y_top - prev) < 12 for prev in drawn_y):
+                canvas.create_line(PAD_L, y_top, PAD_L + chart_w, y_top, fill='#475569', width=1)
+                canvas.create_text(PAD_L - 8, y_top, text=_fmt_dur(max_v),
+                                   fill=C_MUTED, font=('Microsoft YaHei UI', 7), anchor='e')
+            bar_color_a, bar_color_b = '#7c3aed', '#a78bfa'
+            legend_label = 'Session Duration'
+        else:
+            values = [s["images"] for s in view_stats]
+            max_v = max(values) if values else 1
+            if max_v == 0: max_v = 1
+            def _v_to_y(v): return PAD_T + chart_h - int(chart_h * (max(0, v) / max_v))
+            steps = 4
+            drawn_y = []
+            for i in range(steps + 1):
+                val = int(max_v * i / steps)
+                y_px = _v_to_y(val)
+                if any(abs(y_px - prev) < 12 for prev in drawn_y): continue
+                drawn_y.append(y_px)
+                canvas.create_line(PAD_L, y_px, PAD_L + chart_w, y_px, fill='#475569', width=1)
+                canvas.create_text(PAD_L - 8, y_px, text=str(val),
+                                   fill=C_MUTED, font=('Microsoft YaHei UI', 7), anchor='e')
+            bar_color_a, bar_color_b = '#2ecc71', '#a0e6b5'
+            legend_label = 'Images Downloaded'
+
         spacing = chart_w / n if n > 0 else chart_w
         bar_w = max(2, min(spacing - 2, 60))
-        
-        steps = 4
-        drawn_y = []
-        for i in range(steps + 1):
-            val = int(max_c * i / steps)
-            y_px = _c_to_y(val)
-            if any(abs(y_px - prev) < 12 for prev in drawn_y): continue
-            drawn_y.append(y_px)
-            canvas.create_line(PAD_L, y_px, PAD_L + chart_w, y_px, fill='#475569', width=1)
-            canvas.create_text(PAD_L - 8, y_px, text=str(val), fill=C_MUTED, font=('Microsoft YaHei UI', 7), anchor='e')
-            
         bars = []
         for i, s in enumerate(view_stats):
             x0 = PAD_L + i * spacing + (spacing - bar_w) / 2
             x1 = x0 + bar_w
-            c = s["images"]
-            y0 = _c_to_y(c)
+            v = s["duration"] if mode == 'time' else s["images"]
+            y0 = _v_to_y(max(v, 0.5 if mode == 'time' else 0))
             y1 = PAD_T + chart_h
-            
-            c_type = "Base" if i % 2 == 0 else "Light"
-            color = '#2ecc71' if c_type == "Base" else '#a0e6b5'
-            
-            if c > 0:
+            color = bar_color_a if i % 2 == 0 else bar_color_b
+            if v > 0:
                 canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline='')
-                
             acct_display = s["account"].split('@')[0]
-            bars.append((x0, PAD_T, x1, y1, acct_display, c))
-            
+            bars.append((x0, PAD_T, x1, y1, acct_display, s["images"], s["duration"]))
+
         canvas.create_line(PAD_L, PAD_T + chart_h, PAD_L + chart_w, PAD_T + chart_h, fill=C_MUTED, width=1)
-        
         lx, ly = PAD_L, PAD_T + chart_h + 38
-        for label, clr in [('Images Downloaded', '#2ecc71')]:
-            canvas.create_rectangle(lx, ly - 5, lx + 10, ly + 5, fill=clr, outline='')
-            canvas.create_text(lx + 14, ly, text=label, fill=C_MUTED, font=('Microsoft YaHei UI Bold', 7), anchor='w')
-            lx += 110
-            
+        canvas.create_rectangle(lx, ly - 5, lx + 10, ly + 5, fill=bar_color_a, outline='')
+        canvas.create_text(lx + 14, ly, text=legend_label, fill=C_MUTED,
+                           font=('Microsoft YaHei UI Bold', 7), anchor='w')
+
         tooltip_bg = canvas.create_rectangle(0, 0, 0, 0, fill='#272d3d', outline='', state='hidden')
         tooltip = canvas.create_text(0, 0, text='', fill='#ffffff', font=('Microsoft YaHei UI Bold', 9), state='hidden', anchor='e')
-        
         fixed_x = cw - 12
         fixed_y = PAD_T + chart_h + 38
-        
+
         def _update_tooltip(x, y):
-            for (x0, y0, x1, y1, acct, c) in bars:
+            for (x0, y0, x1, y1, acct, imgs, dur) in bars:
                 if x0 <= x <= x1 and y0 <= y <= y1:
-                    canvas.itemconfig(tooltip, text=f"{acct}  |  Images: {c}", state='normal')
+                    tip = (f"{acct}  |  {_fmt_dur(dur)}  |  Images: {imgs}"
+                           if mode == 'time' else
+                           f"{acct}  |  Images: {imgs}  |  Duration: {_fmt_dur(dur)}")
+                    canvas.itemconfig(tooltip, text=tip, state='normal')
                     canvas.coords(tooltip, fixed_x, fixed_y)
                     bbox = canvas.bbox(tooltip)
                     if bbox:
@@ -600,11 +625,11 @@ def main():
                     return
             canvas.itemconfig(tooltip, state='hidden')
             canvas.itemconfig(tooltip_bg, state='hidden')
-            
+
         def on_motion(event):
             canvas._last_x, canvas._last_y = event.x, event.y
             _update_tooltip(event.x, event.y)
-            
+
         def on_leave(event):
             canvas._last_x, canvas._last_y = -1, -1
             canvas.itemconfig(tooltip, state='hidden')
@@ -612,7 +637,6 @@ def main():
 
         canvas.bind('<Motion>', on_motion)
         canvas.bind('<Leave>', on_leave)
-
         if getattr(canvas, '_last_x', -1) >= 0 and getattr(canvas, '_last_y', -1) >= 0:
             _update_tooltip(canvas._last_x, canvas._last_y)
 
@@ -721,6 +745,40 @@ def main():
     perf_canvas = tk.Canvas(tab_perf, width=CANVAS_W, height=CANVAS_H,
                             bg=C_CARD, highlightthickness=0)
     perf_canvas.pack(fill='both', expand=True)
+
+    # ── Y-axis toggle (fixed below canvas, window height stays constant) ──────
+    perf_mode = ['images']  # mutable container so closures can update it
+    _btn_tog_on  = dict(relief='flat', bg=C_BORDER, fg='#ffffff',
+                        font=('Microsoft YaHei UI Bold', 8), padx=10, pady=2,
+                        cursor='hand2', activebackground='#9d5df0', activeforeground='#ffffff')
+    _btn_tog_off = dict(relief='flat', bg=C_SUB, fg=C_MUTED,
+                        font=('Microsoft YaHei UI Bold', 8), padx=10, pady=2,
+                        cursor='hand2', activebackground='#363d52', activeforeground=C_TEXT)
+
+    perf_ctrl = tk.Frame(tab_perf, bg=C_BG, pady=4)
+    perf_ctrl.pack(fill='x', padx=10)
+    tk.Label(perf_ctrl, text='Y Axis:', bg=C_BG, fg=C_MUTED,
+             font=('Microsoft YaHei UI', 8)).pack(side='left', padx=(0, 8))
+    perf_btn_images = tk.Button(perf_ctrl, text='📊 Images', **_btn_tog_on)
+    perf_btn_images.pack(side='left', padx=(0, 4))
+    perf_btn_duration = tk.Button(perf_ctrl, text='⏱ Duration', **_btn_tog_off)
+    perf_btn_duration.pack(side='left')
+
+    def _set_perf_mode(mode):
+        perf_mode[0] = mode
+        if mode == 'images':
+            perf_btn_images.config(**_btn_tog_on)
+            perf_btn_duration.config(**_btn_tog_off)
+        else:
+            perf_btn_images.config(**_btn_tog_off)
+            perf_btn_duration.config(**_btn_tog_on)
+        cw3, ch3 = perf_canvas.winfo_width(), perf_canvas.winfo_height()
+        _draw_perf_chart(perf_canvas, _cached_detailed,
+                         cw3 if cw3 > 10 else CANVAS_W,
+                         ch3 if ch3 > 10 else CANVAS_H, mode)
+
+    perf_btn_images.config(command=lambda: _set_perf_mode('images'))
+    perf_btn_duration.config(command=lambda: _set_perf_mode('time'))
 
     # buttons & image processing styles
     _btn_style = dict(relief='flat', bg=C_SUB, fg=C_TEXT,
@@ -967,7 +1025,7 @@ def main():
             cw3, ch3 = perf_canvas.winfo_width(), perf_canvas.winfo_height()
             _draw_chart(chart_canvas, detailed, cw1 if cw1 > 10 else CANVAS_W, ch1 if ch1 > 10 else CANVAS_H)
             _draw_stats_chart(stats_canvas, reject_stats, cw2 if cw2 > 10 else CANVAS_W, ch2 if ch2 > 10 else CANVAS_H)
-            _draw_perf_chart(perf_canvas, detailed, cw3 if cw3 > 10 else CANVAS_W, ch3 if ch3 > 10 else CANVAS_H)
+            _draw_perf_chart(perf_canvas, detailed, cw3 if cw3 > 10 else CANVAS_W, ch3 if ch3 > 10 else CANVAS_H, perf_mode[0])
         except Exception:
             pass
 
