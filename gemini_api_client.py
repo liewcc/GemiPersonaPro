@@ -178,7 +178,7 @@ class GeminiAPIClient:
         info = PngImagePlugin.PngInfo()
         if meta:
             for k, v in meta.items():
-                if k in ("prompt", "url", "upload_path", "model", "source"):
+                if k in ("aspect_ratio", "prompt", "url", "upload_path", "model", "source"):
                     info.add_text(k, str(v))
         # Always tag source
         info.add_text("source", "gemini_api")

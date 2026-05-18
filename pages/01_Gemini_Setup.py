@@ -1095,7 +1095,7 @@ with col1:
                                     from PIL import Image as _PIL_Ref
                                     with _PIL_Ref.open(_meta_path) as _ref_img:
                                         _ref_info = _ref_img.info
-                                    for _k in ("prompt", "url", "upload_path"):
+                                    for _k in ("aspect_ratio", "prompt", "url", "upload_path"):
                                         if _ref_info.get(_k):
                                             _ref_source_meta[_k] = _ref_info[_k]
                             except Exception as _ref_e:
@@ -1106,13 +1106,19 @@ with col1:
                                 "selected_files": [_meta_path],
                                 "image_ref_source_meta": _ref_source_meta,
                             })
-                            add_log(f"Modify image: prompt prefix set, upload list replaced → {_fname}")
-                            # _load_from_config triggers the top-level sync block to re-populate
-                            # prompt_input and prompt_input_widget from disk, so the text box updates.
+                            # Sync aspect ratio to UI setting if present
+                            if _ref_source_meta.get("aspect_ratio"):
+                                _ar_to_set = _ref_source_meta["aspect_ratio"]
+                                _pm_cfg = load_config().get("prompt_matrix", {})
+                                _pm_cfg["enabled"] = False
+                                st.session_state.config = save_config({
+                                    "fixed_aspect_ratio": _ar_to_set,
+                                    "prompt_matrix": _pm_cfg,
+                                })
+                                add_log(f"Aspect Ratio setting updated to '{_ar_to_set}', switched to Fixed mode.")
+                                st.session_state.widget_rerender_key += 1
+                            add_log(f"Modify image: prompt prefix set, upload list replaced \u2192 {_fname}")
                             st.session_state["_load_from_config"] = True
-                            # Explicitly pin the radio selection so it survives the rerun.
-                            # The radio widget sits below this button in code and hasn't rendered
-                            # yet in the current run, so Streamlit may not restore its key reliably.
                             st.session_state["image_ref_mode"] = _current_mode
                             st.rerun()
                         else:
@@ -1127,37 +1133,44 @@ with col1:
                                 _meta_prompt = _img_info.get("prompt", "")
                                 _meta_url = _img_info.get("url", "")
                                 _meta_upload = _img_info.get("upload_path", "")
+                                _meta_ar = _img_info.get("aspect_ratio", "")
 
                                 _updates = {}
-                                # 1. Prompt: save to config, then use _load_from_config to re-populate widget on rerun
+                                # 1. Prompt
                                 if _meta_prompt:
                                     _updates["prompt"] = _meta_prompt
-                                # 2. URL: save to config and update session state for the url widget
+                                # 2. URL
                                 if _meta_url:
                                     if not _meta_url.startswith("https://gemini.google.com/gem/"):
                                         _meta_url = "https://gemini.google.com"
                                     _updates["browser_url"] = _meta_url
                                     st.session_state["url_bar"] = _meta_url
                                     st.session_state["url_bar_widget"] = _meta_url
-                                # 3. Upload path: upload_path stores the selected_files list (comma-separated)
-                                #    → replace selected_files entirely (UPLOAD FILES TO BROWSER)
+                                # 3. Upload path
                                 if _meta_upload:
                                     _parsed_files = [p.strip() for p in _meta_upload.split(",") if p.strip()]
                                     if _parsed_files:
                                         st.session_state.selected_files = _parsed_files
                                         _updates["selected_files"] = _parsed_files
+                                # 4. Aspect ratio: sync to ASPECT RATIO SETTING
+                                if _meta_ar:
+                                    _pm_cfg = load_config().get("prompt_matrix", {})
+                                    _pm_cfg["enabled"] = False
+                                    _updates["fixed_aspect_ratio"] = _meta_ar
+                                    _updates["prompt_matrix"] = _pm_cfg
+                                # 5. Clear image_ref_source_meta to prevent prompt metadata pollution in future generations
+                                _updates["image_ref_source_meta"] = {}
 
                                 if _updates:
                                     st.session_state.config = save_config(_updates)
                                     _applied_fields = ", ".join(_updates.keys())
-                                    add_log(f"Metadata applied from file: {os.path.basename(_meta_path)} → [{_applied_fields}]")
-                                    # Use _load_from_config so the sync block re-populates prompt_input_widget correctly
+                                    add_log(f"Metadata applied from file: {os.path.basename(_meta_path)} \u2192 [{_applied_fields}]")
                                     st.session_state["_load_from_config"] = True
-                                    # Explicitly pin the radio selection so it survives the rerun.
+                                    st.session_state.widget_rerender_key += 1
                                     st.session_state["image_ref_mode"] = _current_mode
                                     st.rerun()
                                 else:
-                                    st.warning("No metadata fields (prompt / url / upload_path) found in this file.")
+                                    st.warning("No metadata fields (prompt / url / upload_path / aspect_ratio) found in this file.")
                             except Exception as _meta_e:
                                 st.error(f"Failed to read metadata: {_meta_e}")
                         else:
@@ -1262,6 +1275,8 @@ with col1:
             # Sync radio index with config
             radio_idx = 1 if pm_enabled else 0
             
+            k_ar = st.session_state.widget_rerender_key
+            
             ar_col1, ar_col2, ar_col3 = st.columns([1.8, 1.2, 1.2])
             with ar_col1:
                 ar_mode = st.radio(
@@ -1270,7 +1285,7 @@ with col1:
                     index=radio_idx,
                     horizontal=True, 
                     label_visibility="collapsed",
-                    key="setup_ar_mode_radio"
+                    key=f"setup_ar_mode_radio_{k_ar}"
                 )
                 
                 # If mode changed, update config and rerun
@@ -1290,7 +1305,7 @@ with col1:
                 try: f_idx = ratio_list.index(saved_fixed)
                 except: f_idx = 0
                 
-                selected_fixed = st.selectbox("Fixed Ratio", options=ratio_list, index=f_idx, label_visibility="collapsed", key="setup_fixed_ar_select")
+                selected_fixed = st.selectbox("Fixed Ratio", options=ratio_list, index=f_idx, label_visibility="collapsed", key=f"setup_fixed_ar_select_{k_ar}")
                 if selected_fixed != saved_fixed:
                     save_config({"fixed_aspect_ratio": selected_fixed})
                     if st.session_state.get("last_known_auto_active", False):
@@ -1532,7 +1547,11 @@ with col1:
                                     add_log("SUCCESS: Image generated. Starting download...")
                                     naming = {"prefix": st.session_state.name_prefix, "padding": st.session_state.name_padding, "start": st.session_state.name_start}
                                     status = await st.session_state.client.get_status()
-                                    meta = {"prompt": p_text, "url": status.get("url", ""), "upload_path": ", ".join(st.session_state.selected_files)}
+                                    _fixed_ar = load_config().get("fixed_aspect_ratio", "")
+                                    _ar_val = _fixed_ar if _fixed_ar and _fixed_ar != "None" else ""
+                                    import re
+                                    _clean_p = re.sub(r"^Aspect Ratio:.*?\n\n", "", p_text, flags=re.DOTALL)
+                                    meta = {"aspect_ratio": _ar_val, "prompt": _clean_p, "url": status.get("url", ""), "upload_path": ", ".join(st.session_state.selected_files)}
                                     
                                     dl_resp = await st.session_state.client.download_images(st.session_state.save_dir, naming, meta)
                                     if dl_resp.get("status") == "success":
@@ -1591,7 +1610,11 @@ with col1:
                                         add_log("New images detected. Downloading...")
                                         naming = {"prefix": st.session_state.name_prefix, "padding": st.session_state.name_padding, "start": st.session_state.name_start}
                                         status = await st.session_state.client.get_status()
-                                        meta = {"prompt": st.session_state.get("prompt_input_widget", ""), "url": status.get("url", ""), "upload_path": ", ".join(st.session_state.selected_files)}
+                                        _fixed_ar2 = load_config().get("fixed_aspect_ratio", "")
+                                        _ar_val2 = _fixed_ar2 if _fixed_ar2 and _fixed_ar2 != "None" else ""
+                                        import re
+                                        _clean_p2 = re.sub(r"^Aspect Ratio:.*?\n\n", "", st.session_state.get("prompt_input_widget", ""), flags=re.DOTALL)
+                                        meta = {"aspect_ratio": _ar_val2, "prompt": _clean_p2, "url": status.get("url", ""), "upload_path": ", ".join(st.session_state.selected_files)}
                                         
                                         dl_resp = await st.session_state.client.download_images(st.session_state.save_dir, naming, meta)
                                         if dl_resp.get("status") == "success":

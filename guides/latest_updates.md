@@ -4,6 +4,10 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
+### Update: 2026-05-18 - Aspect Ratio UI Sync & Lineage Isolation
+- **Real-Time Aspect Ratio Hydration**: Fixed a caching issue in the Gemini Setup page where the "ASPECT RATIO SETTING" select box failed to visually update after extracting metadata from an image. The UI now intelligently forces a component re-render (`widget_rerender_key`) to instantly display the extracted aspect ratio and automatically switches the mode to **Fixed Aspect Ratio**.
+- **Lineage Pollution Prevention**: Addressed a critical data-bleed issue where metadata from a previously modified image (stored in `image_ref_source_meta`) would incorrectly overwrite the prompt of subsequent fresh generations. The system now strictly isolates lineage tracking, automatically wiping stale reference metadata whenever the user switches back to "extract metadata from image" mode, ensuring pure, untainted prompt injection.
+
 ### Update: 2026-05-18 - Gemini Setup Image Reference Improvements
 - **IMAGE REFERENCE Section**: Renamed the container from "EXTRACT METADATA FROM IMAGE" to "IMAGE REFERENCE" for a cleaner and more professional presentation.
 - **Dual-Mode Image Handling**: Added two horizontal radio buttons (`extract metadata from image` and `modify image`) directly below the file path text box:

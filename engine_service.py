@@ -69,7 +69,7 @@ class PersonaRequest(BaseModel):
 class DownloadRequest(BaseModel):
     save_dir: str
     naming: dict  # {prefix, padding, start}
-    meta: dict    # {prompt, url, upload_path}
+    meta: dict    # {aspect_ratio, prompt, url, upload_path}
 
 class ProcessRequest(BaseModel):
     paths: list[str]
@@ -769,6 +769,10 @@ async def automation_manager(req: AutomationRequest):
             # Sync back to the request object that engine.run_automation_loop uses
             req.config = cfg # Update req.config with fresh disk data
             req.config["prompt"] = final_prompt
+            # Pass the clean prompt (without aspect ratio prefix) for PNG metadata embedding
+            req.config["prompt_clean"] = clean_prompt
+            # Pass resolved aspect ratio so the engine can embed it in PNG metadata
+            req.config["aspect_ratio"] = ratio_prefix if ratio_prefix and ratio_prefix not in ["None", "None (Master Prompt)"] else ""
 
             # 3. Execute ONE iteration
             result = await engine.run_automation_loop(req.dict())

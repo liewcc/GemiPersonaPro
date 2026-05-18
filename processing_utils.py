@@ -70,7 +70,7 @@ def save_with_metadata(p_img, original_img, output_path, extra_meta=None):
     
     meta = PngImagePlugin.PngInfo()
     # Strictly follow the injection method: Only preserve specific GemiPersona fields.
-    whitelist = ["prompt", "url", "upload_path"]
+    whitelist = ["aspect_ratio", "prompt", "url", "upload_path"]
     
     # 1. Preserve ONLY whitelisted fields from original
     for k, v in original_img.info.items():

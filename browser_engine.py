@@ -2066,7 +2066,9 @@ class BrowserEngine:
                         # Safety for join
                         selected_files = cfg.get("selected_files") or []
                         meta = {
-                            "prompt": cfg.get("prompt", ""), 
+                            "aspect_ratio": cfg.get("aspect_ratio", ""),
+                            # Use clean prompt (without "Aspect Ratio: ..." prefix) for metadata
+                            "prompt": cfg.get("prompt_clean", cfg.get("prompt", "")), 
                             "url": self.current_url or "", 
                             "upload_path": ", ".join(selected_files) if isinstance(selected_files, list) else str(selected_files)
                         }
@@ -2077,9 +2079,13 @@ class BrowserEngine:
                         # from the original reference image, not the ephemeral prefix prompt).
                         ref_source_meta = cfg.get("image_ref_source_meta")
                         if ref_source_meta and isinstance(ref_source_meta, dict):
-                            for _k in ("prompt", "url", "upload_path"):
+                            for _k in ("aspect_ratio", "prompt", "url", "upload_path"):
                                 if ref_source_meta.get(_k):
-                                    meta[_k] = ref_source_meta[_k]
+                                    if _k == "prompt":
+                                        import re
+                                        meta[_k] = re.sub(r"^Aspect Ratio:.*?\n\n", "", ref_source_meta[_k], flags=re.DOTALL)
+                                    else:
+                                        meta[_k] = ref_source_meta[_k]
                         
                         dl_resp = await self.download_images(cfg.get("save_dir"), naming, meta)
                         saved_paths = []
