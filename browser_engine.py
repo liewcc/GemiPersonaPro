@@ -2070,6 +2070,16 @@ class BrowserEngine:
                             "url": self.current_url or "", 
                             "upload_path": ", ".join(selected_files) if isinstance(selected_files, list) else str(selected_files)
                         }
+
+                        # In "modify image" mode the UI stores the reference image's original
+                        # PNG metadata in image_ref_source_meta.  Use those values so the newly
+                        # downloaded image inherits the correct provenance (prompt/url/upload_path
+                        # from the original reference image, not the ephemeral prefix prompt).
+                        ref_source_meta = cfg.get("image_ref_source_meta")
+                        if ref_source_meta and isinstance(ref_source_meta, dict):
+                            for _k in ("prompt", "url", "upload_path"):
+                                if ref_source_meta.get(_k):
+                                    meta[_k] = ref_source_meta[_k]
                         
                         dl_resp = await self.download_images(cfg.get("save_dir"), naming, meta)
                         saved_paths = []

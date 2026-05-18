@@ -1081,9 +1081,25 @@ with col1:
                             _prefix = f'modify image "{_fname}":\n'
                             # Replace selected_files with the single chosen image (full path)
                             st.session_state.selected_files = [_meta_path]
+
+                            # Read the reference image's original PNG metadata so the engine
+                            # can embed it into every newly downloaded image, preserving lineage.
+                            _ref_source_meta = {}
+                            try:
+                                if os.path.exists(_meta_path):
+                                    from PIL import Image as _PIL_Ref
+                                    with _PIL_Ref.open(_meta_path) as _ref_img:
+                                        _ref_info = _ref_img.info
+                                    for _k in ("prompt", "url", "upload_path"):
+                                        if _ref_info.get(_k):
+                                            _ref_source_meta[_k] = _ref_info[_k]
+                            except Exception as _ref_e:
+                                add_log(f"Warning: could not read ref image metadata: {_ref_e}")
+
                             st.session_state.config = save_config({
                                 "prompt": _prefix,
                                 "selected_files": [_meta_path],
+                                "image_ref_source_meta": _ref_source_meta,
                             })
                             add_log(f"Modify image: prompt prefix set, upload list replaced → {_fname}")
                             # _load_from_config triggers the top-level sync block to re-populate
