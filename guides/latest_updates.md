@@ -4,10 +4,6 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 
 ## 🚀 Recent Features & Enhancements
 
-### Update: 2026-05-18 - Aspect Ratio UI Sync & Lineage Isolation
-- **Real-Time Aspect Ratio Hydration**: Fixed a caching issue in the Gemini Setup page where the "ASPECT RATIO SETTING" select box failed to visually update after extracting metadata from an image. The UI now intelligently forces a component re-render (`widget_rerender_key`) to instantly display the extracted aspect ratio and automatically switches the mode to **Fixed Aspect Ratio**.
-- **Lineage Pollution Prevention**: Addressed a critical data-bleed issue where metadata from a previously modified image (stored in `image_ref_source_meta`) would incorrectly overwrite the prompt of subsequent fresh generations. The system now strictly isolates lineage tracking, automatically wiping stale reference metadata whenever the user switches back to "extract metadata from image" mode, ensuring pure, untainted prompt injection.
-
 ### Update: 2026-05-18 - Gemini Setup Image Reference Improvements
 - **IMAGE REFERENCE Section**: Renamed the container from "EXTRACT METADATA FROM IMAGE" to "IMAGE REFERENCE" for a cleaner and more professional presentation.
 - **Dual-Mode Image Handling**: Added two horizontal radio buttons (`extract metadata from image` and `modify image`) directly below the file path text box:
@@ -16,6 +12,9 @@ Welcome to the latest release notes for **GemiPersonaPro**. This document outlin
 - **Automatic File Synchronisation**: In `modify image` mode, clicking "Apply" also automatically clears the existing **UPLOAD FILES TO BROWSER** queue and replaces it entirely with the selected reference image, ensuring the target image is attached for modification.
 - **Reference Metadata Inheritance**: When a new image is successfully downloaded in `modify image` mode, its embedded PNG metadata (`prompt`, `url`, `upload_path`) is inherited from the original reference image selected in IMAGE REFERENCE, not from the ephemeral modification prompt. This preserves the correct generation provenance chain across multiple modification rounds. The reference metadata is stored in `config.json` under `image_ref_source_meta` by the UI layer and read by the automation engine at download time.
 - **Streamlit State Hydration & Rerun**: Implemented an explicit state hydration flow. By updating the backend configuration and setting `st.session_state["_load_from_config"] = True` before triggering a rerun, the page reliably reads the fresh prompt and updates the text area UI immediately, preventing the native Streamlit widget state lag.
+- **Aspect Ratio Metadata Prioritization**: Restructured the embedded PNG metadata injection pipeline across all automated and manual workflows (`Submit`, `Redo`, `run_automation_loop`). The `aspect_ratio` category is now explicitly inserted as the very first field in the metadata dictionary, followed by `prompt`, `url`, and `upload_path`, ensuring optimal parsing visibility.
+- **Automated Aspect Ratio UI Synchronization**: When an image is applied in either `extract metadata from image` or `modify image` mode, the system automatically extracts its embedded aspect ratio and synchronizes it directly with the **ASPECT RATIO SETTING** panel. It forces a switch to `Fixed Aspect Ratio` mode and uses Streamlit's `widget_rerender_key` pattern to instantly update the UI selectbox without caching lag.
+- **Lineage Prompt Pollution Prevention**: Enhanced the metadata extraction lifecycle to actively clear stale `image_ref_source_meta` cache when switching to `extract metadata from image` mode. This prevents previous modification prompt lineage data from polluting the metadata of subsequent standalone image generations.
 
 ### Update: 2026-05-17 - Monitor Image Processing Controls
 - **Quick Actions Container**: Added a new "Process Latest Download Image" control panel directly below the performance charts in the standalone GemiPersona Monitor.
