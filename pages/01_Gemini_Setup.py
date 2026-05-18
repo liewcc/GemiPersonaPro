@@ -1105,6 +1105,10 @@ with col1:
                             # _load_from_config triggers the top-level sync block to re-populate
                             # prompt_input and prompt_input_widget from disk, so the text box updates.
                             st.session_state["_load_from_config"] = True
+                            # Explicitly pin the radio selection so it survives the rerun.
+                            # The radio widget sits below this button in code and hasn't rendered
+                            # yet in the current run, so Streamlit may not restore its key reliably.
+                            st.session_state["image_ref_mode"] = _current_mode
                             st.rerun()
                         else:
                             st.warning("Please select an image file first.")
@@ -1144,6 +1148,8 @@ with col1:
                                     add_log(f"Metadata applied from file: {os.path.basename(_meta_path)} → [{_applied_fields}]")
                                     # Use _load_from_config so the sync block re-populates prompt_input_widget correctly
                                     st.session_state["_load_from_config"] = True
+                                    # Explicitly pin the radio selection so it survives the rerun.
+                                    st.session_state["image_ref_mode"] = _current_mode
                                     st.rerun()
                                 else:
                                     st.warning("No metadata fields (prompt / url / upload_path) found in this file.")
