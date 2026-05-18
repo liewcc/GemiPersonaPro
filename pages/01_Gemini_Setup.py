@@ -111,8 +111,15 @@ if "widget_rerender_key" not in st.session_state:
     st.session_state.widget_rerender_key = 0
 if "meta_file_path" not in st.session_state:
     st.session_state.meta_file_path = ""
-if "image_ref_mode" not in st.session_state:
-    st.session_state.image_ref_mode = "extract metadata from image"
+# _image_ref_mode_value is the persistent backing store (NOT a widget key).
+# Streamlit clears widget-key session state on cross-page navigation, but this
+# plain variable survives, allowing the radio to be restored on page re-entry.
+if "_image_ref_mode_value" not in st.session_state:
+    st.session_state._image_ref_mode_value = "extract metadata from image"
+# Restore the widget key from the backing store every time the page loads.
+# On a fresh page entry the widget key will be absent; on a normal rerun it
+# will already match, so this is effectively a no-op in the steady state.
+st.session_state["image_ref_mode"] = st.session_state._image_ref_mode_value
 if "needs_rerun" not in st.session_state:
     st.session_state.needs_rerun = False
 if "last_known_auto_active" not in st.session_state:
@@ -1166,6 +1173,9 @@ with col1:
                 horizontal=True,
                 label_visibility="collapsed",
             )
+            # Sync the widget's current value back to the persistent backing store
+            # so that cross-page navigation can restore it on the next entry.
+            st.session_state._image_ref_mode_value = st.session_state["image_ref_mode"]
 
         st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
