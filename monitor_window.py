@@ -327,6 +327,8 @@ def main():
                                fill=C_MUTED, font=('Microsoft YaHei UI', 7), anchor='e')
         bar_w   = max(2, chart_w / n - 1)
         spacing = chart_w / n
+        
+        bars_info = []
         for i, (rec, dur) in enumerate(zip(events, durations)):
             status = rec.get('status', 'Fail')
             color  = STATUS_COLORS.get(status, '#888888')
@@ -335,6 +337,11 @@ def main():
             x0 = PAD_L + i * spacing
             x1 = x0 + bar_w
             canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline='')
+            
+            acct = str(rec.get('account', '')).split('@')[0]
+            if not acct or acct.lower() == 'unknown': acct = 'Unknown'
+            bars_info.append((x0, y0, x1, y1, acct, _fmt_dur(dur)))
+            
         canvas.create_line(PAD_L, PAD_T + chart_h, PAD_L + chart_w, PAD_T + chart_h,
                            fill=C_MUTED, width=1)
         legend_items = [('Success', '#2ecc71'), ('Refused', '#a0a0ff'),
@@ -346,6 +353,42 @@ def main():
             canvas.create_text(lx + 14, ly, text=label, fill=C_MUTED,
                                font=('Microsoft YaHei UI', 7), anchor='w')
             lx += 68
+
+        tooltip_bg = canvas.create_rectangle(0, 0, 0, 0, fill='#272d3d', outline='', state='hidden')
+        tooltip = canvas.create_text(0, 0, text='', fill='#ffffff', font=('Microsoft YaHei UI Bold', 9), state='hidden', anchor='e')
+        
+        fixed_x = cw - 12
+        fixed_y = PAD_T + chart_h + 14
+        
+        def _update_tooltip(x, y):
+            for (x0, y0, x1, y1, acct, dur_str) in bars_info:
+                if x0 <= x <= x1 and y0 <= y <= y1:
+                    canvas.itemconfig(tooltip, text=f"{acct}  |  {dur_str}", state='normal')
+                    canvas.coords(tooltip, fixed_x, fixed_y)
+                    bbox = canvas.bbox(tooltip)
+                    if bbox:
+                        canvas.coords(tooltip_bg, bbox[0]-8, bbox[1]-4, bbox[2]+8, bbox[3]+4)
+                        canvas.itemconfig(tooltip_bg, state='normal')
+                        canvas.tag_raise(tooltip_bg)
+                        canvas.tag_raise(tooltip)
+                    return
+            canvas.itemconfig(tooltip, state='hidden')
+            canvas.itemconfig(tooltip_bg, state='hidden')
+            
+        def on_motion(event):
+            canvas._last_x, canvas._last_y = event.x, event.y
+            _update_tooltip(event.x, event.y)
+            
+        def on_leave(event):
+            canvas._last_x, canvas._last_y = -1, -1
+            canvas.itemconfig(tooltip, state='hidden')
+            canvas.itemconfig(tooltip_bg, state='hidden')
+
+        canvas.bind('<Motion>', on_motion)
+        canvas.bind('<Leave>', on_leave)
+
+        if getattr(canvas, '_last_x', -1) >= 0 and getattr(canvas, '_last_y', -1) >= 0:
+            _update_tooltip(canvas._last_x, canvas._last_y)
 
     def _draw_stats_chart(canvas, data, cw, ch):
         canvas.delete('all')
@@ -392,6 +435,7 @@ def main():
             canvas.create_text(PAD_L - 8, y_top, text=_fmt_dur(max_dur),
                                fill=C_MUTED, font=('Microsoft YaHei UI', 7), anchor='e')
                                
+        bars_info = []
         for i, (rec, dur) in enumerate(zip(items, durations)):
             x0 = PAD_L + i * spacing
             x1 = x0 + bar_w
@@ -407,10 +451,12 @@ def main():
             canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline='')
             
             filename = str(rec.get('filename', ''))
-            filename = filename.replace('.png', '').replace('.jpg', '')
+            display_filename = filename.replace('.png', '').replace('.jpg', '')
+            
+            bars_info.append((x0, y0, x1, y1, display_filename, _fmt_dur(dur), refused, resets))
             
             if n <= 30 or i % 2 == 0:
-                canvas.create_text(x0 + bar_w/2, PAD_T + chart_h + 16, text=filename, fill=C_MUTED, font=('Microsoft YaHei UI', 6), angle=90)
+                canvas.create_text(x0 + bar_w/2, PAD_T + chart_h + 16, text=display_filename, fill=C_MUTED, font=('Microsoft YaHei UI', 6), angle=90)
                 
         canvas.create_line(PAD_L, PAD_T + chart_h, PAD_L + chart_w, PAD_T + chart_h, fill=C_MUTED, width=1)
         
@@ -422,6 +468,43 @@ def main():
             canvas.create_text(lx + 14, ly, text=label, fill=C_MUTED,
                                font=('Microsoft YaHei UI', 7), anchor='w')
             lx += 68
+
+        tooltip_bg = canvas.create_rectangle(0, 0, 0, 0, fill='#272d3d', outline='', state='hidden')
+        tooltip = canvas.create_text(0, 0, text='', fill='#ffffff', font=('Microsoft YaHei UI Bold', 9), state='hidden', anchor='e')
+        
+        fixed_x = cw - 12
+        fixed_y = PAD_T + chart_h + 38
+        
+        def _update_tooltip(x, y):
+            for (x0, y0, x1, y1, fname, dur_str, ref, res) in bars_info:
+                if x0 <= x <= x1 and y0 <= y <= y1:
+                    info_text = f"{fname}  |  {dur_str}  |  Refused: {ref}  |  Reset: {res}"
+                    canvas.itemconfig(tooltip, text=info_text, state='normal')
+                    canvas.coords(tooltip, fixed_x, fixed_y)
+                    bbox = canvas.bbox(tooltip)
+                    if bbox:
+                        canvas.coords(tooltip_bg, bbox[0]-8, bbox[1]-4, bbox[2]+8, bbox[3]+4)
+                        canvas.itemconfig(tooltip_bg, state='normal')
+                        canvas.tag_raise(tooltip_bg)
+                        canvas.tag_raise(tooltip)
+                    return
+            canvas.itemconfig(tooltip, state='hidden')
+            canvas.itemconfig(tooltip_bg, state='hidden')
+            
+        def on_motion(event):
+            canvas._last_x, canvas._last_y = event.x, event.y
+            _update_tooltip(event.x, event.y)
+            
+        def on_leave(event):
+            canvas._last_x, canvas._last_y = -1, -1
+            canvas.itemconfig(tooltip, state='hidden')
+            canvas.itemconfig(tooltip_bg, state='hidden')
+
+        canvas.bind('<Motion>', on_motion)
+        canvas.bind('<Leave>', on_leave)
+
+        if getattr(canvas, '_last_x', -1) >= 0 and getattr(canvas, '_last_y', -1) >= 0:
+            _update_tooltip(canvas._last_x, canvas._last_y)
 
     def _draw_perf_chart(canvas, detailed_data, cw, ch):
         canvas.delete('all')
@@ -503,8 +586,7 @@ def main():
         fixed_x = cw - 12
         fixed_y = PAD_T + chart_h + 38
         
-        def on_motion(event):
-            x, y = event.x, event.y
+        def _update_tooltip(x, y):
             for (x0, y0, x1, y1, acct, c) in bars:
                 if x0 <= x <= x1 and y0 <= y <= y1:
                     canvas.itemconfig(tooltip, text=f"{acct}  |  Images: {c}", state='normal')
@@ -519,8 +601,20 @@ def main():
             canvas.itemconfig(tooltip, state='hidden')
             canvas.itemconfig(tooltip_bg, state='hidden')
             
+        def on_motion(event):
+            canvas._last_x, canvas._last_y = event.x, event.y
+            _update_tooltip(event.x, event.y)
+            
+        def on_leave(event):
+            canvas._last_x, canvas._last_y = -1, -1
+            canvas.itemconfig(tooltip, state='hidden')
+            canvas.itemconfig(tooltip_bg, state='hidden')
+
         canvas.bind('<Motion>', on_motion)
-        canvas.bind('<Leave>', lambda e: (canvas.itemconfig(tooltip, state='hidden'), canvas.itemconfig(tooltip_bg, state='hidden')))
+        canvas.bind('<Leave>', on_leave)
+
+        if getattr(canvas, '_last_x', -1) >= 0 and getattr(canvas, '_last_y', -1) >= 0:
+            _update_tooltip(canvas._last_x, canvas._last_y)
 
     # ── build window ─────────────────────────────────────────────────────────
     win = tk.Tk()
