@@ -131,22 +131,46 @@ def _build_duration_chart(detailed_data, y_scale_type, event_only_success=False)
         _prev_acct = acct
         _seg_list.append(_seg)
     df["cycle"] = _seg_list
-    df["variant"] = df["cycle"].apply(lambda x: "Base" if x % 2 == 0 else "Light")
+    df["bg"] = df["cycle"].apply(lambda x: "A" if x % 2 == 0 else "B")
     df["display_status"] = df["status"].replace({"Reject": "Refused"})
-    ll = ['Success (Base)', 'Refused (Base)', 'Reset (Base)', 'Fail',
-          'Success (Light)', 'Refused (Light)', 'Reset (Light)']
-    lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999', '#a0e6b5', '#d0d0ff', '#f9e79f']
-    df['legend'] = df.apply(lambda r: f"{r['display_status']} ({r['variant']})" if r['display_status'] != 'Fail' else 'Fail', axis=1)
+
+    # Background bands: alternate light-gray/white to distinguish account/session segments
+    # Pin the shared X domain explicitly so that two different field names (x_start vs Event)
+    # don't cause Altair to expand the scale to [0, max].
+    x_min = float(df["Event"].min()) - 0.5
+    x_max = float(df["Event"].max()) + 0.5
+    shared_x_scale = alt.Scale(nice=False, domain=[x_min, x_max])
+
+    df["x_start"] = df["Event"] - 0.5
+    df["x_end"]   = df["Event"] + 0.5
+    bg_bands = alt.Chart(df).mark_rect(opacity=0.4).encode(
+        x=alt.X('x_start:Q', scale=shared_x_scale),
+        x2='x_end:Q',
+        color=alt.Color('bg:N',
+            scale=alt.Scale(domain=['A', 'B'], range=['#c8c8c8', '#f0f0f0']),
+            legend=None),
+    )
+
+    # Bar layer: 4 base status colors only (no Base/Light variants)
+    ll = ['Success', 'Refused', 'Reset', 'Fail']
+    lr = ['#2ecc71', '#a0a0ff', '#f39c12', '#ff9999']
+    df['legend'] = df['display_status']
     df["Duration"] = df["_dur_col"].str.replace("s", "").astype(float).apply(_fmt_dur)
-    
-    chart = alt.Chart(df).mark_bar().encode(
-        x=alt.X('Event:Q', title="Sequence", scale=alt.Scale(nice=False), axis=alt.Axis(format='d', tickMinStep=1)),
+
+    bars = alt.Chart(df).mark_bar().encode(
+        x=alt.X('Event:Q', title="Sequence", scale=shared_x_scale, axis=alt.Axis(format='d', tickMinStep=1)),
         y=alt.Y('Minutes:Q', title="Duration (minutes)", scale=alt.Scale(type=y_scale_type)),
         color=alt.Color('legend:N', scale=alt.Scale(domain=ll, range=lr),
                         legend=alt.Legend(title=None, orient='bottom', columns=4)),
         tooltip=['round', 'time', 'account', 'Duration', 'filename', 'display_status:N']
-    ).properties(height=400).interactive(bind_y=False)
-    return chart
+    )
+    return (
+        alt.layer(bg_bands, bars)
+        .resolve_scale(color='independent')
+        .properties(height=400)
+        .interactive(bind_y=False)
+        .configure_legend(offset=4, padding=2)
+    )
 
 def _build_reject_chart(detailed_data, y_scale_type):
     """Build a reject-rate line+point chart (X = successful images)."""
@@ -227,7 +251,7 @@ def _render_chart_or_table(data, graph_type, y_scale_type, show_graph, label, ta
         if st.session_state.get("loaded_record_path"):
             st.markdown(f"<p style='color: #8888aa; font-size: 0.8em; margin-top: -6px; margin-bottom: 6px;'>📂 Loaded from: <i>{st.session_state.loaded_record_path}</i></p>", unsafe_allow_html=True)
             
-        with st.container(height=450, border=False):
+        with st.container(border=False):
             if graph_type == "Round Duration":
                 chart = _build_duration_chart(data, y_scale_type, event_only_success=event_only_success)
             else:
