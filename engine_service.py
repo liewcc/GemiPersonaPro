@@ -668,7 +668,34 @@ async def automation_manager(req: AutomationRequest):
             if engine._stop_automation_event.is_set() and not getattr(engine, "_session_lost", False):
                 print("[AUTO] User stop signal detected in manager.")
                 break
-                
+
+            # 1a. [FIX] Browser Health Check — ensure browser is running before proceeding.
+            # This guards against the case where the browser was shut down during quota
+            # handling (run_automation_loop calls await self.stop() on quota), and the
+            # automation then sleeps for the infinite-loop cooldown with the browser closed.
+            # Without this check, run_automation_loop raises "Browser Engine not started"
+            # on the next iteration, crashing the entire automation_manager coroutine.
+            if not engine.is_running:
+                engine._log_debug("API>> Browser is not running. Attempting to restore browser session...")
+                _restore_cfg = load_config()
+                _restore_user = (
+                    engine.automation_status.get("current_account_id")
+                    or _restore_cfg.get("active_user")
+                )
+                if _restore_user:
+                    engine._log_debug(f"API>> Auto-restoring browser for user: {_restore_user}")
+                    _restore_res = await perform_switch_logic(target_username=_restore_user)
+                    if _restore_res.get("status") == "success":
+                        engine._log_debug("API>> Browser restored successfully. Resuming automation loop.")
+                        engine._stop_automation_event.clear()
+                        engine._automation_needs_new_chat = True
+                    else:
+                        engine._log_debug(f"API>> Browser restore failed: {_restore_res.get('message')}. Stopping automation.")
+                        break
+                else:
+                    engine._log_debug("API>> No active user found to restore browser. Stopping automation.")
+                    break
+
             # 1. Reload Config and Detect Current User
             req.config.update(load_config())
             current_user = (

@@ -706,13 +706,29 @@ class BrowserEngine:
             await self._page.click('button[data-test-id="bard-mode-menu-button"]')
             await asyncio.sleep(1.2)
             
-            # Extract models - only first line to avoid descriptions
+            # Extract models using precise selectors based on current Gemini DOM structure.
+            # Strategy:
+            #   1. Primary: target [data-test-id^="bard-mode-option-"] buttons — these are
+            #      the only real model-selection items and exclude the Upgrade container,
+            #      "Thinking level" picker, and the menu title row.
+            #   2. Extract text from .mode-title (e.g. "3.1 Flash-Lite") rather than the
+            #      full button innerText which would also include .mode-desc ("Fastest answers")
+            #      and icon text ("check_circle"), leading to stale/wrong entries like "Fast".
+            #   3. Fallback: if the primary selector yields nothing (Google redesign), fall
+            #      back to .bard-mode-list-button with the same .mode-title extraction.
             results["models"] = await self._page.evaluate('''() => {
-                const items = Array.from(document.querySelectorAll('.mat-mdc-menu-item, [role="menuitem"]'));
+                // Primary: data-test-id prefixed selectors are stable model-button identifiers
+                let items = Array.from(document.querySelectorAll('[data-test-id^="bard-mode-option-"]'));
+
+                // Fallback: class-based selector if data-test-id scheme changes
+                if (items.length === 0) {
+                    items = Array.from(document.querySelectorAll('button.bard-mode-list-button'));
+                }
+
                 return items.map(i => {
-                    const primary = i.querySelector('.mdc-list-item__primary-text');
-                    const raw = primary ? primary.innerText : i.innerText;
-                    return raw.split('\\n')[0].trim();
+                    // .mode-title contains only the clean model name, nothing else
+                    const titleEl = i.querySelector('.mode-title');
+                    return titleEl ? titleEl.innerText.trim() : i.innerText.split('\\n')[0].trim();
                 }).filter(t => t.length > 0);
             }''')
             
