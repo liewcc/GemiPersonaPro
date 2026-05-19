@@ -1149,11 +1149,14 @@ class BrowserEngine:
 
                     if (hasImg) return { status: "success", text: respText };
                     
-                    // Structural refusal detection:
+                    // Structural and Textual refusal detection:
                     // Gemini refused if the response is "complete" (has the complete footer class)
-                    // and it has text content but NO image.
+                    // and it has text content but NO image, OR if it matches known refusal text.
                     const completeFooter = lastResp.querySelector('.response-footer.complete');
-                    if (completeFooter && respText.length > 0) {
+                    const refusalKws = ["我可以为许多内容", "但是这个不行", "要不要试试别的", "i can't", "i cannot", "sorry", "apologize", "unable to"];
+                    const isTextRefusal = refusalKws.some(kw => respText.toLowerCase().includes(kw.toLowerCase()));
+                    
+                    if ((completeFooter || isTextRefusal) && respText.length > 0) {
                         return { status: "refused", text: respText };
                     }
 
@@ -1272,10 +1275,13 @@ class BrowserEngine:
             const findByText = (txt) => Array.from(document.querySelectorAll('.menu-text, span, button'))
                                             .find(b => b.innerText.toLowerCase().includes(txt));
             
+            let refreshIcon = document.querySelector('mat-icon[data-mat-icon-name="refresh"]') || document.querySelector('mat-icon[fonticon="refresh"]');
             let redoBtn = findBtn('regenerate-button button') || 
-                          findBtn('button[aria-label="Redo"]') ||
-                          document.querySelector('mat-icon[data-mat-icon-name="refresh"]')?.closest('button') ||
-                          document.querySelector('mat-icon[fonticon="refresh"]')?.closest('button');
+                          findBtn('button[aria-label="Redo"]');
+            
+            if (!redoBtn && refreshIcon) {
+                redoBtn = refreshIcon.closest('button') || refreshIcon.closest('[role="button"]') || refreshIcon.parentElement;
+            }
 
             if (redoBtn) {
                 redoBtn.scrollIntoView({behavior: "instant", block: "center"});
