@@ -49,8 +49,8 @@ lookup_accs_set = set(lookup_order)
 final_dropdown_accs = list(lookup_order) + sorted(list(log_accs_set - lookup_accs_set))
 final_dropdown_accs = [acc for acc in final_dropdown_accs if acc and acc.lower() != "unknown"]
 
-max_events_raw = max(10, len(all_events_list))
-max_available_events = ((max_events_raw + 9) // 10) * 10
+max_events_raw = len(all_events_list)
+max_available_events = max(20, ((max_events_raw + 9) // 10) * 10)
 
 # Auto-refresh setting
 auto_refresh = st.session_state.get("health_auto_refresh", True)
