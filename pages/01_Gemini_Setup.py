@@ -111,6 +111,8 @@ if "widget_rerender_key" not in st.session_state:
     st.session_state.widget_rerender_key = 0
 if "meta_file_path" not in st.session_state:
     st.session_state.meta_file_path = ""
+if "preset_file_path" not in st.session_state:
+    st.session_state.preset_file_path = ""
 # _image_ref_mode_value is the persistent backing store (NOT a widget key).
 # Streamlit clears widget-key session state on cross-page navigation, but this
 # plain variable survives, allowing the radio to be restored on page re-entry.
@@ -1062,7 +1064,7 @@ with col1:
                     placeholder="Select an image file..."
                 )
             with meta_col_file:
-                if st.button("📁 File", key="meta_file_pick_btn", width="stretch"):
+                if st.button("📁 Browse", key="meta_file_pick_btn", width="stretch"):
                     root = tk.Tk()
                     root.withdraw()
                     root.wm_attributes('-topmost', True)
@@ -1075,8 +1077,10 @@ with col1:
                         st.session_state.meta_file_path = picked
                         st.rerun()
             with meta_col_apply:
-                if st.button("✅ Apply", key="meta_apply_btn", width="stretch"):
-                    _meta_path = st.session_state.get("meta_file_path_widget", "").strip() or st.session_state.meta_file_path.strip()
+                _tmp_meta_path = st.session_state.get("meta_file_path_widget", "").strip() or st.session_state.meta_file_path.strip()
+                _meta_apply_disabled = not (_tmp_meta_path and os.path.exists(_tmp_meta_path))
+                if st.button("✅ Apply", key="meta_apply_btn", width="stretch", disabled=_meta_apply_disabled):
+                    _meta_path = _tmp_meta_path
                     _current_mode = st.session_state.get("image_ref_mode", "extract metadata from image")
 
                     if _current_mode == "modify image":
@@ -1187,6 +1191,157 @@ with col1:
             # Sync the widget's current value back to the persistent backing store
             # so that cross-page navigation can restore it on the next entry.
             st.session_state._image_ref_mode_value = st.session_state["image_ref_mode"]
+
+        # --- Preset Template Section ---
+        st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>PRESET TEMPLATE</p>", unsafe_allow_html=True)
+        with st.container(border=True):
+            # Pre-render sync
+            if st.session_state.get("preset_file_path_widget", "") != st.session_state.preset_file_path:
+                st.session_state["preset_file_path_widget"] = st.session_state.preset_file_path
+
+            preset_col_path, preset_col_browse = st.columns([5, 1])
+            with preset_col_path:
+                st.text_input(
+                    "Preset File Path",
+                    key="preset_file_path_widget",
+                    label_visibility="collapsed",
+                    placeholder="Select or create a .preset file..."
+                )
+            with preset_col_browse:
+                if st.button("📁 Browse", key="preset_browse_btn", width="stretch"):
+                    _root = tk.Tk()
+                    _root.withdraw()
+                    _root.wm_attributes('-topmost', True)
+                    _picked = filedialog.askopenfilename(
+                        title="Select Preset File",
+                        filetypes=[("Preset files", "*.preset"), ("All files", "*.*")]
+                    )
+                    _root.destroy()
+                    if _picked:
+                        st.session_state.preset_file_path = _picked
+                        st.rerun()
+
+            _tmp_preset_path = st.session_state.get("preset_file_path_widget", "").strip() or st.session_state.preset_file_path.strip()
+            _preset_action_disabled = not (_tmp_preset_path and os.path.exists(_tmp_preset_path))
+
+            preset_col_new, preset_col_save, preset_col_save_as, preset_col_apply = st.columns(4)
+            with preset_col_new:
+                if st.button("🆕 New", key="preset_new_btn", width="stretch"):
+                    _root_new = tk.Tk()
+                    _root_new.withdraw()
+                    _root_new.wm_attributes('-topmost', True)
+                    _new_path = filedialog.asksaveasfilename(
+                        title="Create New Preset File",
+                        defaultextension=".preset",
+                        filetypes=[("Preset files", "*.preset"), ("All files", "*.*")]
+                    )
+                    _root_new.destroy()
+                    if _new_path:
+                        try:
+                            _empty_preset = {
+                                "browser_url": "",
+                                "fixed_aspect_ratio": "",
+                                "prompt": "",
+                                "selected_files": []
+                            }
+                            with open(_new_path, "w", encoding="utf-8") as _npf:
+                                json.dump(_empty_preset, _npf, ensure_ascii=False, indent=2)
+                            st.session_state.preset_file_path = _new_path
+                            add_log(f"New preset created: {os.path.basename(_new_path)}")
+                            st.rerun()
+                        except Exception as _ne:
+                            st.error(f"Failed to create preset file: {_ne}")
+            with preset_col_save:
+                if st.button("💾 Save", key="preset_save_btn", width="stretch", disabled=_preset_action_disabled):
+                    _save_path = _tmp_preset_path
+                    try:
+                        _cur_cfg = load_config()
+                        _preset_out = {
+                            "browser_url": _cur_cfg.get("browser_url", ""),
+                            "fixed_aspect_ratio": _cur_cfg.get("fixed_aspect_ratio", ""),
+                            "prompt": _cur_cfg.get("prompt", ""),
+                            "selected_files": _cur_cfg.get("selected_files", [])
+                        }
+                        with open(_save_path, "w", encoding="utf-8") as _pfw:
+                            json.dump(_preset_out, _pfw, ensure_ascii=False, indent=2)
+                        add_log(f"Preset saved to: {os.path.basename(_save_path)}")
+                        st.session_state.preset_file_path = _save_path
+                        st.rerun()
+                    except Exception as _pse:
+                        st.error(f"Failed to save preset: {_pse}")
+            with preset_col_save_as:
+                if st.button("💾 Save As", key="preset_save_as_btn", width="stretch", disabled=_preset_action_disabled):
+                    _root3 = tk.Tk()
+                    _root3.withdraw()
+                    _root3.wm_attributes('-topmost', True)
+                    _save_as_path = filedialog.asksaveasfilename(
+                        title="Save Preset As",
+                        defaultextension=".preset",
+                        filetypes=[("Preset files", "*.preset"), ("All files", "*.*")]
+                    )
+                    _root3.destroy()
+                    if _save_as_path:
+                        try:
+                            _cur_cfg = load_config()
+                            _preset_out = {
+                                "browser_url": _cur_cfg.get("browser_url", ""),
+                                "fixed_aspect_ratio": _cur_cfg.get("fixed_aspect_ratio", ""),
+                                "prompt": _cur_cfg.get("prompt", ""),
+                                "selected_files": _cur_cfg.get("selected_files", [])
+                            }
+                            with open(_save_as_path, "w", encoding="utf-8") as _pfw:
+                                json.dump(_preset_out, _pfw, ensure_ascii=False, indent=2)
+                            add_log(f"Preset saved as: {os.path.basename(_save_as_path)}")
+                            st.session_state.preset_file_path = _save_as_path
+                            st.rerun()
+                        except Exception as _pse:
+                            st.error(f"Failed to save preset as: {_pse}")
+            with preset_col_apply:
+                if st.button("✅ Apply", key="preset_apply_btn", width="stretch", disabled=_preset_action_disabled):
+                    _preset_path = _tmp_preset_path
+                    if _preset_path and os.path.exists(_preset_path):
+                        try:
+                            with open(_preset_path, "r", encoding="utf-8") as _pf:
+                                _preset_data = json.load(_pf)
+                            _updates = {}
+                            # 1. Browser URL
+                            _p_url = _preset_data.get("browser_url", "")
+                            if _p_url:
+                                _updates["browser_url"] = _p_url
+                                st.session_state["url_bar"] = _p_url
+                                st.session_state["url_bar_widget"] = _p_url
+                            # 2. Aspect Ratio
+                            _p_ar = _preset_data.get("fixed_aspect_ratio", "")
+                            if _p_ar:
+                                _pm_cfg = load_config().get("prompt_matrix", {})
+                                _pm_cfg["enabled"] = False
+                                _updates["fixed_aspect_ratio"] = _p_ar
+                                _updates["prompt_matrix"] = _pm_cfg
+                            # 3. Prompt
+                            _p_prompt = _preset_data.get("prompt", "")
+                            if _p_prompt:
+                                _updates["prompt"] = _p_prompt
+                            # 4. Upload Files
+                            _p_files = _preset_data.get("selected_files", [])
+                            if _p_files:
+                                _valid_files = [f for f in _p_files if os.path.exists(f)]
+                                _missing = len(_p_files) - len(_valid_files)
+                                st.session_state.selected_files = _valid_files
+                                _updates["selected_files"] = _valid_files
+                                if _missing > 0:
+                                    add_log(f"Preset Apply: {_missing} file path(s) not found and were skipped.")
+                            if _updates:
+                                st.session_state.config = save_config(_updates)
+                                add_log(f"Preset applied from: {os.path.basename(_preset_path)} → [{', '.join(_updates.keys())}]")
+                                st.session_state["_load_from_config"] = True
+                                st.session_state.widget_rerender_key += 1
+                                st.rerun()
+                            else:
+                                st.warning("Preset file contains no recognisable fields.")
+                        except Exception as _pe:
+                            st.error(f"Failed to read preset file: {_pe}")
+                    else:
+                        st.warning("Please select a valid .preset file first.")
 
         # --- Browser URL Section ---
         st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-top: 8px; margin-bottom: 5px; color: #a0a0ff;'>BROWSER URL</p>", unsafe_allow_html=True)
