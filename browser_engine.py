@@ -1069,6 +1069,7 @@ class BrowserEngine:
         
         has_started_generating = False
         start_gen_time = None
+        idle_start_time = None
         last_logged_text = ""
 
         for _ in range(90): # 180 seconds max
@@ -1089,12 +1090,15 @@ class BrowserEngine:
                     if (bodyText.includes(kw)) return { status: "quota_exceeded", text: kw };
                 }
 
+                // Utility to check real visibility
+                const isVisible = (el) => el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
+
                 // 2. Active generation signals (highest priority)
-                const stopIcon = document.querySelector('mat-icon[data-mat-icon-name="stop"]');
-                const hasProgressBar = !!document.querySelector('mat-progress-bar');
+                const stopIcon = document.querySelector('mat-icon[data-mat-icon-name="stop"]') || document.querySelector('mat-icon[fonticon="stop"]');
+                const progressBar = document.querySelector('mat-progress-bar');
                 const activeLoadingContainer = document.querySelector('section.processing-state_container--processing');
 
-                if (stopIcon || hasProgressBar || activeLoadingContainer) {
+                if (isVisible(stopIcon) || isVisible(progressBar) || isVisible(activeLoadingContainer)) {
                     let genText = "";
                     if (activeLoadingContainer) {
                         // Extract text from the active loading container's specific spans
@@ -1110,7 +1114,8 @@ class BrowserEngine:
                         }
                     } else {
                         // Extract regular streaming generation text
-                        const responses = Array.from(document.querySelectorAll('model-response'));
+                        let allResps = Array.from(document.querySelectorAll('model-response, structured-content-container.model-response-text, message-content'));
+                        const responses = allResps.filter(el => !allResps.some(parent => parent !== el && parent.contains(el)));
                         const lastResp = responses.length > 0 ? responses[responses.length - 1] : null;
                         if (lastResp) {
                             const contentNode = lastResp.querySelector('.model-response-text') || lastResp.querySelector('.message-content') || lastResp;
@@ -1121,9 +1126,13 @@ class BrowserEngine:
                 }
 
                 // 3. Idle state (send icon visible)
-                const sendIcon = document.querySelector('mat-icon[data-mat-icon-name="send"]');
-                if (sendIcon) {
-                    const responses = Array.from(document.querySelectorAll('model-response'));
+                const sendIcon = document.querySelector('mat-icon[data-mat-icon-name="send"]') || 
+                                 document.querySelector('mat-icon[fonticon="send"]') ||
+                                 document.querySelector('button[aria-label="Send message"]');
+                
+                if (isVisible(sendIcon)) {
+                    let allResps = Array.from(document.querySelectorAll('model-response, structured-content-container.model-response-text, message-content'));
+                    const responses = allResps.filter(el => !allResps.some(parent => parent !== el && parent.contains(el)));
                     
                     // Metadata for reset detection
                     const editor = document.querySelector('.ql-editor');
@@ -1153,7 +1162,7 @@ class BrowserEngine:
                     // Gemini refused if the response is "complete" (has the complete footer class)
                     // and it has text content but NO image, OR if it matches known refusal text.
                     const completeFooter = lastResp.querySelector('.response-footer.complete');
-                    const refusalKws = ["我可以为许多内容", "但是这个不行", "要不要试试别的", "i can't", "i cannot", "sorry", "apologize", "unable to"];
+                    const refusalKws = ["我可以为许多内容", "但是这个不行", "要不要试试别的", "i can't", "i cannot", "sorry", "apologize", "unable to", "language model", "can't help with that"];
                     const isTextRefusal = refusalKws.some(kw => respText.toLowerCase().includes(kw.toLowerCase()));
                     
                     if ((completeFooter || isTextRefusal) && respText.length > 0) {
@@ -1207,10 +1216,17 @@ class BrowserEngine:
                 self._log_debug(f"Response failed (Refused): {flat_text[:300]}")
                 return {"status": "refused", "message": f"Gemini refused: {flat_text[:300]}"}
             elif status == "idle_no_img":
+                if not idle_start_time:
+                    idle_start_time = current_time
+                    
                 # Only report 'stopped' after sustained generation (4s grace period)
                 if has_started_generating and start_gen_time and (current_time - start_gen_time > 4.0):
                     self._log_debug(f"Idle detected after {current_time - start_gen_time:.1f}s of generation.")
                     return {"status": "error", "message": "Stopped or failed to generate image."}
+                elif (current_time - idle_start_time) > 8.0:
+                    self._log_debug("Sustained idle detected without image. Treating as refusal.")
+                    flat_text = " ".join(resp_text.replace('\n', ' ').split())
+                    return {"status": "refused", "message": f"Gemini refused (Sustained Idle): {flat_text[:300]}"}
                 else:
                     self._log_debug("Idle detected - in grace period, continuing to monitor...")
             elif status == "reset":
@@ -1329,9 +1345,10 @@ class BrowserEngine:
         os.makedirs(save_dir, exist_ok=True)
         
         # 1. Identify images in last response
-        last_response = await self._page.query_selector('model-response:last-of-type')
-        if not last_response:
+        responses = await self._page.query_selector_all('model-response, structured-content-container.model-response-text, message-content')
+        if not responses:
             return {"status": "error", "message": "No response found to download from."}
+        last_response = responses[-1]
 
         imgs = await last_response.query_selector_all('img')
         valid_imgs = []
@@ -1790,7 +1807,7 @@ class BrowserEngine:
         
         try:
             # 1. Direct navigation to the Gemini activity page
-            await self.navigate("https://myactivity.google.com/product/gemini")
+            await self.navigate("https://myactivity.google.com/product/gemini?utm_source=gemini")
             await asyncio.sleep(2.0)
             
             # --- [NEW] Pre-deletion: Handle initial warnings, tours, or banners ---
