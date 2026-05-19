@@ -2328,25 +2328,51 @@ class BrowserEngine:
             pass  # Proceed even if network idle times out
 
         # Selector 1: Google Account button (logged-in indicator)
-        user_avatar = self._page.locator(
-            'a[href*="accounts.google.com/SignOut"], button[aria-label*="Google Account"]'
-        ).first
+        avatar_selectors = 'a[href*="accounts.google.com/SignOut"], [aria-label*="Google Account"], img.mavatar-image, img.gb_n, img[src*="googleusercontent.com/a/"]'
+        avatar_locators = self._page.locator(avatar_selectors)
 
         # Selector 2: Sign-in button (not-logged-in indicator)
-        signin_button = self._page.locator(
-            'a[href*="accounts.google.com/ServiceLogin"], button:has-text("Sign in")'
-        ).first
+        signin_selectors = 'a[href*="accounts.google.com/ServiceLogin"], button:has-text("Sign in"), a:has-text("Sign in")'
+        signin_locators = self._page.locator(signin_selectors)
 
-        is_logged_in = await user_avatar.is_visible()
-        is_not_logged_in = await signin_button.is_visible()
+        # Find the first VISIBLE element for avatar
+        is_logged_in = False
+        target_avatar = None
+        count_avatar = await avatar_locators.count()
+        for i in range(count_avatar):
+            if await avatar_locators.nth(i).is_visible():
+                is_logged_in = True
+                target_avatar = avatar_locators.nth(i)
+                break
 
-        if is_logged_in:
+        # Find the first VISIBLE element for sign in
+        is_not_logged_in = False
+        target_signin = None
+        count_signin = await signin_locators.count()
+        for i in range(count_signin):
+            if await signin_locators.nth(i).is_visible():
+                is_not_logged_in = True
+                target_signin = signin_locators.nth(i)
+                break
+
+        if is_logged_in and target_avatar:
             account_id = "Unknown Account"
             try:
-                aria_label = await user_avatar.get_attribute("aria-label")
+                # Traverse up from the element to find an aria-label or title with the email
+                aria_label = await target_avatar.evaluate('''el => {
+                    let current = el;
+                    for (let i = 0; i < 5; i++) {
+                        if (!current) break;
+                        let label = current.getAttribute('aria-label') || current.getAttribute('title') || current.getAttribute('data-tooltip');
+                        if (label && label.includes('@')) return label;
+                        if (label && label.toLowerCase().includes('google account')) return label;
+                        current = current.parentElement;
+                    }
+                    return null;
+                }''')
                 if aria_label:
-                    # Extract email from "Google Account: Name (email@gmail.com)"
-                    match_email = re.search(r"\(([^)]+@[^)]+)\)", aria_label, re.I)
+                    import re
+                    match_email = re.search(r"\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})\b", aria_label)
                     match_name = re.search(r"Google Account:\s*(.*?)\s*\(", aria_label, re.I)
                     if match_email:
                         account_id = match_email.group(1)
@@ -2357,7 +2383,6 @@ class BrowserEngine:
             except Exception:
                 pass
             
-            # Cache it in automation_status so it can be exposed cheaply
             self.automation_status["current_account_id"] = account_id
             return {"logged_in": True, "account_id": account_id, "status": "logged_in"}
 
