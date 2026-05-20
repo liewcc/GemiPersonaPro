@@ -177,7 +177,26 @@ st.session_state.cfg_loop_reset_enabled = lc.get("reset_enabled", True)
 st.session_state.cfg_loop_reset_threshold = int(lc.get("reset_threshold", 5))
 st.session_state.cfg_loop_reset_action = lc.get("reset_action", "re_login")
 
-if "login_rows" not in st.session_state or st.session_state.get("_login_reload", False):
+if "login_rows" in st.session_state and not st.session_state.get("_login_reload", False):
+    # Sync stats from disk but preserve user edits in session state
+    disk_by_user = {r.get("username"): r for r in login_data if r.get("username")}
+    disk_users = set(disk_by_user.keys())
+    session_users = set(r.get("username") for r in st.session_state.login_rows if r.get("username"))
+    
+    if disk_users == session_users:
+        # Sync stats columns in place
+        for r in st.session_state.login_rows:
+            uname = r.get("username")
+            if uname in disk_by_user:
+                disk_row = disk_by_user[uname]
+                for col in ["active", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"]:
+                    if col in disk_row:
+                        r[col] = disk_row[col]
+    else:
+        # Structural change detected on disk (e.g. user added or deleted externally)
+        st.session_state.login_rows = list(login_data)
+else:
+    # First load or forced reload
     st.session_state.login_rows = list(login_data)
     st.session_state._login_reload = False
 
