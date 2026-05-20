@@ -729,6 +729,34 @@ def main():
     win.protocol('WM_DELETE_WINDOW', _close)
     win.bind('<Escape>', lambda e: _close())
 
+    # row 0: system status (compact one-line layout)
+    sys_status_frame = tk.Frame(body, bg=C_BG, padx=14, pady=6)
+    sys_status_frame.pack(fill='x')
+    
+    stat_labels = {}
+
+    lbl_eng_title = tk.Label(sys_status_frame, text='Engine Service: ', bg=C_BG, fg=C_MUTED, font=('Microsoft YaHei UI Bold', 8))
+    lbl_eng_title.pack(side='left')
+    lbl_eng_val = tk.Label(sys_status_frame, text='—', bg=C_BG, fg=C_TEXT, font=('Microsoft YaHei UI Bold', 8))
+    lbl_eng_val.pack(side='left')
+    stat_labels['engine_status'] = lbl_eng_val
+
+    tk.Label(sys_status_frame, text='  |  ', bg=C_BG, fg=C_SUB, font=('Microsoft YaHei UI Bold', 8)).pack(side='left')
+
+    lbl_brw_title = tk.Label(sys_status_frame, text='Browser Engine: ', bg=C_BG, fg=C_MUTED, font=('Microsoft YaHei UI Bold', 8))
+    lbl_brw_title.pack(side='left')
+    lbl_brw_val = tk.Label(sys_status_frame, text='—', bg=C_BG, fg=C_TEXT, font=('Microsoft YaHei UI Bold', 8))
+    lbl_brw_val.pack(side='left')
+    stat_labels['browser_status'] = lbl_brw_val
+
+    tk.Label(sys_status_frame, text='  |  ', bg=C_BG, fg=C_SUB, font=('Microsoft YaHei UI Bold', 8)).pack(side='left')
+
+    lbl_cpu_title = tk.Label(sys_status_frame, text='CPU Usage: ', bg=C_BG, fg=C_MUTED, font=('Microsoft YaHei UI Bold', 8))
+    lbl_cpu_title.pack(side='left')
+    lbl_cpu_val = tk.Label(sys_status_frame, text='—', bg=C_BG, fg=C_TEXT, font=('Microsoft YaHei UI Bold', 8))
+    lbl_cpu_val.pack(side='left')
+    stat_labels['cpu_usage'] = lbl_cpu_val
+
     # row 1: cycle stats
     stats_frame1 = tk.Frame(body, bg=C_BG, padx=14, pady=4)
     stats_frame1.pack(fill='x')
@@ -736,8 +764,6 @@ def main():
     # row 2: account stats
     stats_frame2 = tk.Frame(body, bg=C_BG, padx=14, pady=4)
     stats_frame2.pack(fill='x')
-    
-    stat_labels = {}
 
     def _make_stat(parent, key, title):
         col = tk.Frame(parent, bg=C_CARD, padx=4, pady=6)
@@ -1176,6 +1202,32 @@ def main():
         except Exception:
             pass
 
+    def _apply_sys_status(engine_ok, browser_ok, cpu_val):
+        """在 UI 线程中将系统状态写入控件。"""
+        try:
+            if not win.winfo_exists():
+                return
+            if engine_ok:
+                stat_labels['engine_status'].config(text='Started', fg='#2ecc71')
+            else:
+                stat_labels['engine_status'].config(text='Stopped', fg='#ff4444')
+
+            if browser_ok:
+                stat_labels['browser_status'].config(text='Running', fg='#2ecc71')
+            else:
+                stat_labels['browser_status'].config(text='Closed', fg='#ff4444')
+
+            cpu_str = f"{cpu_val:.1f}%"
+            if cpu_val >= 80.0:
+                cpu_fg = '#ff4444'
+            elif cpu_val >= 50.0:
+                cpu_fg = '#f39c12'
+            else:
+                cpu_fg = C_TEXT
+            stat_labels['cpu_usage'].config(text=cpu_str, fg=cpu_fg)
+        except Exception:
+            pass
+
     def _poll_log():
         """每 1 秒轮询一次：I/O 在后台线程，UI 更新回调至主线程。"""
         def _worker():
@@ -1184,9 +1236,30 @@ def main():
                 alive = _is_gemipersona_running()  # socket  — 后台线程
             except Exception:
                 line, alive = '[read error]', False
+
+            engine_ok = False
+            browser_ok = False
+            try:
+                import requests
+                resp = requests.get("http://127.0.0.1:8000/health", timeout=0.5)
+                if resp.status_code == 200:
+                    engine_ok = True
+                    health_data = resp.json()
+                    browser_ok = health_data.get("engine_running", False)
+            except Exception:
+                pass
+
+            cpu_val = 0.0
+            try:
+                import psutil
+                cpu_val = psutil.cpu_percent(interval=None)
+            except Exception:
+                pass
+
             try:
                 if win.winfo_exists():
                     win.after(0, lambda: _apply_log_data(line, alive))
+                    win.after(0, lambda: _apply_sys_status(engine_ok, browser_ok, cpu_val))
             except Exception:
                 pass
 

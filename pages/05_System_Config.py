@@ -44,6 +44,7 @@ def on_change_navigation():
     # Also clear any editor buffers
     for k in list(st.session_state.keys()):
         if k.startswith("pm_editor_sys_"): del st.session_state[k]
+    st.session_state._login_reload = True
 
 def on_change_url():
     save_config({"browser_url": st.session_state.cfg_browser_url})
@@ -176,8 +177,9 @@ st.session_state.cfg_loop_reset_enabled = lc.get("reset_enabled", True)
 st.session_state.cfg_loop_reset_threshold = int(lc.get("reset_threshold", 5))
 st.session_state.cfg_loop_reset_action = lc.get("reset_action", "re_login")
 
-st.session_state.login_rows = list(login_data)
-st.session_state._login_reload = False
+if "login_rows" not in st.session_state or st.session_state.get("_login_reload", False):
+    st.session_state.login_rows = list(login_data)
+    st.session_state._login_reload = False
 
 # --- Sidebar Navigation ---
 with st.sidebar:
@@ -537,20 +539,40 @@ elif menu_selection == "Account Credentials":
             key="login_editor"
         )
 
+        # Get the actual current disk state of the lookup table
+        current_disk_data = load_login_lookup()
+        
+        # Construct a DataFrame representation of current disk data for comparison
+        disk_records = [{"active": r.get("active", False), "bypass": r.get("bypass", False), "username": r.get("username", ""), "auto_delete": r.get("auto_delete", False), "delete_range": r.get("delete_range", "Last hour"), "quota_full": r.get("quota_full", ""), "last_switched_at": r.get("last_switched_at", ""), "session_images": r.get("session_images", ""), "session_refused": r.get("session_refused", ""), "session_resets": r.get("session_resets", "")} for r in current_disk_data]
+        disk_df = pd.DataFrame(disk_records) if disk_records else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
+        
         _INSTANT_COLS = ["bypass", "auto_delete", "delete_range", "username", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"]
-        if not editor_df.empty and not edited_df.empty and len(editor_df) == len(edited_df):
-            if not editor_df[_INSTANT_COLS].reset_index(drop=True).equals(edited_df[_INSTANT_COLS].reset_index(drop=True)):
+        
+        if not edited_df.empty:
+            len_changed = (len(disk_df) != len(edited_df))
+            contents_changed = False
+            if not len_changed and not disk_df.empty:
+                contents_changed = not disk_df[_INSTANT_COLS].reset_index(drop=True).equals(edited_df[_INSTANT_COLS].reset_index(drop=True))
+                
+            if len_changed or contents_changed:
                 edited_records = edited_df.to_dict("records")
-                patched = []
-                for idx, disk_row in enumerate(rows):
-                    if idx < len(edited_records):
-                        e = edited_records[idx]
-                        patched.append({**disk_row, "bypass": bool(e.get("bypass", False)), "auto_delete": bool(e.get("auto_delete", False)), "delete_range": str(e.get("delete_range", "All time")), "username": str(e.get("username", disk_row.get("username", ""))).strip(), "quota_full": e.get("quota_full") if pd.notna(e.get("quota_full")) else "", "last_switched_at": e.get("last_switched_at") if pd.notna(e.get("last_switched_at")) else "", "session_images": e.get("session_images") if pd.notna(e.get("session_images")) else "", "session_refused": e.get("session_refused") if pd.notna(e.get("session_refused")) else "", "session_resets": e.get("session_resets") if pd.notna(e.get("session_resets")) else ""})
-                    else: patched.append(disk_row)
-                save_login_lookup(patched); st.toast("Credentials updated.", icon="💾")
-        elif not edited_df.empty:
-            valid = [r for r in edited_df.to_dict("records") if str(r.get("username", "")).strip()]
-            if valid: save_login_lookup(valid); st.toast("Credentials updated.", icon="💾")
+                if not len_changed:
+                    # Merge with current_disk_data to preserve unedited metadata (like Switched At, Resets, etc.)
+                    patched = []
+                    for idx, disk_row in enumerate(current_disk_data):
+                        if idx < len(edited_records):
+                            e = edited_records[idx]
+                            patched.append({**disk_row, "bypass": bool(e.get("bypass", False)), "auto_delete": bool(e.get("auto_delete", False)), "delete_range": str(e.get("delete_range", "All time")), "username": str(e.get("username", disk_row.get("username", ""))).strip(), "quota_full": e.get("quota_full") if pd.notna(e.get("quota_full")) else "", "last_switched_at": e.get("last_switched_at") if pd.notna(e.get("last_switched_at")) else "", "session_images": e.get("session_images") if pd.notna(e.get("session_images")) else "", "session_refused": e.get("session_refused") if pd.notna(e.get("session_refused")) else "", "session_resets": e.get("session_resets") if pd.notna(e.get("session_resets")) else ""})
+                        else:
+                            patched.append(disk_row)
+                    valid = [r for r in patched if str(r.get("username", "")).strip()]
+                else:
+                    # Length changed (added or deleted). Update st.session_state.login_rows to keep session state in sync.
+                    st.session_state.login_rows = edited_records
+                    valid = [r for r in edited_records if str(r.get("username", "")).strip()]
+                    
+                save_login_lookup(valid)
+                st.toast("Credentials updated.", icon="💾")
 
         btn_reload, btn_clear, btn_clear_stats = st.columns([1, 1.2, 1.2])
         with btn_reload:

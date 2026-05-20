@@ -682,19 +682,60 @@ async def automation_manager(req: AutomationRequest):
                     engine.automation_status.get("current_account_id")
                     or _restore_cfg.get("active_user")
                 )
+                
+                _restore_res = {"status": "error", "message": "No active user found"}
                 if _restore_user:
                     engine._log_debug(f"API>> Auto-restoring browser for user: {_restore_user}")
                     _restore_res = await perform_switch_logic(target_username=_restore_user)
+                
+                if _restore_res.get("status") == "success":
+                    engine._log_debug("API>> Browser restored successfully. Resuming automation loop.")
+                    engine._stop_automation_event.clear()
+                    engine._automation_needs_new_chat = True
+                else:
+                    engine._log_debug(f"API>> Direct restore failed ({_restore_res.get('message')}). Falling back to sequential next profile...")
+                    _restore_res = await perform_switch_logic()
+                    
                     if _restore_res.get("status") == "success":
-                        engine._log_debug("API>> Browser restored successfully. Resuming automation loop.")
+                        engine._log_debug("API>> Browser restored successfully (sequential next). Resuming automation loop.")
                         engine._stop_automation_event.clear()
                         engine._automation_needs_new_chat = True
+                    elif _restore_res.get("status") == "table_full":
+                        loop_ctrl = req.config.get("automation", {}).get("loop_control", {})
+                        inf_en = loop_ctrl.get("infinite_loop_enabled", False)
+                        if not inf_en:
+                            engine._log_debug("API>> Browser restore failed: All profiles processed or hit quota. Stopping automation.")
+                            break
+                        else:
+                            sleep_min = loop_ctrl.get("infinite_loop_minutes", 60)
+                            engine._log_debug(f"API>> Browser restore: All profiles processed. Infinite loop enabled: sleeping for {sleep_min} min...")
+                            
+                            sleep_sec = int(sleep_min * 60)
+                            interrupted = False
+                            for _ in range(sleep_sec):
+                                if engine._stop_automation_event.is_set():
+                                    interrupted = True
+                                    break
+                                await asyncio.sleep(1)
+                            if interrupted:
+                                break
+                            
+                            # Awake from sleep. Reset anchor point for the next full loop.
+                            engine._log_debug("API>> Awakening from sleep. Restarting infinite loop cycle...")
+                            new_anchor = load_config().get("active_user")
+                            engine.automation_status["initial_user"] = new_anchor
+                            if hasattr(engine, '_session_lost'): engine._session_lost = False
+                            engine._stop_automation_event.clear()
+                            
+                            # Short circuit variables for loop control
+                            engine._lc_cycle_start_time = time.time()
+                            engine._lc_time_threshold_start_time = time.time()
+                            engine._lc_pending_refused = 0
+                            engine._lc_pending_resets = 0
+                            continue
                     else:
                         engine._log_debug(f"API>> Browser restore failed: {_restore_res.get('message')}. Stopping automation.")
                         break
-                else:
-                    engine._log_debug("API>> No active user found to restore browser. Stopping automation.")
-                    break
 
             # 1. Reload Config and Detect Current User
             req.config.update(load_config())
