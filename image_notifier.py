@@ -143,6 +143,22 @@ def _show_monitor_window():
     if _monitor_proc is not None and _monitor_proc.poll() is None:
         return   # already running — do nothing (process manages its own focus)
 
+    # Globally check if any monitor_window.py process is already running
+    try:
+        import psutil
+        for p in psutil.process_iter(['name', 'cmdline']):
+            try:
+                cmd = p.info.get('cmdline')
+                name = p.info.get('name') or ''
+                if cmd:
+                    joined = ' '.join(cmd)
+                    if 'monitor_window.py' in joined and 'python' in name.lower():
+                        return   # already running — do nothing
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     hw_script = os.path.join(_SCRIPT_DIR, 'monitor_window.py')
     if not os.path.exists(hw_script):
         _logging.error(f'monitor_window.py not found at {hw_script}')

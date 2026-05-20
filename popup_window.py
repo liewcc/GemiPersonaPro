@@ -51,6 +51,22 @@ def is_gemipersona_running():
         return False
 
 def _show_monitor_window():
+    # Globally check if any monitor_window.py process is already running
+    try:
+        import psutil
+        for p in psutil.process_iter(['name', 'cmdline']):
+            try:
+                cmd = p.info.get('cmdline')
+                name = p.info.get('name') or ''
+                if cmd:
+                    joined = ' '.join(cmd)
+                    if 'monitor_window.py' in joined and 'python' in name.lower():
+                        return   # already running — do nothing
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     hw_script = os.path.join(_SCRIPT_DIR, 'monitor_window.py')
     if not os.path.exists(hw_script):
         return
