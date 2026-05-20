@@ -328,7 +328,9 @@ with tab1:
                 root.withdraw()
                 root.wm_attributes('-topmost', True)
                 picked = filedialog.askopenfilename(filetypes=[("Log Files", "*.log"), ("All Files", "*.*")])
+                root.update()
                 root.destroy()
+                time.sleep(0.1)
                 if picked:
                     st.session_state.load_record_path_input = picked
                     
@@ -641,7 +643,9 @@ with tab2:
                     root.withdraw()
                     root.wm_attributes('-topmost', True)
                     picked = filedialog.askdirectory()
+                    root.update()
                     root.destroy()
+                    time.sleep(0.1)
                     if picked:
                         st.session_state.save_record_path_input = picked
                         

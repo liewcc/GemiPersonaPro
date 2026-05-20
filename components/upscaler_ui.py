@@ -15,7 +15,9 @@ def select_folder():
     root.withdraw()
     root.wm_attributes('-topmost', True)
     path = filedialog.askdirectory()
+    root.update()
     root.destroy()
+    time.sleep(0.1)
     return path
 
 def render_upscaler_tab():

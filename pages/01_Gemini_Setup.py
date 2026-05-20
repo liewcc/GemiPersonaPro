@@ -55,7 +55,9 @@ def select_multiple_files():
         title="Select Images",
         filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp")]
     )
+    root.update()
     root.destroy()
+    time.sleep(0.1)
     return list(paths)
 
 # --- Page Config ---
@@ -247,7 +249,9 @@ def select_folder():
     root.withdraw()
     root.wm_attributes('-topmost', True)
     path = filedialog.askdirectory()
+    root.update()
     root.destroy()
+    time.sleep(0.1)
     return path
 
 # --- Heartbeat Loop ---
@@ -1072,7 +1076,9 @@ with col1:
                         title="Select Image File",
                         filetypes=[("PNG images", "*.png"), ("All image files", "*.png *.jpg *.jpeg *.webp"), ("All files", "*.*")]
                     )
+                    root.update()
                     root.destroy()
+                    time.sleep(0.1)
                     if picked:
                         st.session_state.meta_file_path = picked
                         st.rerun()
@@ -1216,7 +1222,9 @@ with col1:
                         title="Select Preset File",
                         filetypes=[("Preset files", "*.preset"), ("All files", "*.*")]
                     )
+                    _root.update()
                     _root.destroy()
+                    time.sleep(0.1)
                     if _picked:
                         st.session_state.preset_file_path = _picked
                         st.rerun()
@@ -1235,7 +1243,9 @@ with col1:
                         defaultextension=".preset",
                         filetypes=[("Preset files", "*.preset"), ("All files", "*.*")]
                     )
+                    _root_new.update()
                     _root_new.destroy()
+                    time.sleep(0.1)
                     if _new_path:
                         try:
                             _empty_preset = {
@@ -1279,7 +1289,9 @@ with col1:
                         defaultextension=".preset",
                         filetypes=[("Preset files", "*.preset"), ("All files", "*.*")]
                     )
+                    _root3.update()
                     _root3.destroy()
+                    time.sleep(0.1)
                     if _save_as_path:
                         try:
                             _cur_cfg = load_config()

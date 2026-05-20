@@ -203,7 +203,9 @@ with col_ctrl:
         root.withdraw()
         root.wm_attributes('-topmost', True)
         path = filedialog.askdirectory()
+        root.update()
         root.destroy()
+        time.sleep(0.1)
         return path
 
     save_dir_col, browse_col = st.columns([4, 1])

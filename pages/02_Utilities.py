@@ -75,7 +75,9 @@ def select_path(is_folder=True):
         path = filedialog.askdirectory()
     else:
         path = filedialog.askopenfilename(filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp")])
+    root.update()
     root.destroy()
+    time.sleep(0.1)
     return path
 
 def get_consolidated_metadata(img):
@@ -1350,7 +1352,9 @@ with tab_san:
                                 root.withdraw()
                                 root.wm_attributes('-topmost', True)
                                 dest_dir = filedialog.askdirectory(title="Select Destination Folder", initialdir=os.path.dirname(file_path))
+                                root.update()
                                 root.destroy()
+                                time.sleep(0.1)
                                 if dest_dir:
                                     try:
                                         base_dir = os.path.dirname(file_path)
@@ -1434,7 +1438,9 @@ with tab_san:
                                             root.withdraw()
                                             root.wm_attributes('-topmost', True)
                                             dest_dir = filedialog.askdirectory(title="Select Destination Folder", initialdir=folder_path)
+                                            root.update()
                                             root.destroy()
+                                            time.sleep(0.1)
                                             if dest_dir:
                                                 try:
                                                     shutil.move(fpath, os.path.join(dest_dir, fname))

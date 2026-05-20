@@ -1607,7 +1607,9 @@ def render_image_gallery():
                             root.withdraw()
                             root.wm_attributes('-topmost', True)
                             target_dest_dir = filedialog.askdirectory(title="Select Destination Folder", initialdir=save_dir)
+                            root.update()
                             root.destroy()
+                            time.sleep(0.1)
                             
                             if target_dest_dir:
                                 try:
