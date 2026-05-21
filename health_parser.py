@@ -212,6 +212,30 @@ def parse_account_health(target_account=None, login_data=None):
                 found_accounts_set.add(acct)
                 current_account = acct
                 event = rec.get("event", "").upper()
+                # --- Fallback: re-classify DEBUG entries by message content ---
+                # Older versions of browser_engine.py logged these as DEBUG instead
+                # of RESET/REJECT because the classifier patterns were not yet added.
+                # This ensures legacy logs are parsed correctly.
+                if event == "DEBUG":
+                    _msg = rec.get("message", "").lower()
+                    if (
+                        "response failed (refused)" in _msg
+                        or "treating as refusal" in _msg
+                        or "gemini refused" in _msg
+                    ):
+                        event = "REJECT"
+                    elif (
+                        "automation loop encountered an issue" in _msg
+                        or "env reset detected" in _msg
+                        or "reset detected in cycle" in _msg
+                        or "submission likely failed" in _msg
+                        or "gemini page was unexpectedly reset" in _msg
+                        or "reset during redo" in _msg
+                        or "reset unexpectedly" in _msg
+                        or "automation error in cycle" in _msg
+                        or "automation error (recovered)" in _msg
+                    ):
+                        event = "RESET"
                 round_id = rec.get("round", 0)
                 try:
                     dt = datetime.fromisoformat(rec.get("ts", ""))
@@ -389,9 +413,18 @@ def parse_account_health(target_account=None, login_data=None):
             status = None
             if "response successful" in line_lower: status = "Success"
             elif "saved: " in line_lower and ".png" in line_lower: status = "Success"
-            elif "response failed (refused)" in line_lower: status = "Reject"
-            elif "gemini page was unexpectedly reset" in line_lower: status = "Reset"
-            elif "automation loop encountered an issue" in line_lower: status = "Reset"
+            elif "response failed (refused)" in line_lower or "treating as refusal" in line_lower or "gemini refused" in line_lower: status = "Reject"
+            elif (
+                "gemini page was unexpectedly reset" in line_lower
+                or "automation loop encountered an issue" in line_lower
+                or "env reset detected" in line_lower
+                or "reset detected in cycle" in line_lower
+                or "submission likely failed" in line_lower
+                or "reset during redo" in line_lower
+                or "reset unexpectedly" in line_lower
+                or "automation error in cycle" in line_lower
+                or "automation error (recovered)" in line_lower
+            ): status = "Reset"
             if status:
                 try: ts_raw = re.search(r"\[(\d{2}:\d{2}:\d{2})\]", line_raw).group(1)
                 except: ts_raw = "00:00:00"

@@ -554,7 +554,7 @@ class BrowserEngine:
             "total_now": len(file_paths)
         }
 
-    def _log_debug(self, msg):
+    def _log_debug(self, msg, event_type=None):
         """Helper to log debug info to engine.log and internal queue."""
         LOG_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "engine.log"))
         timestamp = datetime.now().strftime("[%H:%M:%S]")
@@ -570,21 +570,33 @@ class BrowserEngine:
              self._log_queue = self._log_queue[-500:]
 
         import json
-        event_type = "DEBUG"
         msg_lower = msg.lower()
         
-        if "--- [auto] running round" in msg_lower:
-            event_type = "START"
-        elif "response successful" in msg_lower or ("saved:" in msg_lower and ".png" in msg_lower):
-            event_type = "SUCCESS"
-        elif "response failed (refused)" in msg_lower:
-            event_type = "REJECT"
-        elif "gemini page was unexpectedly reset" in msg_lower or "automation loop encountered an issue" in msg_lower:
-            event_type = "RESET"
-        elif "automation manager started" in msg_lower or "automation finished" in msg_lower:
-            event_type = "BOUNDARY"
-        elif "switched to" in msg_lower:
-            event_type = "ACCOUNT_SWITCH"
+        if event_type is None:
+            event_type = "DEBUG"
+            if "--- [auto] running round" in msg_lower:
+                event_type = "START"
+            elif "response successful" in msg_lower or ("saved:" in msg_lower and ".png" in msg_lower):
+                event_type = "SUCCESS"
+            elif "response failed (refused)" in msg_lower or "treating as refusal" in msg_lower or "gemini refused" in msg_lower:
+                event_type = "REJECT"
+            elif (
+                "gemini page was unexpectedly reset" in msg_lower 
+                or "automation loop encountered an issue" in msg_lower
+                or "env reset detected" in msg_lower
+                or "reset detected during redo" in msg_lower
+                or "reset detected in cycle" in msg_lower
+                or "submission likely failed" in msg_lower
+                or "reset during redo" in msg_lower
+                or "reset unexpectedly" in msg_lower
+                or "automation error in cycle" in msg_lower
+                or "automation error (recovered)" in msg_lower
+            ):
+                event_type = "RESET"
+            elif "automation manager started" in msg_lower or "automation finished" in msg_lower:
+                event_type = "BOUNDARY"
+            elif "switched to" in msg_lower:
+                event_type = "ACCOUNT_SWITCH"
         
         entry = {
             "ts": datetime.now().isoformat(timespec="seconds"),

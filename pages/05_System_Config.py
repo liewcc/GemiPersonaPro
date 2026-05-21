@@ -535,10 +535,9 @@ elif menu_selection == "Account Credentials":
 
         st.markdown("")
 
-        # --- Editable table: only user-controlled columns ---
-        # Stats columns (quota_full, last_switched_at, session_images, session_refused, session_resets)
-        # are intentionally excluded here so that engine background updates never change the input
-        # hash of st.data_editor, which would reset the widget and lose the user's in-progress edits.
+        # editor_df includes all columns — stats columns are disabled=True so Streamlit
+        # never tracks user deltas on them. Engine background updates to stats will update
+        # those cells in the UI without touching the user's in-progress edits in other columns.
         editor_data = [
             {
                 "active": r.get("active", False),
@@ -546,31 +545,6 @@ elif menu_selection == "Account Credentials":
                 "username": r.get("username", ""),
                 "auto_delete": r.get("auto_delete", False),
                 "delete_range": r.get("delete_range", "Last hour"),
-            }
-            for r in rows
-        ]
-        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range"])
-
-        edited_df = st.data_editor(
-            editor_df,
-            column_config={
-                "active": st.column_config.CheckboxColumn("Active", disabled=True, width="small"),
-                "bypass": st.column_config.CheckboxColumn("Bypass", width="small"),
-                "username": st.column_config.TextColumn("Username"),
-                "auto_delete": st.column_config.CheckboxColumn("Auto Delete", width="small"),
-                "delete_range": st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], width="small"),
-            },
-            num_rows="dynamic",
-            width="stretch",
-            hide_index=True,
-            height=min(60 + len(editor_data) * 35, 300),
-            key="login_editor"
-        )
-
-        # --- Read-only stats table (always fresh from disk via session_state sync) ---
-        stats_data = [
-            {
-                "username": r.get("username", ""),
                 "quota_full": r.get("quota_full", ""),
                 "last_switched_at": r.get("last_switched_at", ""),
                 "session_images": r.get("session_images", ""),
@@ -579,32 +553,40 @@ elif menu_selection == "Account Credentials":
             }
             for r in rows
         ]
-        stats_df = pd.DataFrame(stats_data) if stats_data else pd.DataFrame(columns=["username", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
-        st.dataframe(
-            stats_df,
+        editor_df = pd.DataFrame(editor_data) if editor_data else pd.DataFrame(columns=["active", "bypass", "username", "auto_delete", "delete_range", "quota_full", "last_switched_at", "session_images", "session_refused", "session_resets"])
+
+        edited_df = st.data_editor(
+            editor_df,
             column_config={
-                "username": st.column_config.TextColumn("Username", width=160),
-                "quota_full": st.column_config.TextColumn("Quota Full At", width=125),
-                "last_switched_at": st.column_config.TextColumn("Switched At", width=125),
-                "session_images": st.column_config.NumberColumn("Images", width="small"),
-                "session_refused": st.column_config.NumberColumn("Refused", width="small"),
-                "session_resets": st.column_config.NumberColumn("Resets", width="small"),
+                "active":           st.column_config.CheckboxColumn("Active",      disabled=True,  width="small"),
+                "bypass":           st.column_config.CheckboxColumn("Bypass",                      width="small"),
+                "username":         st.column_config.TextColumn("Username"),
+                "auto_delete":      st.column_config.CheckboxColumn("Auto Delete",                 width="small"),
+                "delete_range":     st.column_config.SelectboxColumn("Range", options=["Last hour", "Last day", "All time"], width="small"),
+                "quota_full":       st.column_config.TextColumn("Quota Full At",   disabled=True,  width=125),
+                "last_switched_at": st.column_config.TextColumn("Switched At",     disabled=True,  width=125),
+                "session_images":   st.column_config.NumberColumn("Images",        disabled=True,  width="small"),
+                "session_refused":  st.column_config.NumberColumn("Refused",       disabled=True,  width="small"),
+                "session_resets":   st.column_config.NumberColumn("Resets",        disabled=True,  width="small"),
             },
-            hide_index=True,
+            num_rows="dynamic",
             width="stretch",
-            use_container_width=True,
+            hide_index=True,
+            height=430,
+            key="login_editor"
         )
 
-        # --- Save logic: compare only user-editable columns against disk ---
+        # Save logic: only compare and update user-editable columns.
+        # Stats columns always come from disk — never from edited_df.
         current_disk_data = load_login_lookup()
         _USER_EDITABLE_COLS = ["bypass", "auto_delete", "delete_range", "username"]
 
         disk_editable = [
             {
-                "bypass": r.get("bypass", False),
-                "auto_delete": r.get("auto_delete", False),
+                "bypass":       r.get("bypass", False),
+                "auto_delete":  r.get("auto_delete", False),
                 "delete_range": r.get("delete_range", "Last hour"),
-                "username": r.get("username", ""),
+                "username":     r.get("username", ""),
             }
             for r in current_disk_data
         ]
@@ -621,23 +603,23 @@ elif menu_selection == "Account Credentials":
             if len_changed or contents_changed:
                 edited_records = edited_df.to_dict("records")
                 if not len_changed:
-                    # Row count unchanged: merge user edits with disk, keeping all stats from disk
+                    # Row count unchanged: patch only editable fields; preserve all stats from disk
                     patched = []
                     for idx, disk_row in enumerate(current_disk_data):
                         if idx < len(edited_records):
                             e = edited_records[idx]
                             patched.append({
                                 **disk_row,
-                                "bypass": bool(e.get("bypass", False)),
-                                "auto_delete": bool(e.get("auto_delete", False)),
+                                "bypass":       bool(e.get("bypass", False)),
+                                "auto_delete":  bool(e.get("auto_delete", False)),
                                 "delete_range": str(e.get("delete_range", disk_row.get("delete_range", "Last hour"))),
-                                "username": str(e.get("username", disk_row.get("username", ""))).strip(),
+                                "username":     str(e.get("username", disk_row.get("username", ""))).strip(),
                             })
                         else:
                             patched.append(disk_row)
                     valid = [r for r in patched if str(r.get("username", "")).strip()]
                 else:
-                    # Row count changed (add/delete): rebuild rows, preserving stats for existing usernames
+                    # Row count changed: rebuild, preserving stats for known usernames
                     patched = []
                     for e in edited_records:
                         uname = str(e.get("username", "")).strip()
@@ -645,27 +627,21 @@ elif menu_selection == "Account Credentials":
                         if existing:
                             patched.append({
                                 **existing,
-                                "bypass": bool(e.get("bypass", False)),
-                                "auto_delete": bool(e.get("auto_delete", False)),
+                                "bypass":       bool(e.get("bypass", False)),
+                                "auto_delete":  bool(e.get("auto_delete", False)),
                                 "delete_range": str(e.get("delete_range", existing.get("delete_range", "Last hour"))),
-                                "username": uname,
+                                "username":     uname,
                             })
                         else:
                             patched.append({
-                                "active": False,
-                                "bypass": bool(e.get("bypass", False)),
-                                "username": uname,
-                                "password": "",
+                                "active": False, "bypass": bool(e.get("bypass", False)),
+                                "username": uname, "password": "",
                                 "auto_delete": bool(e.get("auto_delete", False)),
                                 "delete_range": str(e.get("delete_range", "Last hour")),
-                                "quota_full": "",
-                                "last_switched_at": "",
-                                "session_images": "",
-                                "session_refused": "",
-                                "session_resets": "",
+                                "quota_full": "", "last_switched_at": "",
+                                "session_images": "", "session_refused": "", "session_resets": "",
                             })
                     valid = [r for r in patched if str(r.get("username", "")).strip()]
-                    # Update session_state so the editable table reflects the new row set
                     st.session_state.login_rows = valid
 
                 save_login_lookup(valid)
@@ -683,7 +659,10 @@ elif menu_selection == "Account Credentials":
                 save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
         with btn_clear_stats:
             if st.button("Reset Stats", icon="🧹", width="stretch"):
-                for r in rows: r["last_switched_at"] = ""; r["session_images"] = r["session_refused"] = r["session_resets"] = ""
+                for r in rows:
+                    r["session_images"] = ""
+                    r["session_refused"] = ""
+                    r["session_resets"] = ""
                 save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
 
 elif menu_selection == "Quota Full Phrases":

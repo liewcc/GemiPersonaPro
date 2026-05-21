@@ -499,17 +499,46 @@ with tab1:
                             ll = line.lower()
                             # JSON events
                             if line.lstrip().startswith("{"):
+                                is_match = False
                                 for ev in _EVENT_TYPES:
                                     if ev in line:
-                                        count += 1
+                                        is_match = True
                                         break
+                                if not is_match and '"event": "DEBUG"' in line:
+                                    if (
+                                        "response failed (refused)" in ll
+                                        or "treating as refusal" in ll
+                                        or "gemini refused" in ll
+                                        or "automation loop encountered an issue" in ll
+                                        or "env reset detected" in ll
+                                        or "reset detected in cycle" in ll
+                                        or "submission likely failed" in ll
+                                        or "gemini page was unexpectedly reset" in ll
+                                        or "reset during redo" in ll
+                                        or "reset unexpectedly" in ll
+                                        or "automation error in cycle" in ll
+                                        or "automation error (recovered)" in ll
+                                    ):
+                                        is_match = True
+                                if is_match:
+                                    count += 1
                             else:
                                 # Legacy text events
                                 if _LEGACY_SUCCESS in ll and ".png" in ll:
                                     count += 1
-                                elif _LEGACY_REJECT in ll:
+                                elif _LEGACY_REJECT in ll or "treating as refusal" in ll or "gemini refused" in ll:
                                     count += 1
-                                elif _LEGACY_RESET_A in ll or _LEGACY_RESET_B in ll:
+                                elif (
+                                    _LEGACY_RESET_A in ll
+                                    or _LEGACY_RESET_B in ll
+                                    or "env reset detected" in ll
+                                    or "reset detected in cycle" in ll
+                                    or "submission likely failed" in ll
+                                    or "reset during redo" in ll
+                                    or "reset unexpectedly" in ll
+                                    or "automation error in cycle" in ll
+                                    or "automation error (recovered)" in ll
+                                ):
                                     count += 1
                         return count
                 except Exception:
@@ -553,11 +582,13 @@ with tab1:
                     record["Absolute_Event_Num"] = total_events - idx
 
                 # Step 2 – filter to the last automation cycle if requested.
-                if show_last_cycle and data and _last_cycle_start_idx is not None:
-                    end_bound = _last_cycle_end_idx if _last_cycle_end_idx is not None else float('inf')
+                curr_start_idx = st.session_state.get("_health_last_cycle_start_idx")
+                curr_end_idx = st.session_state.get("_health_last_cycle_end_idx")
+                if show_last_cycle and data and curr_start_idx is not None:
+                    end_bound = curr_end_idx if curr_end_idx is not None else float('inf')
                     filtered_data = [
                         d for d in data
-                        if _last_cycle_start_idx <= d.get("log_line_idx", -1) <= end_bound
+                        if curr_start_idx <= d.get("log_line_idx", -1) <= end_bound
                     ]
                     # Step 3 – re-number locally within the cycle
                     cycle_total = len(filtered_data)
@@ -571,6 +602,18 @@ with tab1:
 
             # --- Rebuild or serve cached ------------------------------------
             if needs_rebuild:
+                # Dynamically resolve last cycle boundaries inside fragment when data or settings change
+                local_start_idx = None
+                local_end_idx = None
+                if show_last_cycle:
+                    _fresh_cycles = get_cached_cycles(LOG_PATH, _get_current_mtime())
+                    if _fresh_cycles:
+                        _lc = _fresh_cycles[-1]
+                        local_start_idx = _lc.get('start_idx')
+                        local_end_idx = None if _lc.get('is_running') else _lc.get('end_idx')
+                
+                st.session_state["_health_last_cycle_start_idx"] = local_start_idx
+                st.session_state["_health_last_cycle_end_idx"] = local_end_idx
                 if is_full:
                     _, fresh_all_detailed, _ = parse_account_health(target_account="ALL_EVENTS", login_data=fresh_login_data)
                     st.session_state["_health_cached_data"] = _apply_filters(fresh_all_detailed, fresh_all_detailed)
