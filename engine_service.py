@@ -366,8 +366,11 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
 
     # Pre-read quota cooldown setting once to avoid repeated disk reads inside the loop
     _quota_cooldown_hrs = 0
+    _bypass_quota_full = False
     try:
-        _quota_cooldown_hrs = load_config().get("quota_cooldown_hours", 0) or 0
+        _cfg = load_config()
+        _quota_cooldown_hrs = _cfg.get("quota_cooldown_hours", 0) or 0
+        _bypass_quota_full = _cfg.get("bypass_quota_full", False)
     except Exception:
         pass
 
@@ -419,20 +422,23 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         if _quota_cooldown_hrs > 0:
             qf_str = candidate.get("quota_full", "")
             if qf_str:
-                try:
-                    from datetime import timedelta
-                    qf_time = datetime.strptime(qf_str, "%d/%m/%Y %H:%M:%S")
-                    unlock_time = qf_time + timedelta(hours=_quota_cooldown_hrs)
-                    if datetime.now() < unlock_time:
-                        remaining_min = (unlock_time - datetime.now()).total_seconds() / 60.0
-                        engine._log_debug(
-                            f"API>> Skipping '{candidate.get('username')}' "
-                            f"(Quota locked until {unlock_time.strftime('%d/%m %H:%M')}, "
-                            f"{remaining_min:.0f} min remaining)."
-                        )
-                        continue
-                except Exception:
-                    pass  # Unparseable timestamp — do not skip
+                if _bypass_quota_full:
+                    print(f"[ENGINE] Bypass Quota Full enabled: Ignored quota unlock time for '{candidate.get('username')}' and selecting anyway.")
+                else:
+                    try:
+                        from datetime import timedelta
+                        qf_time = datetime.strptime(qf_str, "%d/%m/%Y %H:%M:%S")
+                        unlock_time = qf_time + timedelta(hours=_quota_cooldown_hrs)
+                        if datetime.now() < unlock_time:
+                            remaining_min = (unlock_time - datetime.now()).total_seconds() / 60.0
+                            engine._log_debug(
+                                f"API>> Skipping '{candidate.get('username')}' "
+                                f"(Quota locked until {unlock_time.strftime('%d/%m %H:%M')}, "
+                                f"{remaining_min:.0f} min remaining)."
+                            )
+                            continue
+                    except Exception:
+                        pass  # Unparseable timestamp — do not skip
 
         if cand_profile:
             prof_dir = get_abs_path(os.path.join("browser_user_data", cand_profile))
@@ -531,13 +537,11 @@ async def perform_switch_logic(h: bool = None, direction: int = 1, target_userna
         u["active"] = is_target
         # Clear quota_full timestamp if this is the target account and it was previously marked.
         # If we reached this point, it means the account is usable (expired or cooldown is 0).
+        # Only quota_full is cleared — all other stats (last_switched_at, session_images,
+        # session_refused, session_resets) are preserved as-is.
         if is_target and u.get("quota_full"):
-            print(f"[ENGINE] Account {u['username']} is now active and usable. Clearing quota_full timestamp and session stats.")
+            print(f"[ENGINE] Account {u['username']} is now active and usable. Clearing quota_full timestamp only.")
             u["quota_full"] = ""
-            u["last_switched_at"] = ""
-            u["session_images"] = "0"
-            u["session_refused"] = "0"
-            u["session_resets"] = "0"
     try:
         with open(lookup_path, "w", encoding="utf-8") as f:
             json.dump(users, f, indent=4, ensure_ascii=False)

@@ -46,6 +46,7 @@ DEFAULT_CONFIG = {
     ],
     "selected_files": [],
     "quota_cooldown_hours": 24,
+    "bypass_quota_full": False,
     "fixed_aspect_ratio": "None",
     "prompt_matrix": {
         "enabled": False,

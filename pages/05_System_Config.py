@@ -36,6 +36,9 @@ def on_change_watchdog_delay():
 def on_change_quota_cooldown():
     save_config({"quota_cooldown_hours": st.session_state.cfg_quota_cooldown_hrs})
 
+def on_change_bypass_quota_full():
+    save_config({"bypass_quota_full": st.session_state.cfg_bypass_quota_full})
+
 def on_change_navigation():
     save_config({"system_navigation": st.session_state.cfg_system_nav})
     # Clear aspect ratio initialization flag to force fresh reload when switching sections
@@ -132,6 +135,7 @@ st.session_state.cfg_timeout = int(config.get("heartbeat_timeout", 3600))
 st.session_state.cfg_watchdog_delay = int(config.get("watchdog_initial_delay", 20))
 st.session_state.cfg_quota_cooldown_hrs = int(config.get("quota_cooldown_hours", 24))
 st.session_state.cfg_quota_cooldown_min = config.get("quota_cooldown_minutes", 0)
+st.session_state.cfg_bypass_quota_full = config.get("bypass_quota_full", False)
 
 if st.session_state.get("current_page") != "System_Config":
     st.session_state.current_page = "System_Config"
@@ -518,7 +522,7 @@ elif menu_selection == "Account Credentials":
         active_index = next((i for i, r in enumerate(rows) if r.get("active")), 0)
 
         if usernames:
-            sel_col, btn_col = st.columns([3, 1])
+            sel_col, btn_col, toggle_col = st.columns([3, 1.2, 1.2])
             with sel_col:
                 selected_active = st.selectbox("Active Account", options=usernames, index=min(active_index, len(usernames) - 1), key="active_account_select")
             with btn_col:
@@ -531,7 +535,40 @@ elif menu_selection == "Account Credentials":
                     if "active_account_select" in st.session_state: del st.session_state["active_account_select"]
                     st.success("Active account updated!")
                     st.rerun()
+            with toggle_col:
+                st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                st.toggle(
+                    "Bypass Quota Full", 
+                    key="cfg_bypass_quota_full", 
+                    on_change=on_change_bypass_quota_full,
+                    help="Enabled: During account rotation, if an account has a 'Quota Full' timestamp, it will ignore the time restriction and force selection/usage of that account.\n\nDisabled: When rotating to an account with a 'Quota Full' timestamp, it will automatically skip it and proceed to the next one, until the elapsed duration since the timestamp exceeds the cooldown period (Default: 24 hours / 1 day, customizable under 'Engine Settings')."
+                )
         else: st.info("Add a new credential row below.")
+
+        st.markdown("")
+
+        btn_reload, btn_clear, btn_clear_switched, btn_clear_stats = st.columns([1, 1.5, 1.5, 1.2])
+        with btn_reload:
+            if st.button("Reload Table", icon="🔄", width="stretch"): st.session_state._login_reload = True; st.rerun()
+        with btn_clear:
+            if st.button("Clear Quota Full Column", icon="🧹", width="stretch"):
+                for r in rows:
+                    if r.get("quota_full"):
+                        r["quota_full"] = ""
+                        r["session_images"] = r["session_refused"] = r["session_resets"] = "0"
+                save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
+        with btn_clear_switched:
+            if st.button('Clear "Switched At" Column', icon="🧹", width="stretch"):
+                for r in rows:
+                    r["last_switched_at"] = ""
+                save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
+        with btn_clear_stats:
+            if st.button("Reset Stats", icon="🧹", width="stretch"):
+                for r in rows:
+                    r["session_images"] = ""
+                    r["session_refused"] = ""
+                    r["session_resets"] = ""
+                save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
 
         st.markdown("")
 
@@ -572,7 +609,7 @@ elif menu_selection == "Account Credentials":
             num_rows="dynamic",
             width="stretch",
             hide_index=True,
-            height=430,
+            height=575,
             key="login_editor"
         )
 
@@ -646,24 +683,6 @@ elif menu_selection == "Account Credentials":
 
                 save_login_lookup(valid)
                 st.toast("Credentials updated.", icon="💾")
-
-        btn_reload, btn_clear, btn_clear_stats = st.columns([1, 1.2, 1.2])
-        with btn_reload:
-            if st.button("Reload Table", icon="🔄", width="stretch"): st.session_state._login_reload = True; st.rerun()
-        with btn_clear:
-            if st.button("Clear Quota", icon="🧹", width="stretch"):
-                for r in rows:
-                    if r.get("quota_full"):
-                        r["quota_full"] = ""
-                        r["session_images"] = r["session_refused"] = r["session_resets"] = "0"
-                save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
-        with btn_clear_stats:
-            if st.button("Reset Stats", icon="🧹", width="stretch"):
-                for r in rows:
-                    r["session_images"] = ""
-                    r["session_refused"] = ""
-                    r["session_resets"] = ""
-                save_login_lookup(rows); st.session_state._login_reload = True; st.rerun()
 
 elif menu_selection == "Quota Full Phrases":
     st.markdown("<p style='font-size: 0.85em; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;'>QUOTA FULL PHRASES</p>", unsafe_allow_html=True)
