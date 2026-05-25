@@ -252,6 +252,15 @@ def main():
     except Exception:
         auto_folder = upscale_folder = ''
 
+    # Shared GUI state for process control
+    gui_state = {
+        'engine_ok': False,
+        'browser_ok': False,
+        'is_running': False,
+        'history_count': 0,
+        'is_goal_reached': False
+    }
+
     _PREFS_FILE = os.path.join(_SCRIPT_DIR, 'monitor_ui_prefs.json')
     try:
         with open(_PREFS_FILE, 'r', encoding='utf-8') as f:
@@ -1047,6 +1056,134 @@ def main():
     tk.Button(img_proc_frame, text='Move to New Folder', command=_do_move_to, **_btn_style).pack(side='left', expand=True, fill='x', padx=(0, 6), pady=(8, 6))
     tk.Button(img_proc_frame, text='Delete', command=_do_delete, **_btn_style).pack(side='left', expand=True, fill='x', padx=0, pady=(8, 6))
 
+    # process control button event handlers
+    def _update_process_control_buttons():
+        try:
+            if not win.winfo_exists():
+                return
+            
+            # Start/Stop Button state & text
+            if gui_state['is_running']:
+                btn_start_stop.config(text='⏹️ Stop Looping Process', state='normal', fg='#ff4444', activeforeground='#ff4444')
+            else:
+                # Enabled if engine is ok and browser is ok
+                btn_state = 'normal' if (gui_state['engine_ok'] and gui_state['browser_ok']) else 'disabled'
+                btn_fg = C_TEXT if btn_state == 'normal' else C_MUTED
+                btn_start_stop.config(text='▶️ Start Looping Process', state=btn_state, fg=btn_fg, activeforeground=C_TEXT)
+
+            # Continue Button state
+            # Disabled if running, or if no history, or if browser/engine is not ok
+            can_continue = (not gui_state['is_running'] and 
+                            gui_state['history_count'] > 0 and 
+                            gui_state['engine_ok'] and 
+                            gui_state['browser_ok'])
+            cont_state = 'normal' if can_continue else 'disabled'
+            cont_fg = C_TEXT if cont_state == 'normal' else C_MUTED
+            btn_continue.config(state=cont_state, fg=cont_fg, activeforeground=C_TEXT)
+        except Exception:
+            pass
+
+    def _on_start_stop_click():
+        if gui_state['is_running']:
+            from tkinter import messagebox
+            if messagebox.askyesno("Stop Looping Process", "Are you sure you want to stop the looping process?", parent=win):
+                def _do_stop():
+                    try:
+                        import requests
+                        resp = requests.post("http://127.0.0.1:8000/browser/automation/stop", timeout=5.0)
+                        if resp.status_code == 200:
+                            # Immediately request status refresh
+                            _poll_chart()
+                    except Exception as e:
+                        win.after(0, lambda: messagebox.showerror("Error", f"Failed to stop automation:\n{e}", parent=win))
+                threading.Thread(target=_do_stop, daemon=True).start()
+        else:
+            from tkinter import messagebox
+            if gui_state['history_count'] > 0:
+                if not messagebox.askyesno("Start Looping Process", 
+                                           "Are you sure you want to start a new looping process? This will reset your current session statistics.", 
+                                           parent=win):
+                    return
+            
+            def _do_start():
+                try:
+                    import requests
+                    cfg_now = config_utils.load_config()
+                    auto_cfg = cfg_now.get("automation", {})
+                    mode = auto_cfg.get("mode", "rounds")
+                    goal = auto_cfg.get("goal", 1)
+                    
+                    payload = {
+                        "mode": mode,
+                        "goal": goal,
+                        "config": cfg_now,
+                        "clear_pending": False
+                    }
+                    resp = requests.post("http://127.0.0.1:8000/browser/automation/start", json=payload, timeout=10.0)
+                    if resp.status_code == 200:
+                        _poll_chart()
+                    else:
+                        err_msg = resp.json().get("detail", "Unknown error")
+                        win.after(0, lambda: messagebox.showerror("Error", f"Failed to start automation:\n{err_msg}", parent=win))
+                except Exception as e:
+                    win.after(0, lambda: messagebox.showerror("Error", f"Failed to start automation:\n{e}", parent=win))
+            
+            threading.Thread(target=_do_start, daemon=True).start()
+
+    def _on_continue_click():
+        from tkinter import messagebox
+        if gui_state['is_goal_reached']:
+            messagebox.showwarning("Cannot Continue", 
+                                   "To continue, please increase the Goal in the settings, or click Start Looping Process to begin a fresh session.", 
+                                   parent=win)
+            return
+
+        ans = messagebox.askyesnocancel("Continue Session", 
+                                        "Would you like to clear pending counters (refusals/resets) before continuing?\n\n"
+                                        "• Yes: Clear pending counters and continue\n"
+                                        "• No: Use last saved data and continue\n"
+                                        "• Cancel: Abort", 
+                                        parent=win)
+        if ans is None:
+            return
+
+        clear_pending = ans
+
+        def _do_continue():
+            try:
+                import requests
+                cfg_now = config_utils.load_config()
+                auto_cfg = cfg_now.get("automation", {})
+                mode = auto_cfg.get("mode", "rounds")
+                goal = auto_cfg.get("goal", 1)
+
+                payload = {
+                    "mode": mode,
+                    "goal": goal,
+                    "config": cfg_now,
+                    "clear_pending": clear_pending
+                }
+                resp = requests.post("http://127.0.0.1:8000/browser/automation/continue", json=payload, timeout=10.0)
+                if resp.status_code == 200:
+                    _poll_chart()
+                else:
+                    err_msg = resp.json().get("detail", "Unknown error")
+                    win.after(0, lambda: messagebox.showerror("Error", f"Failed to continue automation:\n{err_msg}", parent=win))
+            except Exception as e:
+                win.after(0, lambda: messagebox.showerror("Error", f"Failed to continue automation:\n{e}", parent=win))
+
+        threading.Thread(target=_do_continue, daemon=True).start()
+
+    # process control frame
+    process_control_frame = tk.LabelFrame(body, text='Process Control', bg=C_BG, fg=C_MUTED, font=('Microsoft YaHei UI Bold', 9), padx=14, pady=0)
+    process_control_frame.pack(fill='x', padx=14, pady=(10, 0))
+
+    btn_start_stop = tk.Button(process_control_frame, text='▶️ Start Looping Process', command=_on_start_stop_click, **_btn_style)
+    btn_start_stop.pack(side='left', expand=True, fill='x', padx=(0, 6), pady=(8, 6))
+
+    btn_continue = tk.Button(process_control_frame, text='⏯️ Continue Session', command=_on_continue_click, **_btn_style)
+    btn_continue.pack(side='left', expand=True, fill='x', padx=0, pady=(8, 6))
+
     # main action buttons
     btn_frame = tk.Frame(body, bg=C_BG, padx=14, pady=10)
     btn_frame.pack(fill='x')
@@ -1184,6 +1321,28 @@ def main():
             _draw_chart(chart_canvas, detailed, cw1 if cw1 > 10 else CANVAS_W, ch1 if ch1 > 10 else CANVAS_H)
             _draw_stats_chart(stats_canvas, reject_stats, cw2 if cw2 > 10 else CANVAS_W, ch2 if ch2 > 10 else CANVAS_H)
             _draw_perf_chart(perf_canvas, detailed, cw3 if cw3 > 10 else CANVAS_W, ch3 if ch3 > 10 else CANVAS_H, ui_prefs.get('perf_mode', 'images'))
+
+            # Update process control GUI state
+            gui_state['is_running'] = stats.get('is_running', False)
+            if reject_stats:
+                clean_history = [r for r in reject_stats if r.get('filename') and r.get('filename') not in ["[Stopped/Interrupted]", "[Account Switched]"]]
+                gui_state['history_count'] = len(clean_history)
+            else:
+                gui_state['history_count'] = 0
+
+            try:
+                cfg_now = config_utils.load_config()
+                auto_cfg = cfg_now.get("automation", {})
+                auto_mode = auto_cfg.get("mode", "rounds")
+                auto_goal = auto_cfg.get("goal", 1)
+                if auto_mode in ("rounds", "images") and gui_state['history_count'] >= auto_goal:
+                    gui_state['is_goal_reached'] = True
+                else:
+                    gui_state['is_goal_reached'] = False
+            except Exception:
+                gui_state['is_goal_reached'] = False
+
+            _update_process_control_buttons()
         except Exception:
             pass
 
@@ -1225,6 +1384,11 @@ def main():
             else:
                 cpu_fg = C_TEXT
             stat_labels['cpu_usage'].config(text=cpu_str, fg=cpu_fg)
+            
+            # Update process control system state
+            gui_state['engine_ok'] = engine_ok
+            gui_state['browser_ok'] = browser_ok
+            _update_process_control_buttons()
         except Exception:
             pass
 
