@@ -145,9 +145,21 @@ async def _ensure_browser() -> str:
 
 
 def _kick_lama_thread():
-    """Spawn background thread to warm up LaMa model via @st.cache_resource."""
+    """Spawn background thread to warm up LaMa model via @st.cache_resource.
+
+    If GPU (CUDA) is disabled in config, skip model loading entirely.
+    """
     if st.session_state.lama_thread_started or shared_state.lama_status["ready"]:
         return
+
+    # Check use_gpu from config — if GPU is off, skip loading the model.
+    _cfg = load_config()
+    _use_gpu = _cfg.get("automation", {}).get("use_gpu", True)
+    if not _use_gpu:
+        shared_state.lama_status["ready"] = True
+        shared_state.lama_status["skipped"] = True
+        return
+
     st.session_state.lama_thread_started = True
     st.session_state.lama_start_mono = time.monotonic()
 
@@ -297,7 +309,12 @@ with st.status(_label, expanded=True, state=_state) as _s:
         st.write(f"✅ Browser: {msg}")
 
     if st.session_state.step_lama_done:
-        msg = "Already in memory" if st.session_state.step_lama_skip else "Loaded successfully"
+        if st.session_state.get("step_lama_gpu_off"):
+            msg = "Skipped (GPU/CUDA disabled)"
+        elif st.session_state.step_lama_skip:
+            msg = "Already in memory"
+        else:
+            msg = "Loaded successfully"
         st.write(f"✅ LaMa AI Model: {msg}")
 
         # Inline Update Status — uses a polling fragment so the version
@@ -374,10 +391,17 @@ with st.status(_label, expanded=True, state=_state) as _s:
             st.stop()
 
         elif shared_state.lama_status["ready"]:
-            # Thread completed — determine if it was instant (i.e. already cached)
-            elapsed = time.monotonic() - (st.session_state.lama_start_mono or 0)
-            st.session_state.step_lama_done = True
-            st.session_state.step_lama_skip = (elapsed < 2.0)
+            # Thread completed (or skipped) — determine reason
+            if shared_state.lama_status.get("skipped"):
+                # GPU was off — model intentionally not loaded
+                st.session_state.step_lama_done = True
+                st.session_state.step_lama_skip = False
+                st.session_state["step_lama_gpu_off"] = True
+            else:
+                # Normal load — determine if it was instant (i.e. already cached)
+                elapsed = time.monotonic() - (st.session_state.lama_start_mono or 0)
+                st.session_state.step_lama_done = True
+                st.session_state.step_lama_skip = (elapsed < 2.0)
             st.rerun()
 
         else:

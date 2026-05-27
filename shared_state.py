@@ -7,7 +7,7 @@
 # sys.modules and never re-initialises them during the same process lifetime.
 
 # LaMa model load state — written by background thread, polled by main thread.
-lama_status: dict = {"ready": False, "error": None}
+lama_status: dict = {"ready": False, "error": None, "skipped": False}
 
 import streamlit as st
 import torch

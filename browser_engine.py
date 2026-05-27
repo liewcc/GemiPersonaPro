@@ -1071,9 +1071,34 @@ class BrowserEngine:
             await self.send_prompt(text)
             # Submit only if we injected text
             await self._page.keyboard.press("Enter")
-            self._log_debug("Prompt submitted. Checking for intercepting popups...")
+            self._log_debug("Prompt submitted via Enter. Verifying submission...")
             
-            # CRITICAL: Dismiss "Creating content from images/files" popup if it appears after Enter
+            # Brief pause then verify the prompt was actually submitted.
+            # In the new Gemini UI (2026-05), Enter may not always trigger submit
+            # if the input loses focus or the UI intercepts the keystroke.
+            await asyncio.sleep(0.8)
+            still_has_text = await self._page.evaluate('''() => {
+                const editor = document.querySelector(".ql-editor, div[aria-label='Enter a prompt here']");
+                return !!(editor && editor.innerText && editor.innerText.trim().length > 0);
+            }''')
+            if still_has_text:
+                self._log_debug("Text still in input after Enter — falling back to button click.")
+                try:
+                    # New UI: button[aria-label="Send message"] inside gem-icon-button.submit
+                    btn = self._page.locator(
+                        'gem-icon-button.submit button[aria-label="Send message"], '
+                        'gem-icon-button.send-button button[aria-label="Send message"], '
+                        'button[aria-label="Send message"]'
+                    ).first
+                    if await btn.is_visible(timeout=2000):
+                        await btn.click()
+                        self._log_debug("Fallback button click submitted.")
+                    else:
+                        self._log_debug("Fallback button not visible — relying on Enter.")
+                except Exception as _e:
+                    self._log_debug(f"Fallback click failed: {_e}")
+            
+            # CRITICAL: Dismiss "Creating content from images/files" popup
             await self.dismiss_agreement_popups()
             
             self._log_debug("Monitoring for response...")
@@ -1118,15 +1143,45 @@ class BrowserEngine:
                     if (bodyText.includes(kw)) return { status: "quota_exceeded", text: kw };
                 }
 
-                // Utility to check real visibility
-                const isVisible = (el) => el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
+                // Utility to check real visibility.
+                // Uses getComputedStyle instead of offsetWidth/offsetHeight:
+                // offsetWidth/offsetHeight return 0 in minimized windows even for visible
+                // elements. getComputedStyle reads the CSS cascade and is always accurate
+                // regardless of window state (minimized, headless, off-screen).
+                const isVisible = (el) => {
+                    if (!el) return false;
+                    const s = window.getComputedStyle(el);
+                    return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+                };
 
                 // 2. Active generation signals (highest priority)
-                const stopIcon = document.querySelector('mat-icon[data-mat-icon-name="stop"]') || document.querySelector('mat-icon[fonticon="stop"]');
+                // stopIcon: truly appears/disappears — DOM presence check is sufficient.
+                // progressBar + activeLoadingContainer: Angular Material keeps these elements
+                // in the DOM at all times (hidden via CSS). Must use isVisible() to avoid
+                // permanently treating every state as "generating".
+                // Stop/generating icon detection — covers both old and new Gemini UI.
+                // In the new UI (2026-05), icons may use the "lumi-symbols" namespace
+                // and may use stop_circle instead of plain stop.
+                const stopIcon =
+                    document.querySelector('mat-icon[data-mat-icon-name="stop"]') ||
+                    document.querySelector('mat-icon[fonticon="stop"]') ||
+                    document.querySelector('mat-icon[data-mat-icon-name="stop_circle"]') ||
+                    document.querySelector('mat-icon[fonticon="stop_circle"]') ||
+                    document.querySelector('mat-icon[data-mat-icon-namespace="lumi-symbols"][data-mat-icon-name="stop"]') ||
+                    document.querySelector('mat-icon[data-mat-icon-namespace="lumi-symbols"][data-mat-icon-name="stop_circle"]') ||
+                    // Fallback: any mat-icon inside the send-button area whose name is NOT arrow_upward/send
+                    // (i.e., it has switched to a stop variant)
+                    (() => {
+                        const sendBtn = document.querySelector('gem-icon-button.submit mat-icon, gem-icon-button.send-button mat-icon');
+                        if (!sendBtn) return null;
+                        const n = sendBtn.getAttribute('data-mat-icon-name') || sendBtn.getAttribute('fonticon') || '';
+                        // If the icon name is NOT a send variant, assume it's a stop variant
+                        return (n && n !== 'arrow_upward' && n !== 'send' && n !== 'send_spark') ? sendBtn : null;
+                    })();
                 const progressBar = document.querySelector('mat-progress-bar');
                 const activeLoadingContainer = document.querySelector('section.processing-state_container--processing');
 
-                if (isVisible(stopIcon) || isVisible(progressBar) || isVisible(activeLoadingContainer)) {
+                if (stopIcon || isVisible(progressBar) || isVisible(activeLoadingContainer)) {
                     let genText = "";
                     if (activeLoadingContainer) {
                         // Extract text from the active loading container's specific spans
@@ -1153,12 +1208,44 @@ class BrowserEngine:
                     return { status: "generating", text: genText };
                 }
 
-                // 3. Idle state (send icon visible)
-                const sendIcon = document.querySelector('mat-icon[data-mat-icon-name="send"]') || 
-                                 document.querySelector('mat-icon[fonticon="send"]') ||
-                                 document.querySelector('button[aria-label="Send message"]');
-                
-                if (isVisible(sendIcon)) {
+                // 3. Idle state (send button ready)
+                // ROOT CAUSE: isVisible() uses offsetWidth/offsetHeight which can be 0
+                // in a minimized window even when the element is logically "visible".
+                //
+                // NEW STRATEGY: Check DOM presence + semantic attributes instead.
+                //
+                // The outer container has data-test-id="send-button-container" and
+                // receives the class "visible" when the send button is active/ready.
+                // gem-icon-button has aria-disabled="false" when interactive.
+                // Neither check requires layout dimensions — works in minimized windows.
+                //
+                // 2026-05 UPDATE: Gemini redesigned the submit button icon from "send"
+                // to "arrow_upward" under the "lumi-symbols" icon namespace.
+                //
+                // CRITICAL FIX: In the new Gemini UI, the send-button-container div
+                // keeps the "visible" class at ALL times (even while Gemini is generating).
+                // We MUST require the "arrow_upward" (send-mode) icon to be present in
+                // the button, to distinguish idle-ready from active-generating state.
+                // Without this check, sendReady fires immediately after submission,
+                // before Gemini even starts generating, causing false reset detections.
+                const _sendModeSelectors = [
+                    'mat-icon[data-mat-icon-name="arrow_upward"]',
+                    'mat-icon[fonticon="arrow_upward"]',
+                    'mat-icon[data-mat-icon-name="send"]',
+                    'mat-icon[fonticon="send"]',
+                    'mat-icon[data-mat-icon-name="send_spark"]',
+                    'mat-icon[fonticon="send_spark"]',
+                ];
+                const _inSendMode = _sendModeSelectors.some(s => !!document.querySelector(s));
+                const sendReady = _inSendMode && !!(
+                    document.querySelector('[data-test-id="send-button-container"].visible') ||
+                    document.querySelector('gem-icon-button.send-button[aria-disabled="false"]') ||
+                    document.querySelector('gem-icon-button.submit[aria-disabled="false"]') ||
+                    document.querySelector('button[aria-label="Send message"]:not([disabled])') ||
+                    document.querySelector('button[aria-label*="Send" i]:not([disabled])')
+                );
+
+                if (sendReady) {
                     let allResps = Array.from(document.querySelectorAll('model-response, structured-content-container.model-response-text, message-content'));
                     const responses = allResps.filter(el => !allResps.some(parent => parent !== el && parent.contains(el)));
                     
@@ -1190,7 +1277,22 @@ class BrowserEngine:
                     // Gemini refused if the response is "complete" (has the complete footer class)
                     // and it has text content but NO image, OR if it matches known refusal text.
                     const completeFooter = lastResp.querySelector('.response-footer.complete');
-                    const refusalKws = ["我可以为许多内容", "但是这个不行", "要不要试试别的", "i can't", "i cannot", "sorry", "apologize", "unable to", "language model", "can't help with that"];
+                    // NOTE: Keep refusalKws updated to match Gemini's current UI language.
+                    // Gemini periodically changes its refusal phrasing — add new patterns here.
+                    // 2026-05 update: new Chinese refusal format "我可以生成...但是不能生成那样的图片"
+                    const refusalKws = [
+                        // New-style Chinese refusals (2026-05+)
+                        "但是不能生成那样的图片",
+                        "不能生成那样",
+                        "需要我帮你生成这个人的其他图片吗",
+                        // Old-style Chinese refusals
+                        "我可以为许多内容", "但是这个不行", "要不要试试别的",
+                        // Generic Chinese refusals
+                        "无法生成", "不能生成", "无法处理这个请求",
+                        // English refusals
+                        "i can't", "i cannot", "sorry", "apologize", "unable to",
+                        "language model", "can't help with that", "i'm not able to"
+                    ];
                     const isTextRefusal = refusalKws.some(kw => respText.toLowerCase().includes(kw.toLowerCase()));
                     
                     if ((completeFooter || isTextRefusal) && respText.length > 0) {
