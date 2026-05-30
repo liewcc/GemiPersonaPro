@@ -169,19 +169,52 @@ def main():
                     log(f"Warning: Profile lookup failed: {e}")
 
             target_profile_path = os.path.join(source_user_data, physical_profile_dir)
+            # Fallback: if the Local State lookup result doesn't exist on disk,
+            # use args.profile directly as the directory name (matches browser_engine.py behavior)
+            if not os.path.exists(target_profile_path):
+                log(f"Warning: Resolved profile dir '{physical_profile_dir}' not found, falling back to '{args.profile}'")
+                physical_profile_dir = args.profile
+                target_profile_path = os.path.join(source_user_data, physical_profile_dir)
             sandbox_dir = os.path.join(base_dir, "upscaler_session_sandbox")
             os.makedirs(sandbox_dir, exist_ok=True)
             sandbox_default = os.path.join(sandbox_dir, "Default")
 
-            # Recreate junction (may have been cleaned up by Stop handler)
+            # Cleanup old sandbox Default (junction or real dir)
             if os.path.exists(sandbox_default):
                 subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+                if os.path.exists(sandbox_default):
+                    shutil.rmtree(sandbox_default, ignore_errors=True)
             if not os.path.exists(target_profile_path):
                 log(f"❌ Profile path not found: {target_profile_path}")
                 return
 
-            cmd = f'mklink /J "{sandbox_default}" "{target_profile_path}"'
-            subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            # --- Copy profile into sandbox instead of using a junction ---
+            critical_files = [
+                "Cookies", "Cookies-journal",
+                "Login Data", "Login Data-journal",
+                "Login Data For Account", "Login Data For Account-journal",
+                "Preferences", "Secure Preferences",
+                "Web Data", "Web Data-journal",
+            ]
+            critical_subdirs = ["Network"]
+            os.makedirs(sandbox_default, exist_ok=True)
+            for fname in critical_files:
+                src_f = os.path.join(target_profile_path, fname)
+                if os.path.exists(src_f):
+                    try:
+                        shutil.copy2(src_f, os.path.join(sandbox_default, fname))
+                    except Exception as cp_e:
+                        log(f"  Warning: Could not copy {fname}: {cp_e}")
+            for subdir in critical_subdirs:
+                src_sub = os.path.join(target_profile_path, subdir)
+                dst_sub = os.path.join(sandbox_default, subdir)
+                if os.path.exists(src_sub):
+                    try:
+                        if os.path.exists(dst_sub):
+                            shutil.rmtree(dst_sub, ignore_errors=True)
+                        shutil.copytree(src_sub, dst_sub)
+                    except Exception as cp_e:
+                        log(f"  Warning: Could not copy {subdir}/: {cp_e}")
 
             # Copy Local State
             for f_name in ["Local State", "Variations"]:
@@ -196,6 +229,9 @@ def main():
                             if "profile" in state:
                                 state["profile"]["last_used"] = "Default"
                                 state["profile"]["last_active_profiles"] = ["Default"]
+                                if physical_profile_dir in state["profile"].get("info_cache", {}):
+                                    state["profile"]["info_cache"]["Default"] = \
+                                        state["profile"]["info_cache"][physical_profile_dir]
                             with open(dest, "w", encoding="utf-8") as f:
                                 json.dump(state, f)
                         except: pass
@@ -226,10 +262,13 @@ def main():
             log(traceback.format_exc())
         finally:
             try:
+                import shutil as _shutil
                 sandbox_default = os.path.join(os.path.abspath(os.path.dirname(__file__)), "upscaler_session_sandbox", "Default")
                 if os.path.exists(sandbox_default):
-                    import subprocess
-                    subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+                    import subprocess as _sp
+                    _sp.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+                    if os.path.exists(sandbox_default):
+                        _shutil.rmtree(sandbox_default, ignore_errors=True)
             except: pass
         return
 
@@ -276,29 +315,67 @@ def main():
                             break
             except Exception as e:
                 log(f"Warning: Failed to parse Local State for profile lookup: {e}")
-                
+
         target_profile_path = os.path.join(source_user_data, physical_profile_dir)
+        # Fallback: if the Local State lookup result doesn't exist on disk,
+        # use args.profile directly as the directory name (matches browser_engine.py behavior)
+        if not os.path.exists(target_profile_path):
+            log(f"Warning: Resolved profile dir '{physical_profile_dir}' not found, falling back to '{args.profile}'")
+            physical_profile_dir = args.profile
+            target_profile_path = os.path.join(source_user_data, physical_profile_dir)
         
         sandbox_dir = os.path.join(base_dir, "upscaler_session_sandbox")
         os.makedirs(sandbox_dir, exist_ok=True)
         sandbox_default = os.path.join(sandbox_dir, "Default")
         
-        # Cleanup old junction if exists
+        # Cleanup old sandbox Default if exists (could be junction or real dir)
         import subprocess
         import shutil
         if os.path.exists(sandbox_default):
-            subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+            # Try rmdir first (removes junction without deleting source)
+            res = subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+            if os.path.exists(sandbox_default):
+                # Was a real directory, remove it
+                shutil.rmtree(sandbox_default, ignore_errors=True)
             
         if not os.path.exists(target_profile_path):
             log(f"❌ Error: Profile path not found: {target_profile_path}")
             return
-            
-        # Create junction Playwright will use
-        cmd = f'mklink /J "{sandbox_default}" "{target_profile_path}"'
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        if res.returncode != 0:
-            log(f"❌ Error: Junction failed: {res.stderr.strip()}")
-            return
+
+        # --- Copy profile into sandbox instead of using a junction ---
+        # Using a junction causes SQLite WAL lock conflicts when the main engine
+        # and upscaler both access the same Profile directory simultaneously.
+        # Copying the critical auth files gives each process its own database.
+        log(f"Copying profile '{physical_profile_dir}' to sandbox...")
+        critical_files = [
+            "Cookies", "Cookies-journal",
+            "Login Data", "Login Data-journal",
+            "Login Data For Account", "Login Data For Account-journal",
+            "Preferences", "Secure Preferences",
+            "Web Data", "Web Data-journal",
+            "Favicons", "Favicons-journal",
+        ]
+        critical_subdirs = ["Network"]
+        os.makedirs(sandbox_default, exist_ok=True)
+        # Copy top-level critical files
+        for fname in critical_files:
+            src_f = os.path.join(target_profile_path, fname)
+            if os.path.exists(src_f):
+                try:
+                    shutil.copy2(src_f, os.path.join(sandbox_default, fname))
+                except Exception as cp_e:
+                    log(f"  Warning: Could not copy {fname}: {cp_e}")
+        # Copy critical subdirectories (e.g. Network/ which contains Cookies in newer Chrome)
+        for subdir in critical_subdirs:
+            src_sub = os.path.join(target_profile_path, subdir)
+            dst_sub = os.path.join(sandbox_default, subdir)
+            if os.path.exists(src_sub):
+                try:
+                    if os.path.exists(dst_sub):
+                        shutil.rmtree(dst_sub, ignore_errors=True)
+                    shutil.copytree(src_sub, dst_sub)
+                except Exception as cp_e:
+                    log(f"  Warning: Could not copy {subdir}/: {cp_e}")
             
         # Copy root config files just like main engine
         for f_name in ["Local State", "Variations"]:
@@ -314,6 +391,11 @@ def main():
                         if "profile" in state:
                             state["profile"]["last_used"] = "Default"
                             state["profile"]["last_active_profiles"] = ["Default"]
+                            # Remap the profile's info_cache entry to "Default" so Chrome
+                            # recognises the copied profile as the correct Google account
+                            if physical_profile_dir in state["profile"].get("info_cache", {}):
+                                state["profile"]["info_cache"]["Default"] = \
+                                    state["profile"]["info_cache"][physical_profile_dir]
                         with open(dest, "w", encoding="utf-8") as f:
                             json.dump(state, f)
                     except: pass
@@ -439,31 +521,43 @@ def main():
                 try:
                     # Clear chat (optional, but good to keep clean)
                     page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
-                    page.wait_for_timeout(2000)
+                    page.wait_for_timeout(3000)  # extra wait for page init
 
                     # 1. Upload File
                     log("  -> Uploading image...")
-                    with page.expect_file_chooser() as fc_info:
-                        # Click the + button
+                    with page.expect_file_chooser(timeout=30000) as fc_info:
+                        # Click the + / upload button
                         page.evaluate('''() => {
                             const plusBtn = document.querySelector('button[aria-label="Open upload file menu"]') ||
-                                            document.querySelector('button[aria-label*="upload" i]');
+                                            document.querySelector('button[aria-label*="upload" i]') ||
+                                            document.querySelector('button[aria-label*="Upload" i]');
                             if (plusBtn) plusBtn.click();
                             else {
-                                const gemsIcon = document.querySelector('mat-icon[data-mat-icon-name="add_2"]');
+                                const gemsIcon = document.querySelector('mat-icon[data-mat-icon-name="add_2"]') ||
+                                                 document.querySelector('mat-icon[fonticon="add"]');
                                 if (gemsIcon) gemsIcon.closest('button').click();
                             }
                         }''')
-                        page.wait_for_timeout(1000)
+                        page.wait_for_timeout(1200)
                         page.evaluate('''() => {
+                            // Primary: precise data-test-id selector (most reliable)
+                            const explicitIcon = document.querySelector('[data-test-id="local-images-files-uploader-icon"]');
+                            if (explicitIcon) {
+                                const menuItem = explicitIcon.closest('.mat-mdc-menu-item, [role="menuitem"], button');
+                                if (menuItem) { menuItem.click(); return; }
+                            }
+                            // Fallback: text-based search
                             const opt = Array.from(document.querySelectorAll('.menu-text, span, .mdc-list-item__primary-text'))
-                                            .find(i => i.innerText.toLowerCase().includes("upload") || i.innerText.toLowerCase().includes("attach"));
+                                            .find(i => {
+                                                const txt = i.innerText.toLowerCase();
+                                                return txt.includes("upload") || txt.includes("attach");
+                                            });
                             if (opt) opt.click();
                         }''')
-                    
+
                     file_chooser = fc_info.value
                     file_chooser.set_files(in_path)
-                    page.wait_for_timeout(3000) # wait for upload
+                    page.wait_for_timeout(3000)  # wait for upload
                     
                     # 2. Type Prompt
                     log("  -> Sending prompt...")
@@ -472,74 +566,145 @@ def main():
                     page.keyboard.press("Enter")
 
                     while True:
-                        # 3. Wait for generation
+                        # 3. Wait for generation using active polling (same strategy as main engine)
                         log("  -> Waiting for generation...")
-                        page.wait_for_timeout(5000)
-                        
-                        # Wait for progress bar to disappear
-                        try:
-                            page.locator("mat-progress-bar").wait_for(state="hidden", timeout=90000)
-                            page.locator("section.processing-state_container--processing").wait_for(state="hidden", timeout=90000)
-                        except TimeoutError:
+                        generation_done = False
+                        timed_out = False
+                        deadline = time.time() + 180  # 3 minute max wait
+
+                        while time.time() < deadline:
+                            page.wait_for_timeout(2000)
+
+                            state = page.evaluate('''() => {
+                                function isVisible(el) {
+                                    return el && el.offsetParent !== null && el.offsetWidth > 0;
+                                }
+                                // Check if still generating
+                                const stopIcon = document.querySelector(
+                                    'mat-icon[data-mat-icon-name="stop"], mat-icon[fonticon="stop"],' +
+                                    'gem-icon-button.submit mat-icon[data-mat-icon-name="stop_circle"],' +
+                                    'gem-icon-button.send-button mat-icon[data-mat-icon-name="stop_circle"]'
+                                );
+                                const progressBar = document.querySelector('mat-progress-bar');
+                                const loadingSection = document.querySelector('section.processing-state_container--processing');
+                                if (stopIcon || isVisible(progressBar) || isVisible(loadingSection)) {
+                                    let genText = "";
+                                    if (loadingSection) {
+                                        const lbl = loadingSection.querySelector('.processing-state_ext-name_label span');
+                                        const ph  = loadingSection.querySelector('.processing-state_ext-name_placeholder span');
+                                        genText = (lbl && lbl.textContent) ? lbl.textContent.trim()
+                                                : (ph  && ph.textContent)  ? ph.textContent.trim()
+                                                : loadingSection.textContent.trim();
+                                    }
+                                    return { status: "generating", text: genText };
+                                }
+                                // Check if send button is back to send-mode (truly idle/done)
+                                const sendModeSelectors = [
+                                    'mat-icon[data-mat-icon-name="arrow_upward"]',
+                                    'mat-icon[fonticon="arrow_upward"]',
+                                    'mat-icon[data-mat-icon-name="send"]',
+                                    'mat-icon[fonticon="send"]',
+                                    'mat-icon[data-mat-icon-name="send_spark"]',
+                                    'mat-icon[fonticon="send_spark"]',
+                                ];
+                                const inSendMode = sendModeSelectors.some(s => !!document.querySelector(s));
+                                const sendReady = inSendMode && !!(
+                                    document.querySelector('[data-test-id="send-button-container"].visible') ||
+                                    document.querySelector('gem-icon-button.send-button[aria-disabled="false"]') ||
+                                    document.querySelector('gem-icon-button.submit[aria-disabled="false"]') ||
+                                    document.querySelector('button[aria-label="Send message"]:not([disabled])')
+                                );
+                                if (!sendReady) {
+                                    return { status: "transitioning", text: "" };
+                                }
+                                // Send button is ready: check result
+                                const lastResp = Array.from(document.querySelectorAll('model-response')).pop();
+                                if (!lastResp) {
+                                    return { status: "idle_no_resp", text: "" };
+                                }
+                                const hasImg = !!lastResp.querySelector('img');
+                                if (hasImg) {
+                                    return { status: "success", text: "" };
+                                }
+                                const contentNode = lastResp.querySelector('.model-response-text') ||
+                                                    lastResp.querySelector('.message-content') || lastResp;
+                                const respText = (contentNode.innerText || contentNode.textContent || "").trim();
+                                return { status: "done_no_img", text: respText };
+                            }''')
+
+                            s = state.get("status", "")
+                            t = state.get("text", "") or ""
+
+                            if s == "success":
+                                generation_done = True
+                                break
+                            elif s == "generating":
+                                if t:
+                                    log(f"  -> Gemini: \"{t[:120]}\"")
+                                continue
+                            elif s in ("transitioning", "idle_no_resp"):
+                                continue
+                            elif s == "done_no_img":
+                                # Filter out transitional phrases that appear mid-generation
+                                transitional_phrases = [
+                                    "creating your image", "generating", "just a moment",
+                                    "please wait", "working on it", "正在创建", "正在生成",
+                                    "creating image", "gemini said",
+                                ]
+                                flat = " ".join(t.lower().split())
+                                if any(ph in flat for ph in transitional_phrases):
+                                    log(f"  -> Still generating (transitional): \"{t[:80]}\"")
+                                    continue
+                                log(f"  -> ❌ No image in response: \"{t[:200]}\"")
+                                break
+
+                        else:
+                            timed_out = True
+
+                        if timed_out:
                             log("  -> ⚠️ Timeout waiting for generation to finish.")
                             raise Exception("Timeout waiting for generation")
-                        
-                        page.wait_for_timeout(3000)
 
-                        # Find last response img
-                        last_resp = page.locator("model-response").last
-                        imgs = last_resp.locator("img")
-                        
-                        if imgs.count() == 0:
-                            try:
-                                msg_text = page.evaluate('''() => {
-                                    const lastResp = Array.from(document.querySelectorAll('model-response')).pop();
-                                    if (!lastResp) return "";
-                                    const contentNode = lastResp.querySelector('.model-response-text') || lastResp.querySelector('.message-content') || lastResp;
-                                    return contentNode.innerText || contentNode.textContent || "";
-                                }''')
-                                if msg_text and msg_text.strip():
-                                    flat_text = " ".join(msg_text.split())
-                                    log(f"  -> ❌ Gemini failed/refused: {flat_text[:300]}")
-                                else:
-                                    log("  -> ❌ No image generated and no error message found.")
-                            except Exception:
-                                log("  -> ❌ No image generated.")
-                            
-                            log("  -> 🔄 Triggering Redo...")
-                            redo_result = page.evaluate('''() => {
-                                const findBtn = (sel) => document.querySelector(sel);
-                                let redoBtn = findBtn('regenerate-button button') || 
-                                              findBtn('button[aria-label="Redo"]') ||
-                                              document.querySelector('mat-icon[data-mat-icon-name="refresh"]')?.closest('button') ||
-                                              document.querySelector('mat-icon[fonticon="refresh"]')?.closest('button');
-                                if (redoBtn) {
-                                    redoBtn.scrollIntoView({behavior: "instant", block: "center"});
-                                    redoBtn.click();
-                                    return true;
-                                }
-                                return false;
+                        if generation_done:
+                            # Re-fetch imgs after confirmed success
+                            last_resp = page.locator("model-response").last
+                            imgs = last_resp.locator("img")
+                            break  # Exit while True - proceed to download
+
+                        # No image generated - attempt Redo
+                        log("  -> 🔄 Triggering Redo...")
+                        redo_result = page.evaluate('''() => {
+                            const findBtn = (sel) => document.querySelector(sel);
+                            let redoBtn = findBtn('regenerate-button button') ||
+                                          findBtn('button[aria-label="Redo"]') ||
+                                          document.querySelector('mat-icon[data-mat-icon-name="refresh"]')?.closest('button') ||
+                                          document.querySelector('mat-icon[fonticon="refresh"]')?.closest('button');
+                            if (redoBtn) {
+                                redoBtn.scrollIntoView({behavior: "instant", block: "center"});
+                                redoBtn.click();
+                                return true;
+                            }
+                            return false;
+                        }''')
+
+                        if redo_result:
+                            page.wait_for_timeout(1000)
+                            page.evaluate('''() => {
+                                const tryAgain = Array.from(document.querySelectorAll('.menu-text, span, button'))
+                                    .find(b => b.innerText.toLowerCase().includes('try again'));
+                                if (tryAgain) tryAgain.click();
                             }''')
-                            
-                            if redo_result:
-                                page.wait_for_timeout(1000)
-                                page.evaluate('''() => {
-                                    const tryAgain = Array.from(document.querySelectorAll('.menu-text, span, button')).find(b => b.innerText.toLowerCase().includes('try again'));
-                                    if (tryAgain) tryAgain.click();
-                                }''')
-                                status_data["history"][filename]["refusals"] += 1
-                                save_status()
-                                
-                                if args.max_redo > 0 and status_data["history"][filename]["refusals"] >= args.max_redo:
-                                    log(f"  -> ❌ Max Redo limit ({args.max_redo}) reached. Skipping image.")
-                                    raise Exception("Max Redo limit reached")
-                                    
-                                continue
-                            else:
-                                log("  -> ❌ Redo button not found! Cannot retry.")
-                                raise Exception("No image generated and Redo failed")
+                            status_data["history"][filename]["refusals"] += 1
+                            save_status()
+
+                            if args.max_redo > 0 and status_data["history"][filename]["refusals"] >= args.max_redo:
+                                log(f"  -> ❌ Max Redo limit ({args.max_redo}) reached. Skipping image.")
+                                raise Exception("Max Redo limit reached")
+
+                            continue
                         else:
-                            break
+                            log("  -> ❌ Redo button not found! Cannot retry.")
+                            raise Exception("No image generated and Redo failed")
 
                     # 4. Download Result
                     log("  -> Downloading result...")
@@ -662,10 +827,13 @@ def main():
         try: os.remove("upscaler.lock")
         except: pass
         try:
-            # Cleanup sandbox junction
+            # Cleanup sandbox Default (now a real directory copy, not a junction)
             sandbox_default = os.path.join(os.path.abspath(os.path.dirname(__file__)), "upscaler_session_sandbox", "Default")
             if os.path.exists(sandbox_default):
+                # Try rmdir first in case it's still a junction from an older run
                 subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+                if os.path.exists(sandbox_default):
+                    shutil.rmtree(sandbox_default, ignore_errors=True)
         except: pass
 
 if __name__ == "__main__":

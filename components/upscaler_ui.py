@@ -276,10 +276,13 @@ def render_upscaler_tab():
                     else:
                         # Only clean up sandbox if no delete subprocess will use it
                         try:
+                            import shutil as _shutil
                             root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                             sandbox_default = os.path.join(root, "upscaler_session_sandbox", "Default")
                             if os.path.exists(sandbox_default):
                                 subprocess.run(['rmdir', sandbox_default], shell=True, capture_output=True)
+                                if os.path.exists(sandbox_default):
+                                    _shutil.rmtree(sandbox_default, ignore_errors=True)
                         except: pass
                     
                     st.toast("⛔ Stop signal sent and browser closed.")
